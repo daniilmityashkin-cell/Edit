@@ -22,7 +22,13 @@ BOB_AMP, BOB_PERIOD = 14, 3.2                  # vertical float of cards
 INTRO_DELAY, INTRO_DUR, INTRO_STAGGER = 0.2, 1.5, 0.14
 STEPS = [6.0, 9.0, 12.0]                       # carousel shifts (seconds)
 STEP_DUR = 1.1
-BG, GRID, GRID_STEP = (236, 236, 236), (214, 214, 214), 48
+BG = (8, 8, 11)
+GLOWS = [(0.28, 0.30, 780, (78, 46, 120), 0.85),   # (x, y, radius px, rgb, strength)
+         (0.76, 0.88, 820, (120, 64, 28), 0.70),
+         (0.62, 0.05, 600, (30, 52, 96), 0.55)]
+BG_DRIFT = 110                                   # px of slow horizontal glow drift
+CAPTION_COLOR = (238, 238, 240)
+AUDIO = True
 FONT = "/usr/share/fonts/opentype/inter/Inter-Medium.otf"
 VIDEOS = sorted(glob.glob("/home/user/Edit/*.mp4"))
 # ----------------------------------------
@@ -58,15 +64,28 @@ def rounded_mask(scale=4):
 
 
 def background():
-    img = Image.new("RGB", (W, H), BG)
+    """Dark gradient with soft coloured glows + film grain, wider than the frame so it can drift."""
+    bw = W + 2 * BG_DRIFT
+    yy, xx = np.mgrid[0:H, 0:bw].astype(np.float32)
+    img = np.empty((H, bw, 3), np.float32)
+    img[:] = BG
+    for gx, gy, r, col, k in GLOWS:
+        d2 = ((xx - (gx * W + BG_DRIFT)) ** 2 + (yy - gy * H) ** 2) / (r * r)
+        a = (np.exp(-d2 * 1.6) * k)[..., None]
+        img += a * np.array(col, np.float32)
+    vig = 1 - 0.35 * (((xx - bw / 2) / (bw / 2)) ** 2 + ((yy - H / 2) / (H / 2)) ** 2) / 2
+    img *= vig[..., None]
+    rng = np.random.default_rng(7)
+    img += rng.normal(0, 2.2, (H, bw, 1)).astype(np.float32)
+    return np.clip(img, 0, 255).astype(np.uint8)
+
+
+def bg_frame(bg, t, font):
+    ox = int(BG_DRIFT + BG_DRIFT * 0.9 * math.sin(2 * math.pi * t / 9.0))
+    img = Image.fromarray(np.ascontiguousarray(bg[:, ox:ox + W]))
     d = ImageDraw.Draw(img)
-    for x in range(0, W, GRID_STEP):
-        d.line([(x, 0), (x, H)], fill=GRID, width=1)
-    for y in range(0, H, GRID_STEP):
-        d.line([(0, y), (W, y)], fill=GRID, width=1)
-    font = ImageFont.truetype(FONT, 52)
     tw = d.textlength(CAPTION, font=font)
-    d.text(((W - tw) / 2, 52), CAPTION, font=font, fill=(40, 40, 40))
+    d.text(((W - tw) / 2, 52), CAPTION, font=font, fill=CAPTION_COLOR)
     return img
 
 
@@ -102,6 +121,77 @@ def paste(canvas, sprite_rgb, mask, x, y, alpha=1.0, blur=0.0, scale=1.0):
     canvas.paste(sp, (int(round(x)), int(round(y))), m)
 
 
+# ---------------- sound design ----------------
+SR = 44100
+
+
+def whoosh(dur, f0, f1, pan0, pan1, peak=0.45, gain=1.0, seed=0):
+    """Band-limited noise sweep (f0->f1 Hz) with a bell envelope and a stereo pan sweep."""
+    n = int(dur * SR)
+    rng = np.random.default_rng(seed)
+    noise = rng.normal(0, 1, n)
+    u = np.linspace(0, 1, n)
+    fc = f0 * (f1 / f0) ** u
+    a = 1 - np.exp(-2 * np.pi * fc / SR)          # one-pole lowpass coefficient
+    lp1 = np.empty(n)
+    lp2 = np.empty(n)
+    y1 = y2 = 0.0
+    for k in range(n):
+        y1 += a[k] * (noise[k] - y1)
+        y2 += a[k] * (y1 - y2)
+        lp1[k], lp2[k] = y1, y2
+    band = lp2 - np.convolve(lp2, np.ones(64) / 64, mode="same")   # drop the lowest rumble
+    env = np.where(u < peak, (u / peak) ** 1.6, ((1 - u) / (1 - peak)) ** 2.2)
+    sig = band * env
+    sig /= np.max(np.abs(sig)) + 1e-9
+    pan = pan0 + (pan1 - pan0) * u                 # -1 left .. 1 right
+    return np.stack([sig * np.sqrt((1 - pan) / 2), sig * np.sqrt((1 + pan) / 2)], 1) * gain
+
+
+def thump(freq=62, dur=0.32, gain=0.55):
+    n = int(dur * SR)
+    u = np.arange(n) / SR
+    f = freq * (1 + 1.2 * np.exp(-u * 28))
+    ph = 2 * np.pi * np.cumsum(f) / SR
+    sig = np.sin(ph) * np.exp(-u * 11)
+    sig[: int(0.004 * SR)] *= np.linspace(0, 1, int(0.004 * SR))
+    return np.stack([sig, sig], 1) * gain
+
+
+def build_audio(path):
+    total = int(DUR * SR)
+    mix = np.zeros((total + 2 * SR, 2))
+
+    def add(sig, at):
+        i = int(at * SR)
+        mix[i:i + len(sig)] += sig[: len(mix) - i]
+
+    # cards flying in from the right: whoosh right->left, soft landing thump
+    for i in range(4):
+        t0 = INTRO_DELAY + i * INTRO_STAGGER
+        add(whoosh(1.15, 500, 5200, 0.8, -0.2 + 0.3 * i - 0.6, peak=0.28, gain=0.55, seed=i), t0)
+        add(thump(58 + 5 * i, gain=0.38), t0 + INTRO_DUR * 0.72)
+    # carousel steps
+    for k, st in enumerate(STEPS):
+        add(whoosh(1.3, 380, 4200, 0.7, -0.7, peak=0.5, gain=0.5, seed=10 + k), st - 0.15)
+        add(thump(52, gain=0.3), st + STEP_DUR - 0.05)
+    # quiet sub drone under everything
+    u = np.arange(total) / SR
+    drone = 0.05 * np.sin(2 * np.pi * 43 * u) * np.minimum(1, u / 1.5) * np.minimum(1, (DUR - u) / 1.5)
+    mix[:total] += drone[:, None]
+    mix = mix[:total]
+    fade = np.minimum(1, (DUR - np.arange(total) / SR) / 0.6)
+    mix *= fade[:, None]
+    mix *= 0.72 / (np.max(np.abs(mix)) + 1e-9)
+    pcm = (mix * 32767).astype("<i2")
+    import wave
+    with wave.open(path, "wb") as w:
+        w.setnchannels(2)
+        w.setsampwidth(2)
+        w.setframerate(SR)
+        w.writeframes(pcm.tobytes())
+
+
 def shift_at(t):
     s = 0.0
     for st in STEPS:
@@ -110,6 +200,7 @@ def shift_at(t):
 
 
 def main():
+    SILENT = OUT + ".silent.mp4"
     print(f"videos: {VIDEOS}", file=sys.stderr)
     need = NFR + int(FPS * 6)
     clips = [load(v, need) for v in VIDEOS]
@@ -117,18 +208,19 @@ def main():
     mask = rounded_mask()
     shadow, pad = shadow_sprite(mask)
     bg = background()
+    font = ImageFont.truetype(FONT, 52)
 
     enc = subprocess.Popen(
         ["ffmpeg", "-v", "error", "-y", "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{W}x{H}",
          "-r", str(FPS), "-i", "-", "-c:v", "libx264", "-preset", "medium", "-crf", "16",
-         "-pix_fmt", "yuv420p", "-movflags", "+faststart", OUT],
+         "-pix_fmt", "yuv420p", "-movflags", "+faststart", SILENT],
         stdin=subprocess.PIPE)
 
     for f in range(NFR):
         t = f / FPS
-        canvas = bg.copy()
+        canvas = bg_frame(bg, t, font)
         s = shift_at(t)
-        for n in range(-2, 8):                       # strip card n, video n % nv
+        for n in range(0, 8):                       # strip card n, video n % nv
             slot = n - s
             if slot < -1.6 or slot > 4.6:
                 continue
@@ -143,6 +235,8 @@ def main():
                 alpha = min(1.0, max(0.0, p * 3))
                 scale = 0.9 + 0.1 * e
                 blur = (1 - e) ** 2 * 38
+            if n >= 4:                                # incoming cards fade in at the right edge
+                alpha = min(1.0, max(0.0, (4.0 - slot) / 0.35))
             if alpha <= 0:
                 continue
             # motion blur during carousel steps
@@ -163,6 +257,17 @@ def main():
             print(f"frame {f}/{NFR}", file=sys.stderr)
     enc.stdin.close()
     enc.wait()
+    if AUDIO:
+        wav = OUT + ".wav"
+        build_audio(wav)
+        subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", SILENT, "-i", wav, "-c:v", "copy",
+                        "-c:a", "aac", "-b:a", "192k", "-shortest", "-movflags", "+faststart", OUT], check=True)
+        import os
+        os.remove(SILENT)
+        os.remove(wav)
+    else:
+        import os
+        os.replace(SILENT, OUT)
 
 
 if __name__ == "__main__":
