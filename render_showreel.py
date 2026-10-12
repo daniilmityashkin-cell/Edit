@@ -30,7 +30,11 @@ BG_DRIFT = 110                                   # px of slow horizontal glow dr
 CAPTION_COLOR = (238, 238, 240)
 AUDIO = True
 FONT = "/usr/share/fonts/opentype/inter/Inter-Medium.otf"
-VIDEOS = sorted(glob.glob("/home/user/Edit/*.mp4"))
+import os
+# source clips: every mp4 here except rendered outputs (showreel*.mp4 and OUT itself)
+VIDEOS = sorted(p for p in glob.glob("/home/user/Edit/*.mp4")
+                if not os.path.basename(p).startswith("showreel")
+                and os.path.abspath(p) != os.path.abspath(OUT))
 # ----------------------------------------
 
 P = CW + GAP
