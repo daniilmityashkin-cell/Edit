@@ -31,6 +31,7 @@ GLOWS = [(0.25, 0.30, 820, 0.76, 0.95, 1.0),
 HUE_CYCLE = 0.30                                 # how much the hues travel over the whole clip
 CAPTION_COLOR = (238, 238, 240)
 AUDIO = True
+MUSIC_GAIN, SFX_GAIN, MASTER_PEAK = 0.9, 0.45, 0.40   # music bed, transition sounds, overall ceiling
 FONT = "/usr/share/fonts/opentype/inter/Inter-Medium.otf"
 import os
 # source clips: every mp4 here except rendered outputs (showreel*.mp4 and OUT itself)
@@ -232,83 +233,105 @@ def pad(freqs, dur, gain=0.12):
     return sig * env * gain / (len(freqs) * 3)
 
 
+def reverb(x, secs=1.6, wet=0.3, seed=5):
+    """Cheap room: convolve with exponentially decaying, darkened noise (FFT)."""
+    n = int(secs * SR)
+    rng = np.random.default_rng(seed)
+    ir = rng.normal(0, 1, (n, 2)) * np.exp(-np.arange(n) / SR * 3.2)[:, None]
+    for c in range(2):
+        ir[:, c] = lowpass(ir[:, c], 3500, 1)
+    ir /= np.sqrt((ir ** 2).sum(0, keepdims=True))
+    m = len(x) + n
+    nfft = 1 << (m - 1).bit_length()
+    out = np.stack([np.fft.irfft(np.fft.rfft(x[:, c], nfft) * np.fft.rfft(ir[:, c], nfft), nfft)[:len(x)]
+                    for c in range(2)], 1)
+    return x * (1 - wet * 0.5) + out * wet * 2.0
+
+
+def tine(freq, dur=3.0, gain=0.2, vel=1.0):
+    """Soft electric-piano (Rhodes-like) note: sine + fast-decaying bell partial, slow tremolo."""
+    n = int(dur * SR)
+    u = np.arange(n) / SR
+    body = np.sin(2 * np.pi * freq * u) * np.exp(-u * 0.65)
+    body += 0.35 * np.sin(2 * np.pi * freq * 2 * u) * np.exp(-u * 2.2)
+    bell = 0.5 * vel * np.sin(2 * np.pi * freq * 6.0 * u) * np.exp(-u * 14)
+    trem = 1 + 0.08 * np.sin(2 * np.pi * 4.5 * u)
+    sig = (body + bell) * trem
+    sig[: int(0.006 * SR)] *= np.linspace(0, 1, int(0.006 * SR))
+    sig *= np.minimum(1, (dur - u) / 0.2)
+    return sig * gain
+
+
 def build_music(total):
-    """Dark, cinematic loop: Am - F - C - G pad, sub-bass, 8th-note arpeggio with echo, soft kick + hats."""
-    L = np.zeros(total + 3 * SR)
+    """Warm lo-fi cinematic bed: Fmaj7 - Em7 - Dm7 - Cmaj7 electric-piano chords, sparse bell melody,
+    soft sub-bass, muted brush beat, all through a small room reverb. 80 BPM."""
+    beat = 60.0 / 80
+    bar = 4 * beat
+    L = np.zeros(total + 4 * SR)
     R = np.zeros_like(L)
-    chords = [(57, [0, 3, 7]), (53, [0, 4, 7]), (60, [0, 4, 7]), (55, [0, 4, 7])]   # root, intervals
-    bar = 4 * BEAT
-    nbars = int(DUR / bar) + 1
-    rng = np.random.default_rng(3)
-    for b in range(nbars):
+
+    def put(sig, at, pan=0.0):
+        i = int(at * SR)
+        sig = sig[: len(L) - i]
+        L[i:i + len(sig)] += sig * math.sqrt((1 - pan) / 2)
+        R[i:i + len(sig)] += sig * math.sqrt((1 + pan) / 2)
+
+    chords = [(53, [0, 4, 7, 11]), (52, [0, 3, 7, 10]), (50, [0, 3, 7, 10]), (48, [0, 4, 7, 11])]
+    melody = {0: [(7, 0), (5, 1.5), (4, 2.5)], 1: [(2, 0.5), (4, 2), (7, 3)],
+              2: [(5, 0), (7, 1.5), (9, 3)], 3: [(7, 0.5), (4, 2), (2, 3.5)]}   # (scale degree offset, beat)
+    scale_off = [0, 2, 4, 5, 7, 9, 11, 12, 14, 16]
+    rng = np.random.default_rng(11)
+    for b in range(int(DUR / bar) + 2):
         root, iv = chords[b % 4]
         t0 = b * bar
-        i0 = int(t0 * SR)
-        notes = [root + x for x in iv]
-        p = pad([midi(n + 12) for n in notes] + [midi(root)], bar + 0.6, gain=0.22)
-        L[i0:i0 + len(p)] += p[: len(L) - i0]
-        R[i0:i0 + len(p)] += p[: len(R) - i0]
-        # bass
-        bs = pluck(midi(root - 12), dur=bar * 0.95, gain=0.30, bright=0.8)
-        L[i0:i0 + len(bs)] += bs[: len(L) - i0]
-        R[i0:i0 + len(bs)] += bs[: len(R) - i0]
-        # arpeggio (8ths)
-        pattern = [0, 1, 2, 1, 2, 1, 0, 2]
+        for k, x in enumerate(iv):                       # gently rolled chord
+            put(tine(midi(root + 12 + x), bar + 0.6, 0.13), t0 + k * 0.045, pan=-0.25 + 0.17 * k)
+        put(tine(midi(root - 12), bar, 0.20, vel=0.1), t0)                     # sub/bass note
+        put(tine(midi(root), 1.2, 0.12, vel=0.1), t0 + 2.5 * beat)
+        for deg, bt in melody[b % 4]:                    # sparse bell melody
+            note = root + 24 + scale_off[min(deg, len(scale_off) - 1) % len(scale_off)]
+            put(tine(midi(note), 1.6, 0.13, vel=1.4), t0 + bt * beat, pan=0.3)
+        # muted kick (1 and 2.5) + soft rim on 3 + brushed hats
+        for bt in (0, 2.5):
+            n = int(0.25 * SR)
+            u = np.arange(n) / SR
+            ph = 2 * np.pi * np.cumsum(55 * (1 + 1.6 * np.exp(-u * 28))) / SR
+            kick = (np.sin(ph) + 0.5 * np.sin(2 * ph)) * np.exp(-u * 14) * 0.22
+            put(kick, t0 + bt * beat)
         for k in range(8):
-            tt = t0 + k * BEAT / 2
-            nt = notes[pattern[k]] + (24 if k % 4 == 2 else 12)
-            pl = pluck(midi(nt), dur=0.8, gain=0.24 + 0.05 * (k % 2 == 0))
-            ii = int(tt * SR)
-            pan = 0.35 * math.sin(k * 1.3 + b)
-            gl, gr = math.sqrt((1 - pan) / 2), math.sqrt((1 + pan) / 2)
-            L[ii:ii + len(pl)] += pl[: len(L) - ii] * gl
-            R[ii:ii + len(pl)] += pl[: len(R) - ii] * gr
-        # kick on 1 and 3
-        for k in (0, 2):
-            kk = hit(54, 0.4, 0.5)
-            ii = int((t0 + k * BEAT) * SR)
-            L[ii:ii + len(kk)] += kk[: len(L) - ii, 0]
-            R[ii:ii + len(kk)] += kk[: len(R) - ii, 0]
-        # off-beat hats
-        for k in range(8):
-            if k % 2 == 1:
-                n = int(0.05 * SR)
-                h = rng.normal(0, 1, n) * np.exp(-np.arange(n) / SR * 90)
-                h -= lowpass(h, 5000, 1)
-                ii = int((t0 + k * BEAT / 2) * SR)
-                L[ii:ii + n] += h[: len(L) - ii] * 0.09
-                R[ii:ii + n] += h[: len(R) - ii] * 0.09
-    # echo on the whole music bus for width
-    d = int(BEAT * 0.75 * SR)
-    for rep, g in ((1, 0.32), (2, 0.16)):
-        L[d * rep:] += R[: len(L) - d * rep] * g
-        R[d * rep:] += L[: len(R) - d * rep] * g
-    fade_in = np.minimum(1, np.arange(len(L)) / SR / 1.2)
-    return np.stack([L * fade_in, R * fade_in], 1)[:total]
+            n = int(0.07 * SR)
+            h = rng.normal(0, 1, n) * np.exp(-np.arange(n) / SR * 70)
+            h -= lowpass(h, 4000, 1)
+            put(h * (0.045 if k % 2 else 0.028), t0 + k * beat / 2, pan=0.2 * (-1) ** k)
+        n = int(0.12 * SR)
+        sn = rng.normal(0, 1, n) * np.exp(-np.arange(n) / SR * 32)
+        sn -= lowpass(sn, 1500, 1)
+        put(sn * 0.10, t0 + 2 * beat)
+    x = np.stack([L, R], 1)[:total + 2 * SR]
+    x = reverb(x, 1.6, 0.32)[:total]
+    return x * np.minimum(1, np.arange(total) / SR / 1.0)[:, None]
 
 
 def build_audio(path):
     total = int(DUR * SR)
-    music = build_music(total) * 0.55
+    music = build_music(total) * MUSIC_GAIN
     fx = np.zeros((total + 2 * SR, 2))
 
     def add(sig, at):
         i = int(at * SR)
         fx[i:i + len(sig)] += sig[: len(fx) - i]
 
-    for i in range(4):                                  # cards flying in from the right
+    for i in range(4):                                  # cards flying in from the right (short, soft)
         t0 = INTRO_DELAY + i * INTRO_STAGGER
-        add(whoosh(1.1, 700, 7000, 0.85, -0.5 + 0.25 * i, peak=0.3, gain=0.95, seed=i), t0)
-        add(hit(66 + 4 * i, 0.3, 0.55), t0 + INTRO_DUR * 0.72)
-        add(tick(1500 + 260 * i, gain=0.38), t0 + INTRO_DUR * 0.72)
+        add(whoosh(0.42, 900, 5200, 0.8, -0.4 + 0.2 * i, peak=0.25, gain=SFX_GAIN * 0.8, seed=i), t0 + 0.05)
+        add(tick(1400 + 220 * i, 0.09, gain=SFX_GAIN * 0.30), t0 + INTRO_DUR * 0.72)
     for k, st in enumerate(STEPS):                      # carousel steps
-        add(whoosh(1.3, 500, 6500, 0.8, -0.8, peak=0.5, gain=0.9, seed=10 + k), st - 0.15)
-        add(hit(60, 0.3, 0.5), st + STEP_DUR - 0.08)
-        add(tick(2000, gain=0.35), st + STEP_DUR - 0.08)
+        add(whoosh(0.5, 700, 5000, 0.7, -0.7, peak=0.45, gain=SFX_GAIN * 0.85, seed=10 + k), st + 0.1)
+        add(tick(1900, 0.09, gain=SFX_GAIN * 0.28), st + STEP_DUR - 0.05)
     mix = music + fx[:total]
-    mix = np.tanh(mix * 1.25) / np.tanh(1.25)             # gentle soft-clip glue
-    mix *= np.minimum(1, (DUR - np.arange(total) / SR) / 0.7)[:, None]
-    mix *= 0.89 / (np.max(np.abs(mix)) + 1e-9)
+    mix = np.tanh(mix * 1.2) / np.tanh(1.2)
+    mix *= np.minimum(1, (DUR - np.arange(total) / SR) / 0.8)[:, None]
+    mix *= MASTER_PEAK / (np.max(np.abs(mix)) + 1e-9)
     import wave
     with wave.open(path, "wb") as w:
         w.setnchannels(2)
