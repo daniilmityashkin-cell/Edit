@@ -22,11 +22,13 @@ BOB_AMP, BOB_PERIOD = 14, 3.2                  # vertical float of cards
 INTRO_DELAY, INTRO_DUR, INTRO_STAGGER = 0.2, 1.5, 0.14
 STEPS = [6.0, 9.0, 12.0]                       # carousel shifts (seconds)
 STEP_DUR = 1.1
-BG = (8, 8, 11)
-GLOWS = [(0.28, 0.30, 780, (78, 46, 120), 0.85),   # (x, y, radius px, rgb, strength)
-         (0.76, 0.88, 820, (120, 64, 28), 0.70),
-         (0.62, 0.05, 600, (30, 52, 96), 0.55)]
-BG_DRIFT = 110                                   # px of slow horizontal glow drift
+BG = (7, 7, 10)
+# animated gradient blobs: (cx, cy, radius px, base hue 0..1, strength, speed)
+GLOWS = [(0.25, 0.30, 820, 0.76, 0.95, 1.0),
+         (0.78, 0.82, 860, 0.07, 0.80, 0.8),
+         (0.60, 0.08, 700, 0.60, 0.70, 1.2),
+         (0.10, 0.90, 640, 0.92, 0.55, 0.9)]
+HUE_CYCLE = 0.30                                 # how much the hues travel over the whole clip
 CAPTION_COLOR = (238, 238, 240)
 AUDIO = True
 FONT = "/usr/share/fonts/opentype/inter/Inter-Medium.otf"
@@ -67,30 +69,51 @@ def rounded_mask(scale=4):
     return m.resize((CW, CH), Image.LANCZOS)
 
 
+def hsv(h, sat, val):
+    import colorsys
+    return np.array(colorsys.hsv_to_rgb(h % 1.0, sat, val), np.float32) * 255
+
+
+_GRAIN = None
+
+
 def background():
-    """Dark gradient with soft coloured glows + film grain, wider than the frame so it can drift."""
-    bw = W + 2 * BG_DRIFT
-    yy, xx = np.mgrid[0:H, 0:bw].astype(np.float32)
-    img = np.empty((H, bw, 3), np.float32)
+    """Static helpers for the animated gradient: low-res coordinate grid + film grain."""
+    global _GRAIN
+    sw, sh = W // 4, H // 4
+    yy, xx = np.mgrid[0:sh, 0:sw].astype(np.float32)
+    _GRAIN = np.random.default_rng(7).normal(0, 2.4, (H + 64, W + 64)).astype(np.float32)
+    return xx * 4, yy * 4
+
+
+def bg_frame(grid, t, font):
+    """Gradients drift on Lissajous paths, breathe, and slowly shift hue (they 'shimmer')."""
+    xx, yy = grid
+    img = np.empty(xx.shape + (3,), np.float32)
     img[:] = BG
-    for gx, gy, r, col, k in GLOWS:
-        d2 = ((xx - (gx * W + BG_DRIFT)) ** 2 + (yy - gy * H) ** 2) / (r * r)
-        a = (np.exp(-d2 * 1.6) * k)[..., None]
-        img += a * np.array(col, np.float32)
-    vig = 1 - 0.35 * (((xx - bw / 2) / (bw / 2)) ** 2 + ((yy - H / 2) / (H / 2)) ** 2) / 2
-    img *= vig[..., None]
-    rng = np.random.default_rng(7)
-    img += rng.normal(0, 2.2, (H, bw, 1)).astype(np.float32)
-    return np.clip(img, 0, 255).astype(np.uint8)
-
-
-def bg_frame(bg, t, font):
-    ox = int(BG_DRIFT + BG_DRIFT * 0.9 * math.sin(2 * math.pi * t / 9.0))
-    img = Image.fromarray(np.ascontiguousarray(bg[:, ox:ox + W]))
-    d = ImageDraw.Draw(img)
+    for k, (gx, gy, r, h0, st, sp) in enumerate(GLOWS):
+        cx = (gx + 0.12 * math.sin(2 * math.pi * sp * t / 7.0 + k * 1.7)) * W
+        cy = (gy + 0.14 * math.cos(2 * math.pi * sp * t / 9.0 + k * 2.3)) * H
+        rr = r * (1 + 0.18 * math.sin(2 * math.pi * sp * t / 5.5 + k))
+        d2 = ((xx - cx) ** 2 + (yy - cy) ** 2) / (rr * rr)
+        pulse = 0.85 + 0.15 * math.sin(2 * math.pi * t / 4.0 + k * 1.1)
+        col = hsv(h0 + HUE_CYCLE * t / DUR + 0.04 * math.sin(t * 0.9 + k), 0.78, 0.55)
+        img += (np.exp(-d2 * 1.5) * st * pulse)[..., None] * col
+    # slow diagonal light band sweeping across (adds the "iridescent" feel)
+    ph = (xx * 0.55 + yy * 0.35) / 900.0 - t * 0.22
+    band = np.maximum(0, np.sin(ph * 2 * math.pi)) ** 6 * 0.10
+    img += band[..., None] * hsv(0.62 + 0.3 * t / DUR, 0.5, 1.0)
+    big = np.asarray(Image.fromarray(np.clip(img, 0, 255).astype(np.uint8)).resize((W, H), Image.BICUBIC), np.float32)
+    ox, oy = (int(t * 997) % 64), (int(t * 631) % 64)
+    big += _GRAIN[oy:oy + H, ox:ox + W, None]
+    vy, vx = np.ogrid[0:H, 0:W]
+    vig = 1 - 0.30 * (((vx - W / 2) / (W / 2)) ** 2 + ((vy - H / 2) / (H / 2)) ** 2) / 2
+    big *= vig[..., None].astype(np.float32)
+    out = Image.fromarray(np.clip(big, 0, 255).astype(np.uint8))
+    d = ImageDraw.Draw(out)
     tw = d.textlength(CAPTION, font=font)
     d.text(((W - tw) / 2, 52), CAPTION, font=font, fill=CAPTION_COLOR)
-    return img
+    return out
 
 
 def shadow_sprite(mask):
@@ -127,73 +150,171 @@ def paste(canvas, sprite_rgb, mask, x, y, alpha=1.0, blur=0.0, scale=1.0):
 
 # ---------------- sound design ----------------
 SR = 44100
+BPM = 96
+BEAT = 60.0 / BPM
+
+
+def lowpass(x, fc, order=2):
+    a = 1 - np.exp(-2 * np.pi * fc / SR)
+    y = np.empty_like(x)
+    for _ in range(order):
+        acc = 0.0
+        for k in range(len(x)):
+            acc += a * (x[k] - acc)
+            y[k] = acc
+        x = y.copy()
+    return y
 
 
 def whoosh(dur, f0, f1, pan0, pan1, peak=0.45, gain=1.0, seed=0):
-    """Band-limited noise sweep (f0->f1 Hz) with a bell envelope and a stereo pan sweep."""
+    """Noise sweep f0->f1 Hz (time-varying lowpass minus a fixed lowpass = band) with bell envelope."""
     n = int(dur * SR)
-    rng = np.random.default_rng(seed)
-    noise = rng.normal(0, 1, n)
+    noise = np.random.default_rng(seed).normal(0, 1, n)
     u = np.linspace(0, 1, n)
-    fc = f0 * (f1 / f0) ** u
-    a = 1 - np.exp(-2 * np.pi * fc / SR)          # one-pole lowpass coefficient
-    lp1 = np.empty(n)
-    lp2 = np.empty(n)
+    a = 1 - np.exp(-2 * np.pi * (f0 * (f1 / f0) ** u) / SR)
     y1 = y2 = 0.0
+    out = np.empty(n)
     for k in range(n):
         y1 += a[k] * (noise[k] - y1)
         y2 += a[k] * (y1 - y2)
-        lp1[k], lp2[k] = y1, y2
-    band = lp2 - np.convolve(lp2, np.ones(64) / 64, mode="same")   # drop the lowest rumble
-    env = np.where(u < peak, (u / peak) ** 1.6, ((1 - u) / (1 - peak)) ** 2.2)
-    sig = band * env
+        out[k] = y2
+    out -= np.convolve(out, np.ones(24) / 24, mode="same") * 0.0
+    out -= lowpass(out, 220, 1)                       # remove rumble so it is audible on phones
+    env = np.where(u < peak, (u / peak) ** 1.4, ((1 - u) / (1 - peak)) ** 1.8)
+    sig = out * env
     sig /= np.max(np.abs(sig)) + 1e-9
-    pan = pan0 + (pan1 - pan0) * u                 # -1 left .. 1 right
+    pan = pan0 + (pan1 - pan0) * u
     return np.stack([sig * np.sqrt((1 - pan) / 2), sig * np.sqrt((1 + pan) / 2)], 1) * gain
 
 
-def thump(freq=62, dur=0.32, gain=0.55):
+def hit(freq=70, dur=0.35, gain=0.7):
+    """Kick/impact with harmonics + a click, so it is audible even on tiny speakers."""
     n = int(dur * SR)
     u = np.arange(n) / SR
-    f = freq * (1 + 1.2 * np.exp(-u * 28))
+    f = freq * (1 + 2.0 * np.exp(-u * 30))
     ph = 2 * np.pi * np.cumsum(f) / SR
-    sig = np.sin(ph) * np.exp(-u * 11)
-    sig[: int(0.004 * SR)] *= np.linspace(0, 1, int(0.004 * SR))
+    sig = (np.sin(ph) + 0.45 * np.sin(2 * ph) + 0.25 * np.sin(3 * ph)) * np.exp(-u * 10)
+    click = np.random.default_rng(1).normal(0, 1, n) * np.exp(-u * 380) * 0.5
+    sig = sig + click
+    sig[: int(0.003 * SR)] *= np.linspace(0, 1, int(0.003 * SR))
+    return np.stack([sig, sig], 1) * gain / 1.4
+
+
+def tick(freq=1800, dur=0.12, gain=0.35):
+    n = int(dur * SR)
+    u = np.arange(n) / SR
+    sig = (np.sin(2 * np.pi * freq * u) + 0.5 * np.sin(2 * np.pi * freq * 2.01 * u)) * np.exp(-u * 45)
     return np.stack([sig, sig], 1) * gain
+
+
+def midi(m):
+    return 440.0 * 2 ** ((m - 69) / 12)
+
+
+def pluck(freq, dur=0.9, gain=0.3, bright=3.0):
+    n = int(dur * SR)
+    u = np.arange(n) / SR
+    sig = np.zeros(n)
+    for h, amp in ((1, 1.0), (2, 0.5), (3, 0.28), (4, 0.15), (5, 0.08)):
+        sig += amp * np.sin(2 * np.pi * freq * h * u) * np.exp(-u * (3 + bright * h))
+    sig[: int(0.004 * SR)] *= np.linspace(0, 1, int(0.004 * SR))
+    return sig * gain
+
+
+def pad(freqs, dur, gain=0.12):
+    n = int(dur * SR)
+    u = np.arange(n) / SR
+    sig = np.zeros(n)
+    for f in freqs:
+        for det in (-0.004, 0.0, 0.004):
+            sig += np.sin(2 * np.pi * f * (1 + det) * u) + 0.4 * np.sin(2 * np.pi * 2 * f * (1 + det) * u)
+    env = np.minimum(1, u / 0.8) * np.minimum(1, (dur - u) / 0.9)
+    return sig * env * gain / (len(freqs) * 3)
+
+
+def build_music(total):
+    """Dark, cinematic loop: Am - F - C - G pad, sub-bass, 8th-note arpeggio with echo, soft kick + hats."""
+    L = np.zeros(total + 3 * SR)
+    R = np.zeros_like(L)
+    chords = [(57, [0, 3, 7]), (53, [0, 4, 7]), (60, [0, 4, 7]), (55, [0, 4, 7])]   # root, intervals
+    bar = 4 * BEAT
+    nbars = int(DUR / bar) + 1
+    rng = np.random.default_rng(3)
+    for b in range(nbars):
+        root, iv = chords[b % 4]
+        t0 = b * bar
+        i0 = int(t0 * SR)
+        notes = [root + x for x in iv]
+        p = pad([midi(n + 12) for n in notes] + [midi(root)], bar + 0.6, gain=0.22)
+        L[i0:i0 + len(p)] += p[: len(L) - i0]
+        R[i0:i0 + len(p)] += p[: len(R) - i0]
+        # bass
+        bs = pluck(midi(root - 12), dur=bar * 0.95, gain=0.30, bright=0.8)
+        L[i0:i0 + len(bs)] += bs[: len(L) - i0]
+        R[i0:i0 + len(bs)] += bs[: len(R) - i0]
+        # arpeggio (8ths)
+        pattern = [0, 1, 2, 1, 2, 1, 0, 2]
+        for k in range(8):
+            tt = t0 + k * BEAT / 2
+            nt = notes[pattern[k]] + (24 if k % 4 == 2 else 12)
+            pl = pluck(midi(nt), dur=0.8, gain=0.24 + 0.05 * (k % 2 == 0))
+            ii = int(tt * SR)
+            pan = 0.35 * math.sin(k * 1.3 + b)
+            gl, gr = math.sqrt((1 - pan) / 2), math.sqrt((1 + pan) / 2)
+            L[ii:ii + len(pl)] += pl[: len(L) - ii] * gl
+            R[ii:ii + len(pl)] += pl[: len(R) - ii] * gr
+        # kick on 1 and 3
+        for k in (0, 2):
+            kk = hit(54, 0.4, 0.5)
+            ii = int((t0 + k * BEAT) * SR)
+            L[ii:ii + len(kk)] += kk[: len(L) - ii, 0]
+            R[ii:ii + len(kk)] += kk[: len(R) - ii, 0]
+        # off-beat hats
+        for k in range(8):
+            if k % 2 == 1:
+                n = int(0.05 * SR)
+                h = rng.normal(0, 1, n) * np.exp(-np.arange(n) / SR * 90)
+                h -= lowpass(h, 5000, 1)
+                ii = int((t0 + k * BEAT / 2) * SR)
+                L[ii:ii + n] += h[: len(L) - ii] * 0.09
+                R[ii:ii + n] += h[: len(R) - ii] * 0.09
+    # echo on the whole music bus for width
+    d = int(BEAT * 0.75 * SR)
+    for rep, g in ((1, 0.32), (2, 0.16)):
+        L[d * rep:] += R[: len(L) - d * rep] * g
+        R[d * rep:] += L[: len(R) - d * rep] * g
+    fade_in = np.minimum(1, np.arange(len(L)) / SR / 1.2)
+    return np.stack([L * fade_in, R * fade_in], 1)[:total]
 
 
 def build_audio(path):
     total = int(DUR * SR)
-    mix = np.zeros((total + 2 * SR, 2))
+    music = build_music(total) * 0.55
+    fx = np.zeros((total + 2 * SR, 2))
 
     def add(sig, at):
         i = int(at * SR)
-        mix[i:i + len(sig)] += sig[: len(mix) - i]
+        fx[i:i + len(sig)] += sig[: len(fx) - i]
 
-    # cards flying in from the right: whoosh right->left, soft landing thump
-    for i in range(4):
+    for i in range(4):                                  # cards flying in from the right
         t0 = INTRO_DELAY + i * INTRO_STAGGER
-        add(whoosh(1.15, 500, 5200, 0.8, -0.2 + 0.3 * i - 0.6, peak=0.28, gain=0.55, seed=i), t0)
-        add(thump(58 + 5 * i, gain=0.38), t0 + INTRO_DUR * 0.72)
-    # carousel steps
-    for k, st in enumerate(STEPS):
-        add(whoosh(1.3, 380, 4200, 0.7, -0.7, peak=0.5, gain=0.5, seed=10 + k), st - 0.15)
-        add(thump(52, gain=0.3), st + STEP_DUR - 0.05)
-    # quiet sub drone under everything
-    u = np.arange(total) / SR
-    drone = 0.05 * np.sin(2 * np.pi * 43 * u) * np.minimum(1, u / 1.5) * np.minimum(1, (DUR - u) / 1.5)
-    mix[:total] += drone[:, None]
-    mix = mix[:total]
-    fade = np.minimum(1, (DUR - np.arange(total) / SR) / 0.6)
-    mix *= fade[:, None]
-    mix *= 0.72 / (np.max(np.abs(mix)) + 1e-9)
-    pcm = (mix * 32767).astype("<i2")
+        add(whoosh(1.1, 700, 7000, 0.85, -0.5 + 0.25 * i, peak=0.3, gain=0.95, seed=i), t0)
+        add(hit(66 + 4 * i, 0.3, 0.55), t0 + INTRO_DUR * 0.72)
+        add(tick(1500 + 260 * i, gain=0.38), t0 + INTRO_DUR * 0.72)
+    for k, st in enumerate(STEPS):                      # carousel steps
+        add(whoosh(1.3, 500, 6500, 0.8, -0.8, peak=0.5, gain=0.9, seed=10 + k), st - 0.15)
+        add(hit(60, 0.3, 0.5), st + STEP_DUR - 0.08)
+        add(tick(2000, gain=0.35), st + STEP_DUR - 0.08)
+    mix = music + fx[:total]
+    mix = np.tanh(mix * 1.25) / np.tanh(1.25)             # gentle soft-clip glue
+    mix *= np.minimum(1, (DUR - np.arange(total) / SR) / 0.7)[:, None]
+    mix *= 0.89 / (np.max(np.abs(mix)) + 1e-9)
     import wave
     with wave.open(path, "wb") as w:
         w.setnchannels(2)
         w.setsampwidth(2)
         w.setframerate(SR)
-        w.writeframes(pcm.tobytes())
+        w.writeframes((mix * 32767).astype("<i2").tobytes())
 
 
 def shift_at(t):
