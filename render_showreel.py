@@ -32,7 +32,7 @@ GLOWS = [(0.22, 0.28, 760, 0.97, 0.80, 0.36, 1.0),    # burgundy
 HUE_CYCLE = 0.06                                  # hues only breathe a little, staying in the palette
 CAPTION_COLOR = (238, 238, 240)
 AUDIO = True
-MUSIC_GAIN, SFX_GAIN, MASTER_PEAK = 0.9, 0.45, 0.40   # music bed, transition sounds, overall ceiling
+MUSIC_GAIN, SFX_GAIN, MASTER_PEAK = 0.5, 0.7, 0.45   # music bed, transition sounds, overall ceiling
 FONT = "/usr/share/fonts/opentype/inter/Inter-Medium.otf"
 import os
 # source clips: every mp4 here except rendered outputs (showreel*.mp4 and OUT itself)
@@ -277,107 +277,76 @@ def saw_note(freq, dur, gain, bright=6.0, nh=14, atk=0.004):
     return sig * gain
 
 
+def string_note(freq, dur, gain, attack=0.7, release=0.9, nh=8, vib=0.004, vib_hz=5.2):
+    """Dark ensemble-strings voice: detuned saw-ish pair, slow bow attack, gentle vibrato."""
+    n = int(dur * SR)
+    u = np.arange(n) / SR
+    sig = np.zeros(n)
+    for det in (-0.0025, 0.0025):
+        ph = 2 * np.pi * freq * (1 + det) * np.cumsum(1 + vib * np.sin(2 * np.pi * vib_hz * u)) / SR
+        for h in range(1, nh + 1):
+            if freq * h > 7000:
+                break
+            sig += np.sin(h * ph) / h ** 1.25
+    env = np.minimum(1, u / attack) ** 1.5 * np.minimum(1, np.maximum(0, (dur - u) / release))
+    return sig * env * gain / 2
+
+
 def build_music(total):
-    """Runway / fashion-week house, 122 BPM, A minor: four-on-the-floor kick (enters on bar 2),
-    clap, offbeat hats, rolling sub-bass with sidechain, syncopated Am9 stabs with ping-pong echo,
-    sparse high pluck melody. Fully synthesized."""
-    beat = 60.0 / 122
-    s16 = beat / 4
+    """Dark, severe cinematic bed, 78 BPM, D minor / phrygian: low drone, 8th-note bass ostinato,
+    slow bowed-string chords (Dm - Bb - Gm - A), a sparse mournful line, deep impacts, a quiet strict
+    wood-block pulse and a big hall reverb. Fully synthesized."""
+    beat = 60.0 / 78
     bar = 4 * beat
     nb = int(DUR / bar) + 2
-    L = np.zeros(total + 4 * SR)
+    L = np.zeros(total + 5 * SR)
     R = np.zeros_like(L)
-    Lb = np.zeros_like(L)                                  # bus that gets sidechained (bass + pad)
-    Rb = np.zeros_like(L)
-    rng = np.random.default_rng(21)
+    rng = np.random.default_rng(5)
 
-    def put(sig, at, pan=0.0, bus=False):
+    def put(sig, at, pan=0.0):
         i = int(at * SR)
         sig = sig[: len(L) - i]
-        gl, gr = math.sqrt((1 - pan) / 2), math.sqrt((1 + pan) / 2)
-        (Lb if bus else L)[i:i + len(sig)] += sig * gl
-        (Rb if bus else R)[i:i + len(sig)] += sig * gr
+        L[i:i + len(sig)] += sig * math.sqrt((1 - pan) / 2)
+        R[i:i + len(sig)] += sig * math.sqrt((1 + pan) / 2)
 
-    chords = [[57, 60, 64, 67, 71], [57, 60, 64, 67, 71], [53, 57, 60, 64, 67], [55, 59, 62, 65, 69]]
-    basses = [45, 45, 41, 43]
+    chords = [[50, 57, 62, 65], [46, 53, 62, 65], [43, 55, 62, 70], [45, 52, 61, 64]]   # Dm, Bb, Gm, A
+    roots = [38, 34, 31, 33]
+    mel = {0: [(69, 0, 3.0), (70, 3, 1.0)], 1: [(69, 0, 2.0), (65, 2, 2.0)],
+           2: [(67, 0, 3.0), (65, 3, 1.0)], 3: [(61, 0, 2.0), (62, 2, 2.0)]}                # (midi, beat, beats)
     for b in range(nb):
         t0 = b * bar
-        drop = b >= 1
-        notes = chords[b % 4]
-        # pad (dark, slow, ducked)
-        for x in notes[:4]:
-            for det in (-0.003, 0.003):
-                u = np.arange(int((bar + 0.4) * SR)) / SR
-                p = np.sin(2 * np.pi * midi(x - 12) * (1 + det) * u) * np.minimum(1, u / 0.5) * np.minimum(1, (bar + 0.4 - u) / 0.4)
-                put(p * 0.035, t0, pan=0.3 * det / 0.003, bus=True)
-        # rolling bass on the offbeat 16ths
-        if b >= 1:
-            for k in (2, 6, 10, 14):
-                put(saw_note(midi(basses[b % 4]), s16 * 1.7, 0.30, bright=2.4, nh=10), t0 + k * s16, bus=True)
-            put(saw_note(midi(basses[b % 4] + 12), s16 * 1.2, 0.18, bright=3, nh=8), t0 + 11 * s16, bus=True)
-        # stabs: syncopated 3+3+2+... pattern
-        if b >= 1:
-            for k, vel in ((0, 1.0), (3, 0.8), (6, 0.9), (10, 0.7), (13, 0.6)):
-                for j, x in enumerate(notes):
-                    put(saw_note(midi(x + 12), s16 * 1.4, 0.05 * vel, bright=5, nh=9), t0 + k * s16 + j * 0.006,
-                        pan=-0.4 + 0.2 * j)
-        # high pluck melody (A minor pentatonic), sparse
-        mel = [(1, 81), (6, 79), (9, 76), (12, 72)] if b % 2 == 0 else [(2, 76), (7, 79), (11, 81), (14, 83)]
-        if b >= 1:
-            for k, m in mel:
-                put(saw_note(midi(m), 0.35, 0.055, bright=7, nh=6, atk=0.002), t0 + k * s16, pan=0.45)
-        # kick four-on-the-floor
-        if drop:
-            for k in range(4):
-                n = int(0.3 * SR)
-                u = np.arange(n) / SR
-                ph = 2 * np.pi * np.cumsum(52 * (1 + 3.2 * np.exp(-u * 40))) / SR
-                kick = (np.sin(ph) * np.exp(-u * 11) + 0.35 * np.sin(2 * ph) * np.exp(-u * 18)
-                        + rng.normal(0, 1, n) * np.exp(-u * 300) * 0.22)
-                put(kick * 0.7, t0 + k * beat)
-            for k in (1, 3):                                # clap on 2 and 4
-                n = int(0.22 * SR)
-                u = np.arange(n) / SR
-                c = rng.normal(0, 1, n) * (np.exp(-u * 30) + 0.6 * np.exp(-((u - 0.012) * 90) ** 2))
-                c -= lowpass(c, 900, 1)
-                put(c * 0.10, t0 + k * beat, pan=0.1)
-            for k in range(4):                              # open hat on the offbeat
-                n = int(0.18 * SR)
-                u = np.arange(n) / SR
-                h = rng.normal(0, 1, n) * np.exp(-u * 26)
-                h -= lowpass(h, 6000, 2)
-                put(h * 0.14, t0 + k * beat + beat / 2, pan=-0.15)
-            for k in range(16):                             # ghost 16th hats
-                if k % 4 in (1, 3):
-                    n = int(0.04 * SR)
-                    h = rng.normal(0, 1, n) * np.exp(-np.arange(n) / SR * 120)
-                    h -= lowpass(h, 7000, 1)
-                    put(h * 0.045, t0 + k * s16, pan=0.2)
-        else:
-            # first bar: filtered noise riser into the drop
-            n = int(bar * SR)
-            u = np.linspace(0, 1, n)
-            r = rng.normal(0, 1, n)
-            r -= lowpass(r, 2500, 1)
-            put(r * (u ** 3) * 0.10, t0, bus=False)
-    # sidechain: duck pad/bass on every kick after the drop
-    duck = np.ones_like(L)
-    for b in range(1, nb):
-        for k in range(4):
-            i = int((b * bar + k * beat) * SR)
-            m = int(0.28 * SR)
-            if i + m < len(duck):
-                duck[i:i + m] = np.minimum(duck[i:i + m], 0.15 + 0.85 * (1 - np.exp(-np.arange(m) / SR * 11)))
-    L += Lb * duck
-    R += Rb * duck
-    x = np.stack([L, R], 1)[:total + 2 * SR]
-    # ping-pong echo + room reverb on the whole bed (kept light so kick stays tight)
-    d = int(beat * 0.75 * SR)
-    for rep, g in ((1, 0.28), (2, 0.14)):
-        x[d * rep:, 0] += x[:len(x) - d * rep, 1] * g * 0.5
-        x[d * rep:, 1] += x[:len(x) - d * rep, 0] * g * 0.5
-    x = reverb(x, 1.2, 0.18)[:total]
-    return x * np.minimum(1, np.arange(total) / SR / 0.4)[:, None]
+        ch = chords[b % 4]
+        for j, x in enumerate(ch):                                   # string pad
+            put(string_note(midi(x), bar + 0.9, 0.16 if j else 0.2, attack=0.9, release=1.0),
+                t0, pan=-0.5 + 0.33 * j)
+        put(string_note(midi(roots[b % 4] - 12 + 12), bar + 0.9, 0.22, attack=0.6, nh=6), t0)  # drone
+        for k in range(8):                                           # bass ostinato (8ths)
+            acc = 1.0 if k % 4 == 0 else 0.6
+            put(saw_note(midi(roots[b % 4] + 12), beat * 0.42, 0.20 * acc, bright=2.2, nh=9), t0 + k * beat / 2)
+        for note, bt, ln in mel[b % 4]:                              # mournful line
+            put(string_note(midi(note + 12), ln * beat + 0.4, 0.17, attack=0.35, release=0.5, nh=6, vib=0.006),
+                t0 + bt * beat, pan=0.25)
+        if b % 2 == 0:                                               # deep impact every 2 bars
+            n = int(1.4 * SR)
+            u = np.arange(n) / SR
+            ph = 2 * np.pi * np.cumsum(46 * (1 + 1.8 * np.exp(-u * 18))) / SR
+            boom = (np.sin(ph) + 0.4 * np.sin(2 * ph) + 0.2 * np.sin(3 * ph)) * np.exp(-u * 3.2)
+            boom += rng.normal(0, 1, n) * np.exp(-u * 160) * 0.2
+            put(boom * 0.55, t0)
+        for k in range(4):                                           # strict wood-block pulse
+            n = int(0.06 * SR)
+            u = np.arange(n) / SR
+            wb = (np.sin(2 * np.pi * 900 * u) + 0.5 * np.sin(2 * np.pi * 1700 * u)) * np.exp(-u * 90)
+            put(wb * (0.07 if k % 2 == 0 else 0.04), t0 + k * beat, pan=-0.2)
+    # opening swell + dark noise riser into the first bar
+    n = int(2.0 * SR)
+    u = np.linspace(0, 1, n)
+    r = rng.normal(0, 1, n)
+    r = lowpass(r, 1400, 1)
+    put(r * u ** 2.5 * 0.35, 0.0)
+    x = np.stack([L, R], 1)[:total + 3 * SR]
+    x = reverb(x, 2.4, 0.34)[:total]
+    return x * np.minimum(1, np.arange(total) / SR / 0.3)[:, None]
 
 
 def build_audio(path):
@@ -389,16 +358,14 @@ def build_audio(path):
         i = int(at * SR)
         fx[i:i + len(sig)] += sig[: len(fx) - i]
 
-    for i in range(4):                                  # cards flying in from the right (short, soft)
+    for i in range(4):                                  # cards sweeping in from the right: clear whooshes
         t0 = INTRO_DELAY + i * INTRO_STAGGER
-        add(whoosh(0.42, 900, 5200, 0.8, -0.4 + 0.2 * i, peak=0.25, gain=SFX_GAIN * 0.8, seed=i), t0 + 0.05)
-        add(tick(1400 + 220 * i, 0.09, gain=SFX_GAIN * 0.30), t0 + INTRO_DUR * 0.72)
+        add(whoosh(0.7, 500, 6500, 0.85, -0.5 + 0.25 * i, peak=0.28, gain=SFX_GAIN, seed=i), t0)
     for k, st in enumerate(STEPS):                      # carousel steps
-        add(whoosh(0.5, 700, 5000, 0.7, -0.7, peak=0.45, gain=SFX_GAIN * 0.85, seed=10 + k), st + 0.1)
-        add(tick(1900, 0.09, gain=SFX_GAIN * 0.28), st + STEP_DUR - 0.05)
+        add(whoosh(0.85, 450, 6000, 0.8, -0.8, peak=0.45, gain=SFX_GAIN * 1.1, seed=10 + k), st + 0.02)
     mix = music + fx[:total]
-    mix = np.tanh(mix * 1.2) / np.tanh(1.2)
-    mix *= np.minimum(1, (DUR - np.arange(total) / SR) / 0.8)[:, None]
+    mix = np.tanh(mix * 1.15) / np.tanh(1.15)
+    mix *= np.minimum(1, (DUR - np.arange(total) / SR) / 0.9)[:, None]
     mix *= MASTER_PEAK / (np.max(np.abs(mix)) + 1e-9)
     import wave
     with wave.open(path, "wb") as w:
