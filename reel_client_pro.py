@@ -262,7 +262,7 @@ def main():
     enc.wait()
     subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", silent, "-ss", str(TRACK_START), "-i", track,
                     "-map", "0:v", "-map", "1:a", "-c:v", "copy", "-c:a", "aac", "-b:a", "256k", "-t", "15",
-                    "-af", "afade=t=in:d=0.25,afade=t=out:st=14.5:d=0.5", "-movflags", "+faststart", out],
+                    "-af", "volume=-1dB,afade=t=in:d=0.25,afade=t=out:st=14.5:d=0.5", "-movflags", "+faststart", out],
                    check=True, stdin=subprocess.DEVNULL)
     os.remove(silent)
 
