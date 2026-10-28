@@ -6,32 +6,63 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
 
 (function (N) {
     var SECTION = "NOIR Captions";
-    var VERSION = "0.2.0";
+    var SETTINGS_KEY = "settings.v2";
+    var VERSION = "0.3.0";
+
+    function clone(o) { return N.parseJSON(N.stringify(o)); }
+
+    // Стиль по умолчанию, если пресеты не найдены.
+    var FALLBACK_STYLE = {
+        schema: "noir-style/1", id: "custom", name: "Свой",
+        layout: { reveal: "word", maxWords: 1, maxChars: 28, lineChars: 16, pauseBreak: 0.35, punctBreak: true,
+            stripPunct: true, posX: 50, posY: 18, lineGap: 0.12, wordSpace: 0.28, accentOwnLine: true,
+            safeWidth: 0.9, holdGap: 0.3 },
+        base: { fonts: ["TimesNewRomanPSMT"], size: 200, color: [0.8, 0, 0], tracking: 0, caps: true,
+            strokeWidth: 0, strokeColor: [0, 0, 0], shadow: null, glow: null },
+        accent: { fonts: ["TimesNewRomanPSMT"], size: 200, color: [1, 1, 1], tracking: 0, caps: true,
+            strokeWidth: 0, strokeColor: [0, 0, 0], shadow: null, glow: null },
+        anim: { animIn: "none", inDur: 0.2, animOut: "none", outDur: 0.15, distance: 40, blur: 0, easeInfluence: 80 }
+    };
+    var DEFAULT_SHADOW = { color: [0, 0, 0], opacity: 45, distance: 3, softness: 14 };
 
     var DEFAULTS = {
         language: "ru", model: "large-v3", device: "auto", prompt: "",
-        font: "TimesNewRomanPSMT", fontSize: 200, color: [0.8, 0, 0],
-        strokeWidth: 0, strokeColor: [0, 0, 0], tracking: 0,
-        caps: true, stripPunct: true, posX: 50, posY: 18, safeWidth: 0.9,
-        maxWords: 1, maxChars: 18, pauseBreak: 0.35, punctBreak: true, holdGap: 0.3,
-        animIn: "none", inDur: 0.2, animOut: "none", outDur: 0.15, distance: 80,
-        easeInfluence: 80, replace: true, python: ""
+        replace: true, python: "", presetId: "", style: FALLBACK_STYLE
     };
 
     function loadSettings() {
-        var s = {};
-        for (var k in DEFAULTS) s[k] = DEFAULTS[k];
+        var s = clone(DEFAULTS);
         try {
-            if (app.settings.haveSetting(SECTION, "settings")) {
-                var saved = N.parseJSON(app.settings.getSetting(SECTION, "settings"));
-                for (var k2 in saved) if (DEFAULTS.hasOwnProperty(k2)) s[k2] = saved[k2];
+            if (app.settings.haveSetting(SECTION, SETTINGS_KEY)) {
+                var saved = N.parseJSON(app.settings.getSetting(SECTION, SETTINGS_KEY));
+                for (var k in saved) if (DEFAULTS.hasOwnProperty(k)) s[k] = saved[k];
             }
         } catch (e) {}
         return s;
     }
     function saveSettings(s) {
-        try { app.settings.saveSetting(SECTION, "settings", N.stringify(s)); } catch (e) {}
+        try { app.settings.saveSetting(SECTION, SETTINGS_KEY, N.stringify(s)); } catch (e) {}
     }
+
+    // Пресеты: встроенные (папка проекта) + свои (папка пользователя, не в git).
+    N.userPresetFolder = function () { return Folder(Folder.userData.fsName + "/NOIR Captions/styles"); };
+    N.loadPresets = function (root) {
+        var out = [], dirs = [Folder(root + "/presets/styles"), N.userPresetFolder()];
+        for (var d = 0; d < dirs.length; d++) {
+            if (!dirs[d].exists) continue;
+            var files = dirs[d].getFiles("*.json");
+            for (var i = 0; i < files.length; i++) {
+                try {
+                    var p = N.parseJSON(N.readText(files[i]));
+                    if (p.schema === "noir-style/1" && p.layout && p.base && p.accent && p.anim) {
+                        p.user = d === 1;
+                        out.push(p);
+                    }
+                } catch (e) {}
+            }
+        }
+        return out;
+    };
 
     function num(txt, def, min, max) {
         var v = parseFloat(String(txt).replace(",", "."));
@@ -40,13 +71,12 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         if (max !== undefined && v > max) v = max;
         return v;
     }
-
     function hexToRgb(h) { return [((h >> 16) & 255) / 255, ((h >> 8) & 255) / 255, (h & 255) / 255]; }
     function rgbToHex(c) {
         return (Math.round(c[0] * 255) << 16) | (Math.round(c[1] * 255) << 8) | Math.round(c[2] * 255);
     }
 
-    // Список шрифтов: Font API есть с AE 24.0. В старых — только ручной ввод/взять со слоя.
+    // Список шрифтов: Font API есть с AE 24.0. В старых — ввод PostScript-имени / взять со слоя.
     function getFontFamilies() {
         var fams = [];
         try {
@@ -64,8 +94,11 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
     }
 
     N.buildPanel = function (thisObj, root) {
+        var firstRun = !app.settings.haveSetting(SECTION, SETTINGS_KEY);
         var S = loadSettings();
-        var state = { data: null, link: null, resultFile: null };
+        var presets = N.loadPresets(root);
+        // syncing: идёт программное заполнение контролов — их onChange не считаются правкой
+        var state = { data: null, link: null, target: "base", syncing: false };
 
         var win = (thisObj instanceof Panel) ? thisObj
             : new Window("palette", "NOIR CAPTIONS", undefined, { resizeable: true });
@@ -79,8 +112,9 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         var tSpeech = tabs.add("tab", undefined, "Речь");
         var tText = tabs.add("tab", undefined, "Текст");
         var tStyle = tabs.add("tab", undefined, "Стиль");
+        var tLayout = tabs.add("tab", undefined, "Раскладка");
         var tAnim = tabs.add("tab", undefined, "Анимация");
-        var all = [tSpeech, tText, tStyle, tAnim];
+        var all = [tSpeech, tText, tStyle, tLayout, tAnim];
         for (var ti = 0; ti < all.length; ti++) {
             all[ti].orientation = "column";
             all[ti].alignChildren = ["fill", "top"];
@@ -94,7 +128,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             g.alignChildren = ["left", "center"];
             if (label) {
                 var st = g.add("statictext", undefined, label);
-                st.preferredSize.width = labelWidth || 90;
+                st.preferredSize.width = labelWidth || 95;
             }
             return g;
         }
@@ -102,32 +136,38 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             var labels = [];
             for (var i = 0; i < items.length; i++) labels.push(items[i].label);
             var dd = parent.add("dropdownlist", undefined, labels);
-            dd.selection = 0;
-            for (var j = 0; j < items.length; j++) if (items[j].id === selectedId) dd.selection = j;
             dd.alignment = ["fill", "center"];
+            selectId(dd, items, selectedId);
             return dd;
         }
+        function selectId(dd, items, id) {
+            var idx = 0;
+            for (var j = 0; j < items.length; j++) if (items[j].id === id) idx = j;
+            dd.selection = idx;
+        }
         function idOf(dd, items) { return items[dd.selection ? dd.selection.index : 0].id; }
+        function field(parent, value, chars) {
+            var e = parent.add("edittext", undefined, String(value));
+            e.characters = chars || 4;
+            return e;
+        }
 
-        // ---------------- Речь ----------------
+        // ================= Речь =================
         var LANGS = [{ id: "ru", label: "Русский" }, { id: "auto", label: "Авто (определить)" },
             { id: "en", label: "English" }];
         var DEVICES = [{ id: "auto", label: "Авто (GPU, если есть)" }, { id: "cuda", label: "GPU (CUDA)" },
             { id: "cpu", label: "CPU" }];
 
-        var rLang = row(tSpeech, "Язык");
-        var ddLang = dropdown(rLang, LANGS, S.language);
-        var rModel = row(tSpeech, "Модель");
-        var ddModel = dropdown(rModel, N.MODELS, S.model);
-        var rDev = row(tSpeech, "Устройство");
-        var ddDev = dropdown(rDev, DEVICES, S.device);
+        var ddLang = dropdown(row(tSpeech, "Язык"), LANGS, S.language);
+        var ddModel = dropdown(row(tSpeech, "Модель"), N.MODELS, S.model);
+        var ddDev = dropdown(row(tSpeech, "Устройство"), DEVICES, S.device);
         var rPrompt = row(tSpeech, "Имена/термины");
         var etPrompt = rPrompt.add("edittext", undefined, S.prompt);
         etPrompt.alignment = ["fill", "center"];
         etPrompt.helpTip = "Подсказка модели: имена, бренды, термины через запятую";
-
-        var hint = tSpeech.add("statictext", undefined,
-            "Выделите в таймлайне слой со звуком и нажмите «Распознать».", { multiline: true });
+        tSpeech.add("statictext", undefined,
+            "Выделите в таймлайне слой со звуком и нажмите «Распознать речь». " +
+            "Для английских и смешанных роликов выберите язык «Авто».", { multiline: true });
         var rBtns = tSpeech.add("group");
         var btnRecognize = rBtns.add("button", undefined, "Распознать речь");
         var btnCancel = rBtns.add("button", undefined, "Отмена");
@@ -138,9 +178,11 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         var stStatus = tSpeech.add("statictext", undefined, "Готов", { multiline: true });
         stStatus.preferredSize.height = 44;
 
-        // ---------------- Текст ----------------
+        // ================= Текст =================
         tText.add("statictext", undefined,
-            "Одна строка = одна фраза. Правьте слова; не добавляйте/не удаляйте строки.", { multiline: true });
+            "Одна строка = одна фраза распознавания. Правьте слова внутри строк.\n" +
+            "*слово* или *два слова* — акцент (свой стиль).   | — начать новую фразу здесь.",
+            { multiline: true });
         var etText = tText.add("edittext", undefined, "", { multiline: true, scrolling: true, wantReturn: true });
         etText.preferredSize = [260, 220];
         etText.alignment = ["fill", "fill"];
@@ -148,191 +190,346 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         var btnSave = rTextBtns.add("button", undefined, "Сохранить JSON…");
         var btnReset = rTextBtns.add("button", undefined, "Сбросить правки");
 
-        // ---------------- Стиль ----------------
+        // ================= Стиль =================
+        var rPreset = row(tStyle, "Пресет", 60);
+        var ddPreset = rPreset.add("dropdownlist", undefined, []);
+        ddPreset.alignment = ["fill", "center"];
+        var btnSavePreset = rPreset.add("button", undefined, "Сохранить…");
+        var stPresetDesc = tStyle.add("statictext", undefined, "", { multiline: true });
+        stPresetDesc.preferredSize.height = 30;
+
+        var rTarget = row(tStyle, "Настраиваю", 95);
+        var rbBase = rTarget.add("radiobutton", undefined, "Обычные слова");
+        var rbAccent = rTarget.add("radiobutton", undefined, "*Акцент*");
+        rbBase.value = true;
+
+        var pnlText = tStyle.add("panel", undefined, "");
+        pnlText.alignChildren = ["fill", "top"];
+        pnlText.margins = [8, 10, 8, 8];
         var families = getFontFamilies();
-        var rFont = row(tStyle, "Шрифт");
-        var stFont = rFont.add("statictext", undefined, S.font);
+        var rFont = row(pnlText, "Шрифт");
+        var stFont = rFont.add("statictext", undefined, "");
         stFont.alignment = ["fill", "center"];
-        var ddFamily = null, ddStyle = null, etFilter = null;
+        var ddFamily = null, ddStyle = null, etFilter = null, etPs = null;
         if (families) {
-            var rFilter = row(tStyle, "Поиск");
-            etFilter = rFilter.add("edittext", undefined, "");
+            etFilter = row(pnlText, "Поиск").add("edittext", undefined, "");
             etFilter.alignment = ["fill", "center"];
-            var rFam = row(tStyle, "Семейство");
-            ddFamily = rFam.add("dropdownlist", undefined, []);
+            ddFamily = row(pnlText, "Семейство").add("dropdownlist", undefined, []);
             ddFamily.alignment = ["fill", "center"];
-            var rSty = row(tStyle, "Начертание");
-            ddStyle = rSty.add("dropdownlist", undefined, []);
+            ddStyle = row(pnlText, "Начертание").add("dropdownlist", undefined, []);
             ddStyle.alignment = ["fill", "center"];
         } else {
-            var rPs = row(tStyle, "PostScript");
-            var etPs = rPs.add("edittext", undefined, S.font);
+            etPs = row(pnlText, "PostScript").add("edittext", undefined, "");
             etPs.alignment = ["fill", "center"];
-            etPs.onChange = function () { S.font = etPs.text; stFont.text = S.font; saveSettings(S); };
         }
-        var btnFromLayer = tStyle.add("button", undefined, "Взять стиль с выделенного текстового слоя");
-
-        var rSize = row(tStyle, "Размер");
-        var etSize = rSize.add("edittext", undefined, String(S.fontSize));
-        etSize.characters = 5;
+        var btnFromLayer = pnlText.add("button", undefined, "Взять стиль с выделенного текстового слоя");
+        var rSize = row(pnlText, "Размер");
+        var etSize = field(rSize, 0, 5);
         rSize.add("statictext", undefined, "Трекинг");
-        var etTrack = rSize.add("edittext", undefined, String(S.tracking));
-        etTrack.characters = 5;
-
-        var rColor = row(tStyle, "Цвет");
+        var etTrack = field(rSize, 0, 5);
+        var cbCaps = rSize.add("checkbox", undefined, "КАПС");
+        var rColor = row(pnlText, "Цвет");
         var swatch = rColor.add("panel");
         swatch.preferredSize = [40, 18];
         var btnColor = rColor.add("button", undefined, "Выбрать…");
-        var rStroke = row(tStyle, "Обводка, px");
-        var etStroke = rStroke.add("edittext", undefined, String(S.strokeWidth));
-        etStroke.characters = 4;
+        var rStroke = row(pnlText, "Обводка, px");
+        var etStroke = field(rStroke, 0, 4);
         var swatchStroke = rStroke.add("panel");
         swatchStroke.preferredSize = [40, 18];
         var btnStrokeColor = rStroke.add("button", undefined, "Цвет…");
+        var rFx = row(pnlText, "Эффекты");
+        var cbShadow = rFx.add("checkbox", undefined, "Тень");
+        var cbGlow = rFx.add("checkbox", undefined, "Свечение");
+        rFx.add("statictext", undefined, "размер");
+        var etGlow = field(rFx, 30, 4);
 
-        var rCase = row(tStyle, "");
-        var cbCaps = rCase.add("checkbox", undefined, "КАПС");
-        cbCaps.value = S.caps;
-        var cbStrip = rCase.add("checkbox", undefined, "Убрать пунктуацию");
-        cbStrip.value = S.stripPunct;
-
-        var rPos = row(tStyle, "Позиция X/Y, %");
-        var etPosX = rPos.add("edittext", undefined, String(S.posX));
-        etPosX.characters = 4;
-        var etPosY = rPos.add("edittext", undefined, String(S.posY));
-        etPosY.characters = 4;
-
-        var pnlGroup = tStyle.add("panel", undefined, "Группировка");
-        pnlGroup.alignChildren = ["fill", "top"];
-        var rWords = row(pnlGroup, "Слов на экране");
-        var etMaxWords = rWords.add("edittext", undefined, String(S.maxWords));
-        etMaxWords.characters = 3;
-        rWords.add("statictext", undefined, "Макс. символов");
-        var etMaxChars = rWords.add("edittext", undefined, String(S.maxChars));
-        etMaxChars.characters = 3;
-        var rBreak = row(pnlGroup, "Разрыв на паузе, с");
-        var etPause = rBreak.add("edittext", undefined, String(S.pauseBreak));
-        etPause.characters = 4;
+        // ================= Раскладка =================
+        var REVEALS = [{ id: "word", label: "Слова появляются по очереди" },
+            { id: "group", label: "Фраза появляется целиком" }];
+        var ddReveal = dropdown(row(tLayout, "Появление"), REVEALS, "word");
+        var rWords = row(tLayout, "Слов на экране");
+        var etMaxWords = field(rWords, 1, 3);
+        rWords.add("statictext", undefined, "макс. символов");
+        var etMaxChars = field(rWords, 28, 3);
+        var rLine = row(tLayout, "Символов в строке");
+        var etLineChars = field(rLine, 16, 3);
+        rLine.add("statictext", undefined, "(0 — без переноса)");
+        var cbAccentLine = tLayout.add("checkbox", undefined, "Акцентные слова — отдельной строкой");
+        var rPos = row(tLayout, "Позиция X/Y, %");
+        var etPosX = field(rPos, 50, 4);
+        var etPosY = field(rPos, 50, 4);
+        var rGap = row(tLayout, "Межстрочный");
+        var etLineGap = field(rGap, 0.12, 4);
+        rGap.add("statictext", undefined, "пробел");
+        var etWordSpace = field(rGap, 0.28, 4);
+        var rBreak = row(tLayout, "Разрыв на паузе, с");
+        var etPause = field(rBreak, 0.35, 4);
         var cbPunctBreak = rBreak.add("checkbox", undefined, "и на . , ! ?");
-        cbPunctBreak.value = S.punctBreak;
+        var cbStrip = tLayout.add("checkbox", undefined, "Убрать пунктуацию из субтитров");
 
-        // ---------------- Анимация ----------------
-        var rIn = row(tAnim, "Появление");
-        var ddIn = dropdown(rIn, N.ANIM_IN, S.animIn);
+        // ================= Анимация =================
+        var ddIn = dropdown(row(tAnim, "Появление"), N.ANIM_IN, "none");
         var rInDur = row(tAnim, "  длит., с");
-        var etInDur = rInDur.add("edittext", undefined, String(S.inDur));
-        etInDur.characters = 5;
-        var rOut = row(tAnim, "Исчезновение");
-        var ddOut = dropdown(rOut, N.ANIM_OUT, S.animOut);
+        var etInDur = field(rInDur, 0.2, 5);
+        var ddOut = dropdown(row(tAnim, "Исчезновение"), N.ANIM_OUT, "none");
         var rOutDur = row(tAnim, "  длит., с");
-        var etOutDur = rOutDur.add("edittext", undefined, String(S.outDur));
-        etOutDur.characters = 5;
+        var etOutDur = field(rOutDur, 0.15, 5);
         var rDist = row(tAnim, "Сдвиг, px");
-        var etDist = rDist.add("edittext", undefined, String(S.distance));
-        etDist.characters = 5;
-        rDist.add("statictext", undefined, "Плавность, %");
-        var etEase = rDist.add("edittext", undefined, String(S.easeInfluence));
-        etEase.characters = 4;
+        var etDist = field(rDist, 40, 5);
+        rDist.add("statictext", undefined, "Blur, px");
+        var etBlur = field(rDist, 0, 4);
+        var rEase = row(tAnim, "Плавность, %");
+        var etEase = field(rEase, 80, 4);
         tAnim.add("statictext", undefined,
-            "Для коротких слов вход и выход автоматически укорачиваются.", { multiline: true });
+            "Размеры заданы для кадра шириной 1080 и масштабируются под композицию. " +
+            "У коротких слов вход и выход автоматически укорачиваются.", { multiline: true });
 
-        // ---------------- Низ панели ----------------
+        // ================= низ =================
         var cbReplace = win.add("checkbox", undefined, "Заменить ранее созданные субтитры в этой композиции");
         cbReplace.value = S.replace;
         var btnGenerate = win.add("button", undefined, "Создать субтитры");
         btnGenerate.preferredSize.height = 30;
-        var stFooter = win.add("statictext", undefined, "NOIR CAPTIONS " + VERSION);
+        win.add("statictext", undefined, "NOIR CAPTIONS " + VERSION);
 
-        // ---------------- логика UI ----------------
+        // ================= логика =================
         function paintSwatch(p, c) {
             try {
                 p.graphics.backgroundColor = p.graphics.newBrush(p.graphics.BrushType.SOLID_COLOR, [c[0], c[1], c[2], 1]);
             } catch (e) {}
         }
-        paintSwatch(swatch, S.color);
-        paintSwatch(swatchStroke, S.strokeColor);
-
         function setStatus(text, pct) {
             stStatus.text = text;
             if (pct !== undefined && pct !== null) progress.value = Math.round(pct * 100);
         }
+        function tgt() { return S.style[state.target]; }
+
+        function fillPresets() {
+            ddPreset.removeAll();
+            ddPreset.add("item", "— свой (текущие настройки) —");
+            var sel = 0;
+            for (var i = 0; i < presets.length; i++) {
+                ddPreset.add("item", (presets[i].user ? "★ " : "") + presets[i].name);
+                if (presets[i].id === S.presetId) sel = i + 1;
+            }
+            ddPreset._lock = true;
+            ddPreset.selection = sel;
+            ddPreset._lock = false;
+        }
 
         function fillFamilies() {
             if (!families) return;
-            var q = etFilter.text.toLowerCase(), sel = 0, count = 0;
+            var cur = tgt().fonts[0], q = etFilter.text.toLowerCase(), sel = -1, count = 0;
             ddFamily.removeAll();
             ddFamily._fams = [];
             for (var i = 0; i < families.length && count < 400; i++) {
-                if (q && families[i].name.toLowerCase().indexOf(q) === -1) continue;
+                var hit = false;
+                for (var j = 0; j < families[i].styles.length; j++) if (families[i].styles[j].ps === cur) hit = true;
+                if (q && families[i].name.toLowerCase().indexOf(q) === -1 && !hit) continue;
                 ddFamily.add("item", families[i].name);
                 ddFamily._fams.push(families[i]);
-                for (var j = 0; j < families[i].styles.length; j++)
-                    if (families[i].styles[j].ps === S.font) sel = count;
+                if (hit) sel = count;
                 count++;
             }
-            if (count) ddFamily.selection = sel;
+            ddFamily._lock = true;
+            if (count) ddFamily.selection = sel >= 0 ? sel : 0;
+            ddFamily._lock = false;
+            fillStyles(true);
         }
-        function fillStyles() {
+        function fillStyles(keepFont) {
             if (!ddFamily || !ddFamily.selection) return;
-            var fam = ddFamily._fams[ddFamily.selection.index], sel = 0;
+            var fam = ddFamily._fams[ddFamily.selection.index], sel = 0, cur = tgt().fonts[0];
             ddStyle.removeAll();
             for (var j = 0; j < fam.styles.length; j++) {
                 ddStyle.add("item", fam.styles[j].style);
-                if (fam.styles[j].ps === S.font) sel = j;
+                if (fam.styles[j].ps === cur) sel = j;
             }
             ddStyle._fam = fam;
+            ddStyle._lock = !!keepFont;
             ddStyle.selection = sel;
+            ddStyle._lock = false;
         }
-        if (families) {
-            etFilter.onChanging = function () { fillFamilies(); };
-            ddFamily.onChange = function () { fillStyles(); };
-            ddStyle.onChange = function () {
-                if (!ddStyle.selection) return;
-                S.font = ddStyle._fam.styles[ddStyle.selection.index].ps;
-                stFont.text = S.font;
-                saveSettings(S);
-            };
-            fillFamilies();
+        function setFont(ps) {
+            var t = tgt(), rest = [];
+            for (var i = 0; i < t.fonts.length; i++) if (t.fonts[i] !== ps) rest.push(t.fonts[i]);
+            t.fonts = [ps].concat(rest); // остальные — запасные, если шрифта нет на другом ПК
+            stFont.text = ps;
+            markCustom();
         }
 
+        // Показать стиль в контролах
+        function syncTextUI() {
+            var t = tgt();
+            pnlText.text = state.target === "base" ? "Обычные слова" : "Акцентные слова (*в звёздочках*)";
+            stFont.text = t.fonts.join(", ");
+            if (etPs) etPs.text = t.fonts[0] || "";
+            if (families) fillFamilies();
+            etSize.text = String(t.size);
+            etTrack.text = String(t.tracking || 0);
+            cbCaps.value = !!t.caps;
+            etStroke.text = String(t.strokeWidth || 0);
+            paintSwatch(swatch, t.color);
+            paintSwatch(swatchStroke, t.strokeColor || [0, 0, 0]);
+            cbShadow.value = !!t.shadow;
+            cbGlow.value = !!t.glow;
+            etGlow.text = String(t.glow ? t.glow.softness : 30);
+        }
+        function syncUI() {
+            var L = S.style.layout, A = S.style.anim;
+            state.syncing = true;
+            syncTextUI();
+            selectId(ddReveal, REVEALS, L.reveal);
+            etMaxWords.text = String(L.maxWords);
+            etMaxChars.text = String(L.maxChars);
+            etLineChars.text = String(L.lineChars);
+            cbAccentLine.value = !!L.accentOwnLine;
+            etPosX.text = String(L.posX);
+            etPosY.text = String(L.posY);
+            etLineGap.text = String(L.lineGap);
+            etWordSpace.text = String(L.wordSpace);
+            etPause.text = String(L.pauseBreak);
+            cbPunctBreak.value = !!L.punctBreak;
+            cbStrip.value = !!L.stripPunct;
+            selectId(ddIn, N.ANIM_IN, A.animIn);
+            etInDur.text = String(A.inDur);
+            selectId(ddOut, N.ANIM_OUT, A.animOut);
+            etOutDur.text = String(A.outDur);
+            etDist.text = String(A.distance);
+            etBlur.text = String(A.blur);
+            etEase.text = String(A.easeInfluence);
+            var p = presetById(S.presetId);
+            stPresetDesc.text = p ? (p.description || "") : "Свои настройки.";
+            state.syncing = false;
+        }
+
+        // Прочитать контролы в S
+        function readTextUI() {
+            var t = tgt();
+            if (etPs && etPs.text && etPs.text !== t.fonts[0]) setFont(etPs.text);
+            t.size = num(etSize.text, t.size, 4, 2000);
+            t.tracking = num(etTrack.text, 0, -1000, 3000);
+            t.caps = cbCaps.value;
+            t.strokeWidth = num(etStroke.text, 0, 0, 200);
+            if (cbShadow.value && !t.shadow) t.shadow = clone(DEFAULT_SHADOW);
+            if (!cbShadow.value) t.shadow = null;
+            var gs = num(etGlow.text, 30, 1, 500);
+            if (cbGlow.value) t.glow = { color: t.glow && t.glow.color ? t.glow.color : t.color, opacity: 85, softness: gs };
+            else t.glow = null;
+        }
         function readUI() {
             S.language = idOf(ddLang, LANGS);
             S.model = idOf(ddModel, N.MODELS);
             S.device = idOf(ddDev, DEVICES);
             S.prompt = etPrompt.text;
-            S.fontSize = num(etSize.text, DEFAULTS.fontSize, 4, 2000);
-            S.tracking = num(etTrack.text, 0, -1000, 3000);
-            S.strokeWidth = num(etStroke.text, 0, 0, 200);
-            S.caps = cbCaps.value;
-            S.stripPunct = cbStrip.value;
-            S.posX = num(etPosX.text, 50, -50, 150);
-            S.posY = num(etPosY.text, 18, -50, 150);
-            S.maxWords = Math.round(num(etMaxWords.text, 1, 1, 20));
-            S.maxChars = Math.round(num(etMaxChars.text, 18, 1, 200));
-            S.pauseBreak = num(etPause.text, 0.35, 0.05, 10);
-            S.punctBreak = cbPunctBreak.value;
-            S.animIn = idOf(ddIn, N.ANIM_IN);
-            S.animOut = idOf(ddOut, N.ANIM_OUT);
-            S.inDur = num(etInDur.text, 0.2, 0, 5);
-            S.outDur = num(etOutDur.text, 0.15, 0, 5);
-            S.distance = num(etDist.text, 80, 0, 5000);
-            S.easeInfluence = num(etEase.text, 80, 0.1, 100);
             S.replace = cbReplace.value;
+            readTextUI();
+            var L = S.style.layout, A = S.style.anim;
+            L.reveal = idOf(ddReveal, REVEALS);
+            L.maxWords = Math.round(num(etMaxWords.text, 1, 1, 30));
+            L.maxChars = Math.round(num(etMaxChars.text, 28, 1, 300));
+            L.lineChars = Math.round(num(etLineChars.text, 0, 0, 300));
+            L.accentOwnLine = cbAccentLine.value;
+            L.posX = num(etPosX.text, 50, -50, 150);
+            L.posY = num(etPosY.text, 50, -50, 150);
+            L.lineGap = num(etLineGap.text, 0.12, -1, 5);
+            L.wordSpace = num(etWordSpace.text, 0.28, 0, 3);
+            L.pauseBreak = num(etPause.text, 0.35, 0.05, 10);
+            L.punctBreak = cbPunctBreak.value;
+            L.stripPunct = cbStrip.value;
+            A.animIn = idOf(ddIn, N.ANIM_IN);
+            A.animOut = idOf(ddOut, N.ANIM_OUT);
+            A.inDur = num(etInDur.text, 0.2, 0, 5);
+            A.outDur = num(etOutDur.text, 0.15, 0, 5);
+            A.distance = num(etDist.text, 40, 0, 5000);
+            A.blur = num(etBlur.text, 0, 0, 500);
+            A.easeInfluence = num(etEase.text, 80, 0.1, 100);
             saveSettings(S);
         }
 
+        function presetById(id) {
+            for (var i = 0; i < presets.length; i++) if (presets[i].id === id) return presets[i];
+            return null;
+        }
+        // Любая ручная правка — это уже «свой» стиль (пресет на диске не меняется).
+        function markCustom() {
+            if (state.syncing || !S.presetId) return;
+            S.presetId = "";
+            fillPresets();
+            stPresetDesc.text = "Свои настройки (на основе пресета).";
+        }
+
+        ddPreset.onChange = function () {
+            if (ddPreset._lock || !ddPreset.selection) return;
+            var i = ddPreset.selection.index;
+            if (i === 0) { S.presetId = ""; syncUI(); saveSettings(S); return; }
+            var p = presets[i - 1];
+            S.style = { layout: clone(p.layout), base: clone(p.base), accent: clone(p.accent), anim: clone(p.anim) };
+            S.presetId = p.id;
+            syncUI();
+            saveSettings(S);
+        };
+
+        btnSavePreset.onClick = function () {
+            readUI();
+            var name = prompt("Название стиля:", "Мой стиль", "NOIR Captions");
+            if (!name) return;
+            var id = "user-" + name.toLowerCase().replace(/[^a-z0-9а-яё]+/g, "-").replace(/^-+|-+$/g, "") ||
+                "user-" + new Date().getTime();
+            var p = { schema: "noir-style/1", id: id, name: name, description: "Свой стиль",
+                layout: S.style.layout, base: S.style.base, accent: S.style.accent, anim: S.style.anim };
+            var dir = N.userPresetFolder();
+            if (!dir.exists) dir.create();
+            try {
+                N.writeText(File(dir.fsName + "/" + id + ".json"), N.stringify(p));
+            } catch (e) { alert(e.message, "NOIR Captions"); return; }
+            presets = N.loadPresets(root);
+            S.presetId = id;
+            fillPresets();
+            syncUI();
+            saveSettings(S);
+            setStatus("Стиль сохранён: " + dir.fsName);
+        };
+
+        function switchTarget(t) {
+            readTextUI();
+            state.target = t;
+            state.syncing = true;
+            syncTextUI();
+            state.syncing = false;
+        }
+        rbBase.onClick = function () { switchTarget("base"); };
+        rbAccent.onClick = function () { switchTarget("accent"); };
+
+        if (families) {
+            etFilter.onChanging = function () { fillFamilies(); };
+            ddFamily.onChange = function () { if (!ddFamily._lock) fillStyles(false); };
+            ddStyle.onChange = function () {
+                if (ddStyle._lock || !ddStyle.selection) return;
+                setFont(ddStyle._fam.styles[ddStyle.selection.index].ps);
+                saveSettings(S);
+            };
+        }
+        var editable = [etSize, etTrack, etStroke, etGlow, etMaxWords, etMaxChars, etLineChars, etPosX, etPosY,
+            etLineGap, etWordSpace, etPause, etInDur, etOutDur, etDist, etBlur, etEase];
+        for (var ei = 0; ei < editable.length; ei++) editable[ei].onChange = function () { markCustom(); };
+        var toggles = [cbCaps, cbShadow, cbGlow, cbAccentLine, cbPunctBreak, cbStrip];
+        for (var ci = 0; ci < toggles.length; ci++) toggles[ci].onClick = function () { markCustom(); };
+        ddReveal.onChange = ddIn.onChange = ddOut.onChange = function () { markCustom(); };
+
         btnColor.onClick = function () {
-            var c = $.colorPicker(rgbToHex(S.color));
+            var c = $.colorPicker(rgbToHex(tgt().color));
             if (c < 0) return;
-            S.color = hexToRgb(c);
-            paintSwatch(swatch, S.color);
+            tgt().color = hexToRgb(c);
+            if (tgt().glow) tgt().glow.color = tgt().color;
+            paintSwatch(swatch, tgt().color);
+            markCustom();
             saveSettings(S);
         };
         btnStrokeColor.onClick = function () {
-            var c = $.colorPicker(rgbToHex(S.strokeColor));
+            var c = $.colorPicker(rgbToHex(tgt().strokeColor || [0, 0, 0]));
             if (c < 0) return;
-            S.strokeColor = hexToRgb(c);
-            paintSwatch(swatchStroke, S.strokeColor);
+            tgt().strokeColor = hexToRgb(c);
+            paintSwatch(swatchStroke, tgt().strokeColor);
+            markCustom();
             saveSettings(S);
         };
 
@@ -340,35 +537,29 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             var comp = app.project.activeItem;
             var l = (comp instanceof CompItem && comp.selectedLayers.length) ? comp.selectedLayers[0] : null;
             if (!(l instanceof TextLayer)) { alert("Выделите текстовый слой.", "NOIR Captions"); return; }
-            var d = l.property("Source Text").value;
-            S.font = d.font;
-            S.fontSize = Math.round(d.fontSize);
-            S.tracking = d.tracking;
-            if (d.applyFill) S.color = d.fillColor;
-            S.strokeWidth = d.applyStroke ? d.strokeWidth : 0;
-            if (d.applyStroke) S.strokeColor = d.strokeColor;
-            stFont.text = S.font;
-            etSize.text = String(S.fontSize);
-            etTrack.text = String(S.tracking);
-            etStroke.text = String(S.strokeWidth);
-            paintSwatch(swatch, S.color);
-            paintSwatch(swatchStroke, S.strokeColor);
-            if (families) fillFamilies();
+            var d = l.property("Source Text").value, t = tgt();
+            setFont(d.font);
+            // размер переводим в шкалу кадра 1080
+            t.size = Math.round(d.fontSize * N.REF_WIDTH / comp.width);
+            t.tracking = d.tracking;
+            if (d.applyFill) t.color = d.fillColor;
+            t.strokeWidth = d.applyStroke ? Math.round(d.strokeWidth * N.REF_WIDTH / comp.width) : 0;
+            if (d.applyStroke) t.strokeColor = d.strokeColor;
+            syncTextUI();
             saveSettings(S);
         };
 
-        function setData(data, link, file) {
+        function setData(data, link) {
             state.data = data;
             state.link = link;
-            state.resultFile = file;
             etText.text = N.toEditorText(data);
             var n = 0;
             for (var i = 0; i < data.segments.length; i++) n += data.segments[i].words.length;
             var warn = "";
-            for (var w = 0; w < data.warnings.length; w++)
+            for (var w = 0; w < (data.warnings || []).length; w++)
                 if (data.warnings[w].code === "gpu_failed") warn = "\nGPU не сработала — распознано на CPU.";
-            setStatus("Готово: слов — " + n + ", язык " + data.language + ", " +
-                data.engine.model + " / " + data.engine.device + "." + warn +
+            var eng = data.engine ? data.engine.model + " / " + data.engine.device : "";
+            setStatus("Готово: слов — " + n + ", язык " + data.language + (eng ? ", " + eng : "") + "." + warn +
                 (n ? "\nПроверьте текст на вкладке «Текст»." : "\nРечь не найдена."), 1);
         }
 
@@ -391,10 +582,10 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
                         if (st.device) msg += " · " + (st.device === "cuda" ? "GPU" : "CPU");
                         setStatus(msg, st.progress);
                     },
-                    onDone: function (data, s, file) {
+                    onDone: function (data, s) {
                         btnRecognize.enabled = true;
                         btnCancel.enabled = false;
-                        setData(data, s.link, file);
+                        setData(data, s.link);
                     },
                     onError: function (msg) {
                         btnRecognize.enabled = true;
@@ -424,11 +615,11 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             try {
                 var data = N.parseJSON(N.readText(f));
                 if (data.schema !== "noir-captions/1") throw new Error("Это не файл NOIR CAPTIONS.");
-                // Привязка к аудиослою: если он выделен — к нему, иначе время = время композиции.
+                // Привязка: выделенный аудиослой, иначе сохранённая в файле, иначе время = время композиции.
                 var link = null;
                 try { link = N.getAudioSource().link; } catch (e) {}
-                if (data.link && !link) link = data.link;
-                setData(data, link, f);
+                if (!link && data.link) link = data.link;
+                setData(data, link);
                 if (!link) setStatus(stStatus.text + "\nАудиослой не выделен: время JSON = время композиции.");
             } catch (e2) { alert("Не удалось открыть: " + e2.message, "NOIR Captions"); }
         };
@@ -438,13 +629,12 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             var f = File.saveDialog("Сохранить результат NOIR", "*.json");
             if (!f) return;
             try {
-                var warnings = [];
-                var words = N.applyEdits(state.data, etText.text, warnings);
-                var out = N.parseJSON(N.stringify(state.data));
-                // Сохраняем правки: пересобираем сегменты из отредактированных слов.
+                var words = N.applyEdits(state.data, etText.text, []);
+                var out = clone(state.data);
                 for (var s = 0; s < out.segments.length; s++) out.segments[s].words = [];
                 for (var i = 0; i < words.length; i++) out.segments[words[i].seg].words.push({
-                    text: words[i].text, start: words[i].start, end: words[i].end
+                    text: words[i].text, start: words[i].start, end: words[i].end,
+                    accent: words[i].accent || undefined, breakBefore: words[i].breakBefore || undefined
                 });
                 out.link = state.link;
                 N.writeText(f, N.stringify(out));
@@ -452,9 +642,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             } catch (e) { alert(e.message, "NOIR Captions"); }
         };
 
-        btnReset.onClick = function () {
-            if (state.data) etText.text = N.toEditorText(state.data);
-        };
+        btnReset.onClick = function () { if (state.data) etText.text = N.toEditorText(state.data); };
 
         // Время старта аудиослоя берём текущее: если слой сдвинули после
         // распознавания, субтитры всё равно встанут синхронно.
@@ -480,36 +668,29 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             if (!state.data) { alert("Сначала распознайте речь или откройте JSON.", "NOIR Captions"); return; }
             var comp = app.project.activeItem;
             if (!(comp instanceof CompItem)) { alert("Откройте композицию.", "NOIR Captions"); return; }
-            var warnings = [];
-            var words;
+            var warnings = [], words;
             try { words = N.applyEdits(state.data, etText.text, warnings); }
             catch (e) { alert(e.message, "NOIR Captions"); return; }
 
+            var L = S.style.layout;
             var groups = N.groupWords(words, {
-                maxWords: S.maxWords, maxChars: S.maxChars, pauseBreak: S.pauseBreak,
-                punctBreak: S.punctBreak, stripPunct: S.stripPunct, caps: S.caps
+                maxWords: L.maxWords, maxChars: L.maxChars, pauseBreak: L.pauseBreak,
+                punctBreak: L.punctBreak, stripPunct: L.stripPunct
             });
-            N.timeGroups(groups, S.holdGap, 0.08);
+            N.timeGroups(groups, L.holdGap, 0.08);
             var map = resolveLink(comp);
             if (map.note) warnings.push(map.note);
             for (var i = 0; i < groups.length; i++) {
-                groups[i].compStart = N.sourceToComp(groups[i].start, map.startTime, map.stretch);
-                groups[i].compOut = N.sourceToComp(groups[i].outTime, map.startTime, map.stretch);
+                var g = groups[i];
+                g.compStart = N.sourceToComp(g.start, map.startTime, map.stretch);
+                g.compOut = N.sourceToComp(g.outTime, map.startTime, map.stretch);
+                for (var j = 0; j < g.words.length; j++)
+                    g.words[j].compStart = N.sourceToComp(g.words[j].start, map.startTime, map.stretch);
             }
-
-            var style = {
-                font: S.font, fontSize: S.fontSize, color: S.color, tracking: S.tracking,
-                strokeWidth: S.strokeWidth, strokeColor: S.strokeColor,
-                posX: S.posX, posY: S.posY, safeWidth: S.safeWidth
-            };
-            var anim = {
-                animIn: S.animIn, animOut: S.animOut, inDur: S.inDur, outDur: S.outDur,
-                distance: S.distance, easeInfluence: S.easeInfluence
-            };
 
             app.beginUndoGroup("NOIR Captions: создать субтитры");
             try {
-                var res = N.generate(comp, groups, style, anim, S.replace);
+                var res = N.generate(comp, groups, S.style, S.style.anim, S.replace);
                 warnings = warnings.concat(res.warnings);
                 var msg = "Создано слоёв: " + res.created + (res.removed ? ", заменено старых: " + res.removed : "");
                 setStatus(msg);
@@ -521,6 +702,17 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
                 app.endUndoGroup();
             }
         };
+
+        // Первый запуск: стиль из первого встроенного пресета.
+        if (firstRun && presets.length) {
+            for (var pi = 0; pi < presets.length; pi++) if (presets[pi].id === "noir-red") {
+                var p0 = presets[pi];
+                S.style = { layout: clone(p0.layout), base: clone(p0.base), accent: clone(p0.accent), anim: clone(p0.anim) };
+                S.presetId = p0.id;
+            }
+        }
+        fillPresets();
+        syncUI();
 
         win.onResizing = win.onResize = function () { this.layout.resize(); };
         if (win instanceof Window) { win.center(); win.show(); }

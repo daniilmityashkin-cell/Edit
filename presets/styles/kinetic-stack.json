@@ -1,0 +1,97 @@
+{
+ "schema": "noir-style/1",
+ "id": "kinetic-stack",
+ "name": "Kinetic Stack (реф. 1 — риелтор, парень)",
+ "description": "Фраза собирается по словам ступенькой. Акцентные слова — крупный цветной капс отдельной строкой. Вход снизу с blur, уход blur.",
+ "layout": {
+  "reveal": "word",
+  "maxWords": 4,
+  "maxChars": 28,
+  "lineChars": 14,
+  "pauseBreak": 0.35,
+  "punctBreak": true,
+  "stripPunct": true,
+  "posX": 50,
+  "posY": 40,
+  "lineGap": 0.12,
+  "wordSpace": 0.28,
+  "accentOwnLine": true,
+  "safeWidth": 0.88,
+  "holdGap": 0.3
+ },
+ "base": {
+  "fonts": [
+   "Montserrat-Bold",
+   "Inter-Bold",
+   "SegoeUI-Bold",
+   "Arial-BoldMT"
+  ],
+  "size": 64,
+  "color": [
+   1,
+   1,
+   1
+  ],
+  "tracking": 0,
+  "caps": false,
+  "strokeWidth": 0,
+  "strokeColor": [
+   0,
+   0,
+   0
+  ],
+  "shadow": {
+   "color": [
+    0,
+    0,
+    0
+   ],
+   "opacity": 45,
+   "distance": 3,
+   "softness": 14
+  },
+  "glow": null
+ },
+ "accent": {
+  "fonts": [
+   "Montserrat-ExtraBold",
+   "Inter-ExtraBold",
+   "SegoeUI-Black",
+   "Arial-BoldMT"
+  ],
+  "size": 124,
+  "color": [
+   1,
+   0.45,
+   0.08
+  ],
+  "tracking": -10,
+  "caps": true,
+  "strokeWidth": 0,
+  "strokeColor": [
+   0,
+   0,
+   0
+  ],
+  "shadow": {
+   "color": [
+    0,
+    0,
+    0
+   ],
+   "opacity": 45,
+   "distance": 3,
+   "softness": 14
+  },
+  "glow": null
+ },
+ "anim": {
+  "animIn": "blurRise",
+  "inDur": 0.25,
+  "animOut": "blur",
+  "outDur": 0.2,
+  "distance": 40,
+  "blur": 30,
+  "easeInfluence": 80
+ }
+}

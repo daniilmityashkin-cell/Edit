@@ -33,6 +33,21 @@ class TextDocument {
   resetCharStyle() {} resetParagraphStyle() {}
 }
 
+class Effect {
+  constructor(matchName) {
+    this.matchName = matchName; this.name = matchName; this.props = {};
+  }
+  property(mn) {
+    if (!this.props[mn]) {
+      const p = new Prop(PropertyValueType.OneD, 0);
+      // как в AE: у Drop Shadow непрозрачность 0..255
+      if (mn === "ADBE Drop Shadow-0002") { p.hasMax = true; p.maxValue = 255; }
+      this.props[mn] = p;
+    }
+    return this.props[mn];
+  }
+}
+
 class Layer {
   constructor(comp, name) {
     this.comp = comp; this.name = name; this.comment = ""; this.locked = false; this.label = 0;
@@ -53,6 +68,10 @@ class Layer {
   property(n) {
     if (n === "Transform") return { property: k => this.transform[k] };
     if (this.src && n === "Source Text") return this.src;
+    if (n === "ADBE Effect Parade") {
+      const self = this; self.effects = self.effects || [];
+      return { canAddProperty: () => true, addProperty: (mn) => { const e = new Effect(mn); self.effects.push(e); return e; } };
+    }
     throw new Error("no property " + n);
   }
   remove() { this.comp._l.splice(this.comp._l.indexOf(this), 1); }
@@ -106,7 +125,13 @@ class FileC extends FSItem {
   write(s) { this._buf += s; }
   close() { if (this._mode === "w") fs.writeFileSync(this.fsName, this._buf, "utf8"); }
 }
-class FolderC extends FSItem { create() { fs.mkdirSync(this.fsName, { recursive: true }); return true; } }
+class FolderC extends FSItem {
+  create() { fs.mkdirSync(this.fsName, { recursive: true }); return true; }
+  getFiles(mask) {
+    const re = new RegExp("^" + String(mask || "*").replace(/\./g, "\\.").replace(/\*/g, ".*") + "$", "i");
+    return fs.readdirSync(this.fsName).filter(f => re.test(f)).map(f => new FileC(path.join(this.fsName, f)));
+  }
+}
 const File = (p) => new FileC(p);
 File.openDialog = () => null; File.saveDialog = () => null;
 const Folder = (p) => new FolderC(p);
@@ -149,8 +174,10 @@ function install(opts = {}) {
     File, Folder, Panel, Window,
     alert: (m) => { log.alerts.push(String(m)); if (opts.verbose) console.log("ALERT:", m); },
     confirm: () => true,
+    prompt: (m, d) => (opts.promptAnswer !== undefined ? opts.promptAnswer : d),
   });
   Folder.temp = new FolderC(opts.temp || os.tmpdir());
+  Folder.userData = new FolderC(path.join(opts.temp || os.tmpdir(), "userData"));
   g.$ = {
     os: "Linux", global: g, fileName: "", getenv: (k) => process.env[k] || null,
     colorPicker: () => -1, evalFile: (f) => (0, eval)(fs.readFileSync(f.fsName, "utf8")),

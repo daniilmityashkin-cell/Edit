@@ -1,0 +1,88 @@
+{
+ "schema": "noir-style/1",
+ "id": "editorial",
+ "name": "Editorial (реф. 2 — риелтор, девушка)",
+ "description": "Тонкий белый гротеск + крупная узкая антиква капсом для акцентов. Слова по очереди, мягкий blur.",
+ "layout": {
+  "reveal": "word",
+  "maxWords": 5,
+  "maxChars": 28,
+  "lineChars": 18,
+  "pauseBreak": 0.35,
+  "punctBreak": true,
+  "stripPunct": true,
+  "posX": 50,
+  "posY": 38,
+  "lineGap": 0.18,
+  "wordSpace": 0.28,
+  "accentOwnLine": true,
+  "safeWidth": 0.88,
+  "holdGap": 0.3
+ },
+ "base": {
+  "fonts": [
+   "Inter-Light",
+   "SegoeUI-Light",
+   "ArialMT"
+  ],
+  "size": 50,
+  "color": [
+   1,
+   1,
+   1
+  ],
+  "tracking": 0,
+  "caps": false,
+  "strokeWidth": 0,
+  "strokeColor": [
+   0,
+   0,
+   0
+  ],
+  "shadow": {
+   "color": [
+    0,
+    0,
+    0
+   ],
+   "opacity": 35,
+   "distance": 3,
+   "softness": 14
+  },
+  "glow": null
+ },
+ "accent": {
+  "fonts": [
+   "BodoniModa-Regular",
+   "PlayfairDisplay-Regular",
+   "Didot",
+   "Georgia",
+   "TimesNewRomanPSMT"
+  ],
+  "size": 150,
+  "color": [
+   0.45,
+   0.29,
+   0.66
+  ],
+  "tracking": -20,
+  "caps": true,
+  "strokeWidth": 0,
+  "strokeColor": [
+   0,
+   0,
+   0
+  ],
+  "shadow": null,
+  "glow": null
+ },
+ "anim": {
+  "animIn": "blur",
+  "inDur": 0.35,
+  "animOut": "blur",
+  "outDur": 0.25,
+  "distance": 0,
+  "blur": 25,
+  "easeInfluence": 80
+ }
+}

@@ -65,17 +65,37 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         var lines = [];
         for (var i = 0; i < data.segments.length; i++) {
             var ws = data.segments[i].words, parts = [];
-            for (var j = 0; j < ws.length; j++) parts.push(ws[j].text);
+            for (var j = 0; j < ws.length; j++) {
+                if (ws[j].breakBefore && j) parts.push("|");
+                parts.push(ws[j].accent ? "*" + ws[j].text + "*" : ws[j].text);
+            }
             lines.push(parts.join(" "));
         }
         return lines.join("\n");
     };
 
-    function splitWords(line) {
+    // Разметка в редакторе:
+    //   *слово*  или  *несколько слов*  — акцент (отдельный стиль);
+    //   |                               — принудительно начать новую фразу.
+    // Возвращает [{text, accent, breakBefore}]; разметка в число слов не входит.
+    N.parseLine = function (line) {
         var raw = String(line).replace(/^\s+|\s+$/g, "").split(/\s+/), out = [];
-        for (var i = 0; i < raw.length; i++) if (raw[i] !== "") out.push(raw[i]);
+        var inAccent = false, pendingBreak = false;
+        for (var i = 0; i < raw.length; i++) {
+            var t = raw[i];
+            if (t === "") continue;
+            if (t === "|") { pendingBreak = true; continue; }
+            var open = t.charAt(0) === "*", accent;
+            if (open) { t = t.substring(1); inAccent = true; }
+            accent = inAccent;
+            if (t.length && t.charAt(t.length - 1) === "*") { t = t.substring(0, t.length - 1); inAccent = false; }
+            else if (/\*[.,!?;:…]+$/.test(t)) { t = t.replace(/\*([.,!?;:…]+)$/, "$1"); inAccent = false; }
+            if (t === "") continue;
+            out.push({ text: t, accent: accent, breakBefore: pendingBreak });
+            pendingBreak = false;
+        }
         return out;
-    }
+    };
 
     // Применяет правки из редактора к словам, сохраняя тайминги где можно.
     // Строка с тем же числом слов — тайминги 1:1. Иначе слова строки
@@ -92,7 +112,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         }
         var out = [];
         for (var s = 0; s < data.segments.length; s++) {
-            var seg = data.segments[s], ws = seg.words, texts = splitWords(nonEmpty[s]);
+            var seg = data.segments[s], ws = seg.words, texts = N.parseLine(nonEmpty[s]);
             if (!texts.length) continue; // строку очистили = фраза удалена
             if (!ws.length) {
                 warnings.push("Строка " + (s + 1) + ": у фразы нет таймингов (её удаляли ранее) — пропущена.");
@@ -100,19 +120,21 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             }
             if (texts.length === ws.length) {
                 for (var j = 0; j < ws.length; j++) out.push({
-                    text: texts[j], start: ws[j].start, end: ws[j].end, seg: s
+                    text: texts[j].text, accent: texts[j].accent, breakBefore: texts[j].breakBefore,
+                    start: ws[j].start, end: ws[j].end, seg: s
                 });
                 continue;
             }
             warnings.push("Строка " + (s + 1) + ": число слов изменилось, тайминги распределены " +
                 "пропорционально — проверьте синхронизацию.");
             var t0 = ws[0].start, t1 = ws[ws.length - 1].end, total = 0, k;
-            for (k = 0; k < texts.length; k++) total += texts[k].length + 1;
+            for (k = 0; k < texts.length; k++) total += texts[k].text.length + 1;
             var acc = 0;
             for (k = 0; k < texts.length; k++) {
                 var a = t0 + (t1 - t0) * acc / total;
-                acc += texts[k].length + 1;
-                out.push({ text: texts[k], start: a, end: t0 + (t1 - t0) * acc / total, seg: s });
+                acc += texts[k].text.length + 1;
+                out.push({ text: texts[k].text, accent: texts[k].accent, breakBefore: texts[k].breakBefore,
+                    start: a, end: t0 + (t1 - t0) * acc / total, seg: s });
             }
         }
         return out;
@@ -120,23 +142,24 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
 
     // ---------- группировка ----------
 
-    // opts: maxWords, maxChars, pauseBreak (с), punctBreak, stripPunct, caps
+    // opts: maxWords, maxChars, pauseBreak (с), punctBreak, stripPunct.
+    // Регистр (КАПС) применяет генератор — он у основного и акцентного стиля разный.
     N.groupWords = function (words, opts) {
         var groups = [], cur = null;
         function flush() { if (cur) { groups.push(cur); cur = null; } }
         for (var i = 0; i < words.length; i++) {
             var w = words[i];
             var text = opts.stripPunct ? w.text.replace(PUNCT_STRIP, "") : w.text;
-            if (opts.caps) text = text.toUpperCase();
             if (text === "" || text === "-" || text === "—") continue;
             if (cur) {
                 var gap = w.start - cur.end;
                 var len = cur.text.length + 1 + text.length;
                 if (cur.words.length >= opts.maxWords || len > opts.maxChars ||
-                    gap > opts.pauseBreak || w.seg !== cur.seg) flush();
+                    gap > opts.pauseBreak || w.seg !== cur.seg || w.breakBefore) flush();
             }
-            if (!cur) cur = { text: text, start: w.start, end: w.end, seg: w.seg, words: [w] };
-            else { cur.text += " " + text; cur.end = w.end; cur.words.push(w); }
+            var item = { text: text, accent: !!w.accent, start: w.start, end: w.end };
+            if (!cur) cur = { text: text, start: w.start, end: w.end, seg: w.seg, words: [item] };
+            else { cur.text += " " + text; cur.end = w.end; cur.words.push(item); }
             if (opts.punctBreak && /[.!?…,;:]$/.test(w.text)) flush();
         }
         flush();

@@ -1,0 +1,73 @@
+{
+ "schema": "noir-style/1",
+ "id": "noir-red",
+ "name": "NOIR Red (одно слово, антиква)",
+ "description": "Одно слово на экране, капс, красная антиква вверху кадра, жёсткая смена.",
+ "layout": {
+  "reveal": "word",
+  "maxWords": 1,
+  "maxChars": 40,
+  "lineChars": 0,
+  "pauseBreak": 0.35,
+  "punctBreak": true,
+  "stripPunct": true,
+  "posX": 50,
+  "posY": 18,
+  "lineGap": 0.12,
+  "wordSpace": 0.28,
+  "accentOwnLine": false,
+  "safeWidth": 0.9,
+  "holdGap": 0.3
+ },
+ "base": {
+  "fonts": [
+   "TimesNewRomanPSMT"
+  ],
+  "size": 200,
+  "color": [
+   0.8,
+   0,
+   0
+  ],
+  "tracking": 0,
+  "caps": true,
+  "strokeWidth": 0,
+  "strokeColor": [
+   0,
+   0,
+   0
+  ],
+  "shadow": null,
+  "glow": null
+ },
+ "accent": {
+  "fonts": [
+   "TimesNewRomanPSMT"
+  ],
+  "size": 200,
+  "color": [
+   1,
+   1,
+   1
+  ],
+  "tracking": 0,
+  "caps": true,
+  "strokeWidth": 0,
+  "strokeColor": [
+   0,
+   0,
+   0
+  ],
+  "shadow": null,
+  "glow": null
+ },
+ "anim": {
+  "animIn": "none",
+  "inDur": 0.2,
+  "animOut": "none",
+  "outDur": 0.15,
+  "distance": 40,
+  "blur": 0,
+  "easeInfluence": 80
+ }
+}

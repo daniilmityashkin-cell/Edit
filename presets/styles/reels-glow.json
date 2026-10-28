@@ -1,0 +1,96 @@
+{
+ "schema": "noir-style/1",
+ "id": "reels-glow",
+ "name": "Reels Glow (реф. 3 — ремонт в Дубае)",
+ "description": "Белый жирный гротеск в 1–2 строки, акценты красным со свечением отдельной строкой. Слова по очереди, pop.",
+ "layout": {
+  "reveal": "word",
+  "maxWords": 6,
+  "maxChars": 34,
+  "lineChars": 22,
+  "pauseBreak": 0.35,
+  "punctBreak": true,
+  "stripPunct": true,
+  "posX": 50,
+  "posY": 45,
+  "lineGap": 0.12,
+  "wordSpace": 0.28,
+  "accentOwnLine": true,
+  "safeWidth": 0.88,
+  "holdGap": 0.3
+ },
+ "base": {
+  "fonts": [
+   "Montserrat-Bold",
+   "Inter-Bold",
+   "SegoeUI-Bold",
+   "Arial-BoldMT"
+  ],
+  "size": 54,
+  "color": [
+   1,
+   1,
+   1
+  ],
+  "tracking": 0,
+  "caps": false,
+  "strokeWidth": 0,
+  "strokeColor": [
+   0,
+   0,
+   0
+  ],
+  "shadow": {
+   "color": [
+    0,
+    0,
+    0
+   ],
+   "opacity": 45,
+   "distance": 3,
+   "softness": 14
+  },
+  "glow": null
+ },
+ "accent": {
+  "fonts": [
+   "Montserrat-Bold",
+   "Inter-Bold",
+   "SegoeUI-Bold",
+   "Arial-BoldMT"
+  ],
+  "size": 62,
+  "color": [
+   1,
+   0.16,
+   0.16
+  ],
+  "tracking": 0,
+  "caps": false,
+  "strokeWidth": 0,
+  "strokeColor": [
+   0,
+   0,
+   0
+  ],
+  "shadow": null,
+  "glow": {
+   "color": [
+    1,
+    0,
+    0
+   ],
+   "opacity": 85,
+   "softness": 30
+  }
+ },
+ "anim": {
+  "animIn": "pop",
+  "inDur": 0.18,
+  "animOut": "none",
+  "outDur": 0.15,
+  "distance": 40,
+  "blur": 0,
+  "easeInfluence": 80
+ }
+}
