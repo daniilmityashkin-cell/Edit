@@ -240,6 +240,25 @@ const GOPTS = { maxWords: 1, maxChars: 99, pauseBreak: 0.35, punctBreak: true, s
     assert.ok(findDD(panel, "Kinetic Stack"), "пресеты не загрузились");
     assert.ok(findDD(panel, "Inter"), "шрифты не загрузились");
   });
+  await test("тема: вкладки-кнопки переключают страницы, кнопки получили onDraw", () => {
+    assert.ok(N.theme && N.theme.makeTabs, "theme.jsx не загрузилась");
+    const tabBtn = (t) => panel.find(e => e.type === "button" && e.text === t);
+    tabBtn("Стиль").onClick(); tabBtn("Раскладка").onClick();
+    const stack = panel.find(e => e.type === "group" && e.orientation === "stack");
+    assert.deepStrictEqual(stack.children.map(c => c.visible), [false, false, false, false, true, false]);
+    tabBtn("Речь").onClick();
+    assert.deepStrictEqual(stack.children.map(c => c.visible), [true, false, false, false, false, false]);
+    assert.strictEqual(typeof panel.button("Создать субтитры").onDraw, "function");
+  });
+  await test("без theme.jsx панель строится на обычных вкладках", () => {
+    const saved = N.theme; N.theme = undefined;
+    const orig = global.$.evalFile;
+    global.$.evalFile = (f) => { if (/theme\.jsx$/.test(f.fsName)) throw new Error("missing"); return orig(f); };
+    try {
+      const p2 = N.buildPanel(new mock.Panel(), ROOT);
+      assert.ok(p2.button("Распознать речь") && p2.find(e => e.type === "tabbedpanel"));
+    } finally { global.$.evalFile = orig; N.theme = saved; }
+  });
   await test("выбор пресета применяет стиль; ручная правка -> «свой»", () => {
     const dd = findDD(panel, "Kinetic Stack");
     dd.selection = dd.items.findIndex(i => i.text.indexOf("Kinetic") >= 0);

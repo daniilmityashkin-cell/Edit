@@ -100,14 +100,31 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         // syncing: идёт программное заполнение контролов — их onChange не считаются правкой
         var state = { data: null, link: null, target: "base", syncing: false };
 
+        // Тема необязательна: если файла нет или он сломан — обычные вкладки и кнопки.
+        try { $.evalFile(File(root + "/ae/noir/theme.jsx")); } catch (eTheme) {}
+        var TH = N.theme && N.theme.makeTabs ? N.theme : null;
+
         var win = (thisObj instanceof Panel) ? thisObj
             : new Window("palette", "NOIR CAPTIONS", undefined, { resizeable: true });
         win.orientation = "column";
         win.alignChildren = ["fill", "top"];
         win.spacing = 6;
         win.margins = 8;
+        if (TH) {
+            TH.background(win);
+            win.spacing = 8;
+            var head = win.add("group");
+            head.orientation = "row";
+            head.alignChildren = ["left", "center"];
+            var stBrand = head.add("statictext", undefined, "NOIR CAPTIONS");
+            stBrand._keep = true;
+            TH.text(stBrand, TH.colors.text, 12, true);
+            var stVer = head.add("statictext", undefined, "v" + VERSION);
+            stVer._keep = true;
+            TH.text(stVer, TH.colors.muted);
+        }
 
-        var tabs = win.add("tabbedpanel");
+        var tabs = TH ? TH.makeTabs(win) : win.add("tabbedpanel");
         tabs.alignChildren = ["fill", "top"];
         var tSpeech = tabs.add("tab", undefined, "Речь");
         var tText = tabs.add("tab", undefined, "Текст");
@@ -298,7 +315,19 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         cbReplace.value = S.replace;
         var btnGenerate = win.add("button", undefined, "Создать субтитры");
         btnGenerate.preferredSize.height = 30;
-        win.add("statictext", undefined, "NOIR CAPTIONS " + VERSION);
+        if (!TH) win.add("statictext", undefined, "NOIR CAPTIONS " + VERSION);
+
+        // ================= тема =================
+        if (TH) {
+            var primary = [btnRecognize, btnGenerate];
+            var ghost = [btnCancel, btnLoad, btnSave, btnReset, btnSavePreset, btnFromLayer, btnColor, btnStrokeColor];
+            for (var bi = 0; bi < primary.length; bi++) TH.button(primary[bi], "primary");
+            for (var gi = 0; gi < ghost.length; gi++) TH.button(ghost[gi], "ghost");
+            btnGenerate.preferredSize.height = 34;
+            btnRecognize.preferredSize.height = 30;
+            TH.styleTree(win);
+            for (var pi = 0; pi < tabs.pages.length; pi++) TH.background(tabs.pages[pi]);
+        }
 
         // ================= подсказки (наведите курсор) =================
         btnRecognize.helpTip = "Распознать речь в выделенном слое со звуком (локально, без интернета)";
