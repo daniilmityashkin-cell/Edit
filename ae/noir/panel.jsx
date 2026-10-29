@@ -251,7 +251,10 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             etPs = row(pnlText, "PostScript").add("edittext", undefined, "");
             etPs.alignment = ["fill", "center"];
         }
-        var btnFromLayer = pnlText.add("button", undefined, "Взять стиль с выделенного текстового слоя");
+        var rFromTo = pnlText.add("group");
+        rFromTo.orientation = "row";
+        var btnFromLayer = rFromTo.add("button", undefined, "Взять со слоя");
+        var btnFontToLayers = rFromTo.add("button", undefined, "Шрифт → выделенным слоям");
         // ---- вкладка «Вид»: размер, цвет, обводка, эффекты ----
         var rTarget2 = row(tView, "Настраиваю", 95);
         var rbBase2 = rTarget2.add("radiobutton", undefined, "Обычные слова");
@@ -338,12 +341,21 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         var rbApplyBase = rWhich.add("radiobutton", undefined, "Обычный");
         var rbApplyAccent = rWhich.add("radiobutton", undefined, "Акцент");
         rbApplyBase.value = true;
+        // Применяются только отмеченные свойства — остальные у слоя не меняются.
         var rWhat = row(pnlApply, "Что", 60);
-        var cbApplyLook = rWhat.add("checkbox", undefined, "Вид");
-        cbApplyLook.value = true;
-        cbApplyLook.helpTip = "Шрифт, размер, цвет, обводка, эффекты — с вкладок «Стиль» и «Вид»";
-        var cbApplyAnim = rWhat.add("checkbox", undefined, "Анимацию");
-        cbApplyAnim.value = true;
+        var cbApplyFont = rWhat.add("checkbox", undefined, "Шрифт");
+        cbApplyFont.value = true;
+        var cbApplySize = rWhat.add("checkbox", undefined, "Размер");
+        var cbApplyColor = rWhat.add("checkbox", undefined, "Цвет");
+        var rWhat2 = row(pnlApply, "", 60);
+        var cbApplyStroke = rWhat2.add("checkbox", undefined, "Обводка");
+        var cbApplyFx = rWhat2.add("checkbox", undefined, "Эффекты");
+        var cbApplyAnim = rWhat2.add("checkbox", undefined, "Анимация");
+        cbApplyFont.helpTip = "Шрифт и начертание — с вкладки «Стиль»";
+        cbApplySize.helpTip = "Размер и трекинг — с вкладки «Вид»";
+        cbApplyColor.helpTip = "Цвет заливки — с вкладки «Вид»";
+        cbApplyStroke.helpTip = "Обводка — с вкладки «Вид»";
+        cbApplyFx.helpTip = "Тень и свечение — с вкладки «Вид»";
         cbApplyAnim.helpTip = "Появление и исчезновение — с вкладки «Анимация»";
         var btnApply = pnlApply.add("button", undefined, "Применить к выделенным");
         btnApply.helpTip = "Позиция и тайминг слоя не меняются. Регистр букв (КАПС) вернуть назад нельзя";
@@ -354,8 +366,8 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         // ================= тема =================
         if (TH) {
             var primary = [btnRecognize, btnGenerate, btnMakeAccent];
-            var ghost = [btnCancel, btnLoad, btnSave, btnReset, btnSavePreset, btnFromLayer, btnColor, btnStrokeColor,
-                btnMakeBase, btnApply];
+            var ghost = [btnCancel, btnLoad, btnSave, btnReset, btnSavePreset, btnFromLayer, btnFontToLayers,
+                btnColor, btnStrokeColor, btnMakeBase, btnApply];
             for (var bi = 0; bi < primary.length; bi++) TH.button(primary[bi], "primary");
             for (var gi = 0; gi < ghost.length; gi++) TH.button(ghost[gi], "ghost");
             btnGenerate.preferredSize.height = 32;
@@ -373,6 +385,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         btnReset.helpTip = "Вернуть текст как после распознавания (отменить ваши правки)";
         btnSavePreset.helpTip = "Сохранить все текущие настройки (шрифты, вид, раскладка, анимация) как свой пресет";
         btnFromLayer.helpTip = "Выделите текстовый слой в AE — шрифт, размер и цвет возьмутся с него";
+        btnFontToLayers.helpTip = "Выберите шрифт выше и нажмите — только шрифт применится к выделенным слоям (размер, цвет и остальное не меняются)";
         cbAutoAccent.helpTip = "В каждой фразе из нескольких слов автоматически выделяется главное слово (число или самое длинное) — оно получит акцентный стиль";
         btnMakeAccent.helpTip = "Выделенные текстовые слои получат акцентный стиль (шрифт, размер, цвет, эффекты из настроек «Акцент»)";
         btnMakeBase.helpTip = "Выделенные текстовые слои получат обычный стиль";
@@ -776,7 +789,9 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             if (!out.length) throw new Error("Выделите в таймлайне один или несколько текстовых слоёв.");
             return { comp: comp, layers: out };
         }
-        // which: "base" | "accent"; look/anim — что применять.
+        // which: "base" | "accent" (чьи настройки брать).
+        // look: true — весь вид + КАПС; объект {font,size,color,stroke,fx} — только отмеченное; false — не менять вид.
+        // anim: применять анимацию.
         function applyToLayers(which, look, anim, undoName) {
             readUI();
             var sel;
@@ -784,7 +799,8 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             app.beginUndoGroup(undoName);
             try {
                 var res = N.restyleLayers(sel.comp, sel.layers, {
-                    style: look ? S.style[which] : null, accent: which === "accent",
+                    style: look ? S.style[which] : null, parts: (look && look !== true) ? look : null,
+                    accent: which === "accent",
                     safeWidth: S.style.layout.safeWidth, anim: anim ? S.style.anim : null
                 });
                 setStatus("Изменено слоёв: " + res.changed + (res.warnings.length ? "\n" + res.warnings.join("\n") : ""));
@@ -797,9 +813,15 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         btnMakeAccent.onClick = function () { applyToLayers("accent", true, false, "NOIR Captions: сделать акцентом"); };
         btnMakeBase.onClick = function () { applyToLayers("base", true, false, "NOIR Captions: сделать обычным"); };
         btnApply.onClick = function () {
-            if (!cbApplyLook.value && !cbApplyAnim.value) { alert("Отметьте, что применять: вид и/или анимацию.", "NOIR Captions"); return; }
-            applyToLayers(rbApplyAccent.value ? "accent" : "base", cbApplyLook.value, cbApplyAnim.value,
+            var parts = { font: cbApplyFont.value, size: cbApplySize.value, color: cbApplyColor.value,
+                stroke: cbApplyStroke.value, fx: cbApplyFx.value };
+            var any = parts.font || parts.size || parts.color || parts.stroke || parts.fx;
+            if (!any && !cbApplyAnim.value) { alert("Отметьте, что применять: шрифт, размер, цвет, обводку, эффекты и/или анимацию.", "NOIR Captions"); return; }
+            applyToLayers(rbApplyAccent.value ? "accent" : "base", any ? parts : false, cbApplyAnim.value,
                 "NOIR Captions: применить к выделенным");
+        };
+        btnFontToLayers.onClick = function () {
+            applyToLayers(state.target, { font: true }, false, "NOIR Captions: шрифт выделенным слоям");
         };
 
         btnGenerate.onClick = function () {

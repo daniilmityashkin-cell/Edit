@@ -363,29 +363,78 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
 
     function clearKeys(prop) { while (prop.numKeys > 0) prop.removeKey(1); }
 
-    // spec: { style (вид) | null, accent: bool, safeWidth, anim | null }
+    // Частичное применение: меняем только отмеченные свойства, остальное у слоя не трогаем.
+    function restylePartial(layer, comp, st, parts, ctx, safeWidth) {
+        var prop = layer.property("Source Text"), doc = prop.value, i;
+        var geometry = parts.font || parts.size || parts.stroke;
+        if (parts.font && st.fonts && st.fonts.length) {
+            var orig = doc.font, ok = null;
+            for (i = 0; i < st.fonts.length && ok === null; i++) {
+                doc.font = st.fonts[i];
+                prop.setValue(doc);
+                if (prop.value.font === st.fonts[i]) ok = st.fonts[i];
+            }
+            doc = prop.value;
+            if (ok === null) {
+                doc.font = orig;
+                var msg = "Шрифт " + st.fonts[0] + " не найден — слой оставлен со шрифтом " + orig;
+                if (ctx._fontMsg !== msg) { ctx.warnings.push(msg); ctx._fontMsg = msg; }
+            }
+        }
+        if (parts.size) { doc.fontSize = st.size * ctx.scale; doc.tracking = st.tracking || 0; }
+        if (parts.color) { doc.fillColor = st.color; doc.applyFill = true; }
+        if (parts.stroke) {
+            if (st.strokeWidth > 0) {
+                doc.applyStroke = true;
+                doc.strokeColor = st.strokeColor || [0, 0, 0];
+                doc.strokeWidth = st.strokeWidth * ctx.scale;
+                doc.strokeOverFill = false;
+            } else {
+                doc.applyStroke = false;
+            }
+        }
+        prop.setValue(doc);
+        if (geometry) fitAndAnchor(layer, comp, safeWidth);
+        if (parts.fx) applyEffects(layer, st, ctx);
+    }
+
+    // Подгоняет ширину под безопасную зону и ставит якорь в центр текста.
+    function fitAndAnchor(layer, comp, safeWidth) {
+        var prop = layer.property("Source Text"), t = layer.inPoint;
+        var rect = layer.sourceRectAtTime(t, false), safeW = comp.width * safeWidth;
+        if (rect.width > safeW && rect.width > 0) {
+            var d = prop.value;
+            d.fontSize = Math.max(6, Math.floor(d.fontSize * safeW / rect.width));
+            prop.setValue(d);
+            rect = layer.sourceRectAtTime(t, false);
+        }
+        layer.property("Transform").property("Anchor Point")
+            .setValue([rect.left + rect.width / 2, rect.top + rect.height / 2]);
+    }
+
+    function applyEffects(layer, st, ctx) {
+        clearEffect(layer, "NOIR Shadow");
+        clearEffect(layer, "NOIR Glow");
+        if (st.shadow) addShadow(layer, st.shadow, "NOIR Shadow", ctx.scale);
+        if (st.glow) addShadow(layer, { color: st.glow.color || st.color, opacity: st.glow.opacity,
+            distance: 0, softness: st.glow.softness }, "NOIR Glow", ctx.scale);
+    }
+
+    // spec: { style (вид) | null, parts (какие свойства; нет = все + регистр), accent: bool,
+    //         safeWidth, anim | null }
     // ctx: { warnings, fontCache, scale }
     N.restyleLayer = function (layer, comp, spec, ctx) {
         var tr = layer.property("Transform");
         var base = N.baseOf(layer);
 
-        if (spec.style) {
+        if (spec.style && spec.parts) {
+            restylePartial(layer, comp, spec.style, spec.parts, ctx, spec.safeWidth);
+        } else if (spec.style) {
             var st = spec.style, prop = layer.property("Source Text");
             var text = st.caps ? prop.value.text.toUpperCase() : prop.value.text; // регистр назад не вернуть
             applyTextStyle(layer, text, st, st.size * ctx.scale, ctx);
-            var t = layer.inPoint, rect = layer.sourceRectAtTime(t, false), safeW = comp.width * spec.safeWidth;
-            if (rect.width > safeW && rect.width > 0) {
-                var d = prop.value;
-                d.fontSize = Math.max(6, Math.floor(d.fontSize * safeW / rect.width));
-                prop.setValue(d);
-                rect = layer.sourceRectAtTime(t, false);
-            }
-            tr.property("Anchor Point").setValue([rect.left + rect.width / 2, rect.top + rect.height / 2]);
-            clearEffect(layer, "NOIR Shadow");
-            clearEffect(layer, "NOIR Glow");
-            if (st.shadow) addShadow(layer, st.shadow, "NOIR Shadow", ctx.scale);
-            if (st.glow) addShadow(layer, { color: st.glow.color || st.color, opacity: st.glow.opacity,
-                distance: 0, softness: st.glow.softness }, "NOIR Glow", ctx.scale);
+            fitAndAnchor(layer, comp, spec.safeWidth);
+            applyEffects(layer, st, ctx);
             if (N.isGenerated(layer)) {
                 layer.name = "NOIR · " + text;
                 layer.label = spec.accent ? 11 : 9;

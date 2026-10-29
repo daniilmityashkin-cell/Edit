@@ -288,6 +288,35 @@ const GOPTS = { maxWords: 1, maxChars: 99, pauseBreak: 0.35, punctBreak: true, s
     assert.deepStrictEqual(a.transform.Position.value, N.baseOf(a));
     assert.strictEqual((a.effects || []).filter(e => e.name === "NOIR Blur").length, 0);
   });
+  await test("только шрифт: у выделенного слоя меняется шрифт, размер/цвет остаются; соседний не тронут", () => {
+    const c = mkComp(), st = styleOf("reels-glow"); gen(c);
+    const [a, b] = subs(c); const sizeBefore = a.src.value.fontSize, colBefore = JSON.stringify(a.src.value.fillColor);
+    const fontB = b.src.value.font, posBefore = JSON.stringify(a.transform.Position.value);
+    const style = Object.assign({}, st.accent, { fonts: ["Nope-Font", "TimesNewRomanPSMT"], size: 999, color: [0, 1, 0] });
+    N.restyleLayers(c, [a], { style, parts: { font: true }, accent: true, safeWidth: 0.88, anim: null });
+    assert.strictEqual(a.src.value.font, "TimesNewRomanPSMT");
+    assert.strictEqual(a.src.value.fontSize, sizeBefore); assert.strictEqual(JSON.stringify(a.src.value.fillColor), colBefore);
+    assert.strictEqual(b.src.value.font, fontB); assert.strictEqual(JSON.stringify(a.transform.Position.value), posBefore);
+    assert.ok(!(a.effects || []).some(e => e.name === "NOIR Glow"), "эффекты не должны добавляться");
+  });
+  await test("разные шрифты на разные слои; нет шрифта -> предупреждение и слой не ломается", () => {
+    const c = mkComp(), st = styleOf("reels-glow"); gen(c);
+    const [a, b] = subs(c);
+    N.restyleLayers(c, [a], { style: Object.assign({}, st.base, { fonts: ["TimesNewRomanPSMT"] }), parts: { font: true }, safeWidth: 0.88, anim: null });
+    const r = N.restyleLayers(c, [b], { style: Object.assign({}, st.base, { fonts: ["Missing-Font"] }), parts: { font: true }, safeWidth: 0.88, anim: null });
+    assert.strictEqual(a.src.value.font, "TimesNewRomanPSMT"); assert.notStrictEqual(a.src.value.font, b.src.value.font);
+    assert.ok(r.warnings.some(w => /Missing-Font/.test(w)));
+  });
+  await test("по отдельности: только цвет / только эффекты / размер", () => {
+    const c = mkComp(), st = styleOf("reels-glow"); gen(c); const a = subs(c)[0];
+    const font0 = a.src.value.font, size0 = a.src.value.fontSize;
+    N.restyleLayers(c, [a], { style: st.accent, parts: { color: true }, safeWidth: 0.88, anim: null });
+    assert.deepStrictEqual(a.src.value.fillColor, st.accent.color); assert.strictEqual(a.src.value.font, font0); assert.strictEqual(a.src.value.fontSize, size0);
+    N.restyleLayers(c, [a], { style: st.accent, parts: { fx: true }, safeWidth: 0.88, anim: null });
+    assert.ok(a.effects.some(e => e.name === "NOIR Glow"));
+    N.restyleLayers(c, [a], { style: st.accent, parts: { size: true }, safeWidth: 0.88, anim: null });
+    assert.strictEqual(a.src.value.fontSize, st.accent.size);
+  });
   await test("все слои сразу + пользовательский слой без тега", () => {
     const c = mkComp(), st = styleOf("kinetic-stack"); gen(c, "kinetic-stack");
     const user = new mock.TextLayer(c, "мой текст", c._fonts); user.inPoint = 1; user.outPoint = 3; c._l.push(user);
@@ -367,6 +396,17 @@ const GOPTS = { maxWords: 1, maxChars: 99, pauseBreak: 0.35, punctBreak: true, s
     panel.button("Применить к выделенным").onClick();
     assert.strictEqual(env.log.alerts.length, 0, env.log.alerts.join("|"));
     ls.forEach(l => (l.selected = false));
+  });
+  await test("кнопка «Шрифт → выделенным слоям» без выделения — понятная ошибка; с выделением меняет только шрифт", () => {
+    const c = mkComp(); gen(c); const ls = subs(c); env.log.alerts.length = 0;
+    panel.button("Шрифт → выделенным слоям").onClick();
+    assert.ok(/Выделите/.test(env.log.alerts[0]));
+    const S0 = N.parseJSON(env.settings["NOIR Captions/settings.v2"]); const size0 = ls[0].src.value.fontSize, col0 = JSON.stringify(ls[0].src.value.fillColor);
+    ls[0].selected = true; env.log.alerts.length = 0;
+    panel.button("Шрифт → выделенным слоям").onClick();
+    assert.strictEqual(env.log.alerts.length, 0, env.log.alerts.join("|"));
+    assert.strictEqual(ls[0].src.value.fontSize, size0); assert.strictEqual(JSON.stringify(ls[0].src.value.fillColor), col0);
+    ls[0].selected = false;
   });
   await test("Распознать без выделенного слоя -> понятная ошибка", () => {
     mkComp(); env.log.alerts.length = 0;
