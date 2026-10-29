@@ -1227,6 +1227,17 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         rbAnimIn.onClick = function () { galIn.visible = true; galOut.visible = false; };
         rbAnimOut.onClick = function () { galIn.visible = false; galOut.visible = true; };
         btnAnimApply.onClick = function () { applyToLayers("base", false, true, "NOIR Captions: анимация выделенным слоям"); };
+        // Слой, к которому применима инверсия: текст, фигура, SVG/картинка/видео, солид (не камера, свет, пустышка, аудио).
+        function isGraphicLayer(l) {
+            var mn = "";
+            try { mn = l.matchName ? String(l.matchName) : ""; } catch (e0) {}
+            if (mn === "ADBE Text Layer" || mn === "ADBE Vector Layer" || mn === "ADBE AV Layer") {
+                try { if (l.source && l.source.hasVideo === false) return false; } catch (e1) {}
+                return true;
+            }
+            if (mn) return false;
+            return l instanceof AVLayer;
+        }
         btnInvert.onClick = function () {
             var sel;
             try {
@@ -1235,7 +1246,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
                 var il = [];
                 for (var ii = 0; ii < ic.selectedLayers.length; ii++) {
                     var cand = ic.selectedLayers[ii];
-                    if (cand instanceof AVLayer && cand.hasVideo !== false) il.push(cand);
+                    if (isGraphicLayer(cand)) il.push(cand);
                 }
                 if (!il.length) throw new Error("Выделите в таймлайне текстовые слои, SVG, картинки или фигуры.");
                 sel = { comp: ic, layers: il };
