@@ -1,37 +1,38 @@
 {
  "schema": "noir-style/1",
  "id": "kinetic-stack",
- "name": "Kinetic Stack (реф. 1 — риелтор, парень)",
- "description": "Фраза собирается по словам ступенькой. Акцентные слова — крупный цветной капс отдельной строкой. Вход снизу с blur, уход blur.",
+ "name": "Kinetic Blue (реф. 1 — парень)",
+ "description": "Мелкие слова оранжевым строчными, главное слово огромное голубое капсом, строки вплотную. Снизу + blur.",
  "layout": {
   "reveal": "word",
   "maxWords": 4,
-  "maxChars": 28,
-  "lineChars": 14,
+  "maxChars": 30,
+  "lineChars": 12,
   "pauseBreak": 0.35,
   "punctBreak": true,
   "stripPunct": true,
+  "autoAccent": true,
   "posX": 50,
-  "posY": 40,
-  "lineGap": 0.12,
-  "wordSpace": 0.28,
+  "posY": 33,
+  "lineGap": -0.1,
+  "wordSpace": 0.24,
   "accentOwnLine": true,
-  "safeWidth": 0.88,
-  "holdGap": 0.3,
-  "autoAccent": true
+  "safeWidth": 0.9,
+  "holdGap": 0.3
  },
  "base": {
   "fonts": [
    "Montserrat-Bold",
+   "SFProDisplay-Bold",
    "Inter-Bold",
    "SegoeUI-Bold",
    "Arial-BoldMT"
   ],
-  "size": 64,
+  "size": 108,
   "color": [
-   1,
-   1,
-   1
+   1.0,
+   0.55,
+   0.12
   ],
   "tracking": 0,
   "caps": false,
@@ -47,24 +48,26 @@
     0,
     0
    ],
-   "opacity": 45,
+   "opacity": 40,
    "distance": 3,
-   "softness": 14
+   "softness": 12
   },
   "glow": null
  },
  "accent": {
   "fonts": [
    "Montserrat-ExtraBold",
+   "Montserrat-Black",
+   "SFProDisplay-Heavy",
    "Inter-ExtraBold",
    "SegoeUI-Black",
    "Arial-BoldMT"
   ],
-  "size": 124,
+  "size": 190,
   "color": [
-   1,
-   0.45,
-   0.08
+   0.23,
+   0.62,
+   0.95
   ],
   "tracking": -10,
   "caps": true,
@@ -80,19 +83,19 @@
     0,
     0
    ],
-   "opacity": 45,
+   "opacity": 40,
    "distance": 3,
-   "softness": 14
+   "softness": 12
   },
   "glow": null
  },
  "anim": {
   "animIn": "blurRise",
-  "inDur": 0.25,
+  "inDur": 0.3,
   "animOut": "blur",
-  "outDur": 0.2,
-  "distance": 40,
-  "blur": 30,
+  "outDur": 0.22,
+  "distance": 45,
+  "blur": 28,
   "easeInfluence": 80
  }
 }

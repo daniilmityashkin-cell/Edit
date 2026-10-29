@@ -1,0 +1,92 @@
+{
+ "schema": "noir-style/1",
+ "id": "editorial-italic",
+ "name": "Editorial Italic (реф. 2, курсив)",
+ "description": "Курсивная антиква белым строчными + акцент жирной антиквой сине-серым капсом. Blur.",
+ "layout": {
+  "reveal": "word",
+  "maxWords": 4,
+  "maxChars": 30,
+  "lineChars": 18,
+  "pauseBreak": 0.35,
+  "punctBreak": true,
+  "stripPunct": true,
+  "autoAccent": true,
+  "posX": 50,
+  "posY": 62,
+  "lineGap": 0.05,
+  "wordSpace": 0.25,
+  "accentOwnLine": true,
+  "safeWidth": 0.9,
+  "holdGap": 0.3
+ },
+ "base": {
+  "fonts": [
+   "PlayfairDisplay-Italic",
+   "BodoniModa-Italic",
+   "BodoniModa28pt-Italic",
+   "Georgia-Italic",
+   "TimesNewRomanPS-ItalicMT"
+  ],
+  "size": 112,
+  "color": [
+   1,
+   1,
+   1
+  ],
+  "tracking": 0,
+  "caps": false,
+  "strokeWidth": 0,
+  "strokeColor": [
+   0,
+   0,
+   0
+  ],
+  "shadow": {
+   "color": [
+    0,
+    0,
+    0
+   ],
+   "opacity": 35,
+   "distance": 3,
+   "softness": 12
+  },
+  "glow": null
+ },
+ "accent": {
+  "fonts": [
+   "BodoniModa-Bold",
+   "BodoniModa28pt-Bold",
+   "PlayfairDisplay-Bold",
+   "BodoniMT-Bold",
+   "Georgia-Bold",
+   "TimesNewRomanPS-BoldMT"
+  ],
+  "size": 150,
+  "color": [
+   0.36,
+   0.55,
+   0.7
+  ],
+  "tracking": -10,
+  "caps": false,
+  "strokeWidth": 0,
+  "strokeColor": [
+   0,
+   0,
+   0
+  ],
+  "shadow": null,
+  "glow": null
+ },
+ "anim": {
+  "animIn": "blur",
+  "inDur": 0.4,
+  "animOut": "blur",
+  "outDur": 0.3,
+  "distance": 0,
+  "blur": 30,
+  "easeInfluence": 80
+ }
+}

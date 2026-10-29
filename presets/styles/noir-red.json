@@ -11,10 +11,11 @@
   "pauseBreak": 0.35,
   "punctBreak": true,
   "stripPunct": true,
+  "autoAccent": false,
   "posX": 50,
   "posY": 18,
   "lineGap": 0.12,
-  "wordSpace": 0.28,
+  "wordSpace": 0.26,
   "accentOwnLine": false,
   "safeWidth": 0.9,
   "holdGap": 0.3

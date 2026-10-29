@@ -1,32 +1,34 @@
 {
  "schema": "noir-style/1",
  "id": "editorial",
- "name": "Editorial (реф. 2 — риелтор, девушка)",
- "description": "Тонкий белый гротеск + крупная узкая антиква капсом для акцентов. Слова по очереди, мягкий blur.",
+ "name": "Editorial (реф. 2 — девушка)",
+ "description": "Мелкие белые слова + огромная фиолетовая антиква Didone капсом. Blur-появление.",
  "layout": {
   "reveal": "word",
   "maxWords": 5,
-  "maxChars": 28,
-  "lineChars": 18,
+  "maxChars": 34,
+  "lineChars": 20,
   "pauseBreak": 0.35,
   "punctBreak": true,
   "stripPunct": true,
+  "autoAccent": true,
   "posX": 50,
-  "posY": 38,
-  "lineGap": 0.18,
+  "posY": 31,
+  "lineGap": 0.1,
   "wordSpace": 0.28,
   "accentOwnLine": true,
-  "safeWidth": 0.88,
-  "holdGap": 0.3,
-  "autoAccent": true
+  "safeWidth": 0.9,
+  "holdGap": 0.3
  },
  "base": {
   "fonts": [
-   "Inter-Light",
-   "SegoeUI-Light",
+   "Montserrat-Medium",
+   "SFProDisplay-Medium",
+   "Inter-Medium",
+   "SegoeUI-Semibold",
    "ArialMT"
   ],
-  "size": 50,
+  "size": 56,
   "color": [
    1,
    1,
@@ -48,25 +50,27 @@
    ],
    "opacity": 35,
    "distance": 3,
-   "softness": 14
+   "softness": 12
   },
   "glow": null
  },
  "accent": {
   "fonts": [
    "BodoniModa-Regular",
+   "BodoniModa28pt-Regular",
+   "BodoniModa_28pt-Regular",
    "PlayfairDisplay-Regular",
-   "Didot",
+   "BodoniMT",
    "Georgia",
    "TimesNewRomanPSMT"
   ],
-  "size": 150,
+  "size": 235,
   "color": [
-   0.45,
-   0.29,
+   0.48,
+   0.25,
    0.66
   ],
-  "tracking": -20,
+  "tracking": -15,
   "caps": true,
   "strokeWidth": 0,
   "strokeColor": [
@@ -79,11 +83,11 @@
  },
  "anim": {
   "animIn": "blur",
-  "inDur": 0.35,
+  "inDur": 0.4,
   "animOut": "blur",
-  "outDur": 0.25,
+  "outDur": 0.3,
   "distance": 0,
-  "blur": 25,
+  "blur": 30,
   "easeInfluence": 80
  }
 }

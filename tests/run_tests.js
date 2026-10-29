@@ -224,11 +224,12 @@ const GOPTS = { maxWords: 1, maxChars: 99, pauseBreak: 0.35, punctBreak: true, s
     assert.strictEqual(r2.removed, r1.created); assert.strictEqual(c.numLayers, r1.created + 1); assert.ok(c._l.includes(user));
   });
   await test("цепочка шрифтов: первый не найден -> следующий + одно предупреждение", () => {
-    const c = mkComp(), st = styleOf("reels-glow"); // Montserrat нет -> Inter-Bold
+    const c = mkComp(), st = styleOf("reels-glow"); st.base.fonts = ["Montserrat-Bold", "Inter-Bold"]; st.accent.fonts = ["Montserrat-Bold", "Inter-Bold"];
     const r = N.generate(c, prep(N.flattenWords(sample()), st.layout), st, st.anim, true);
     assert.ok(subs(c).every(l => l.src.value.font === "Inter-Bold"));
     assert.strictEqual(r.warnings.filter(w => /Montserrat-Bold/.test(w)).length, 1);
   });
+
   await test("длинное слово ужимается в безопасную ширину", () => {
     const c = mkComp(), st = styleOf("noir-red"); const d = { segments: [{ words: [{ text: "Достопримечательность", start: 0, end: 1 }] }] };
     N.generate(c, prep(N.flattenWords(d), st.layout), st, st.anim, true);
@@ -335,7 +336,7 @@ const GOPTS = { maxWords: 1, maxChars: 99, pauseBreak: 0.35, punctBreak: true, s
   await test("панель строится; пресеты и шрифты загружены", () => {
     panel = N.buildPanel(new mock.Panel(), ROOT);
     assert.ok(panel.button("Распознать речь") && panel.button("Создать субтитры"));
-    assert.ok(findDD(panel, "Kinetic Stack"), "пресеты не загрузились");
+    assert.ok(findDD(panel, "Kinetic Blue"), "пресеты не загрузились");
     assert.ok(findDD(panel, "Inter"), "шрифты не загрузились");
   });
   await test("кнопка «Создать субтитры» закреплена над вкладками (видна при любой высоте окна)", () => {
@@ -364,11 +365,11 @@ const GOPTS = { maxWords: 1, maxChars: 99, pauseBreak: 0.35, punctBreak: true, s
     } finally { global.$.evalFile = orig; N.theme = saved; }
   });
   await test("выбор пресета применяет стиль; ручная правка -> «свой»", () => {
-    const dd = findDD(panel, "Kinetic Stack");
-    dd.selection = dd.items.findIndex(i => i.text.indexOf("Kinetic") >= 0);
+    const dd = findDD(panel, "Kinetic Blue");
+    dd.selection = dd.items.findIndex(i => i.text.indexOf("Kinetic Blue") >= 0);
     const S = N.parseJSON(env.settings["NOIR Captions/settings.v2"]);
     assert.strictEqual(S.presetId, "kinetic-stack"); assert.strictEqual(S.style.anim.animIn, "blurRise");
-    const size = panel.find(e => e.type === "edittext" && e.text === "64");
+    const size = panel.find(e => e.type === "edittext" && e.text === "108");
     size.text = "70"; size.onChange();
     panel.button("Создать субтитры").onClick(); // readUI + сохранение (данных нет -> алерт)
     const S2 = N.parseJSON(env.settings["NOIR Captions/settings.v2"]);
