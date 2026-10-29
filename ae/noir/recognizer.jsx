@@ -20,6 +20,8 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         { id: "small", label: "small — быстро, для слабых ПК (~0.5 ГБ)", repo: "Systran--faster-whisper-small" }
     ];
 
+    // Модель считается скачанной, только если есть model.bin: в кеше Hugging Face
+    // папка snapshots появляется ещё до окончания загрузки.
     N.modelCached = function (modelId) {
         var repo = null;
         for (var i = 0; i < N.MODELS.length; i++) if (N.MODELS[i].id === modelId) repo = N.MODELS[i].repo;
@@ -27,7 +29,13 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         var hfHome = $.getenv("HF_HOME");
         var hub = hfHome ? hfHome + "/hub"
             : (isWin ? $.getenv("USERPROFILE") : $.getenv("HOME")) + "/.cache/huggingface/hub";
-        return Folder(hub + "/models--" + repo + "/snapshots").exists;
+        var snaps = Folder(hub + "/models--" + repo + "/snapshots");
+        if (!snaps.exists) return false;
+        var dirs = snaps.getFiles();
+        for (var d = 0; d < dirs.length; d++) {
+            if (File(dirs[d].fsName + "/model.bin").exists) return true;
+        }
+        return false;
     };
 
     N.pythonPath = function (root, override) {
@@ -112,8 +120,13 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         var line = '"' + py.fsName + '" "' + script.fsName + '" --job "' + f.job.fsName +
             '" > "' + f.log.fsName + '" 2>&1';
         if (isWin) {
+            // НЕ system.callSystem: он ждёт закрытия канала вывода, который наследует Python,
+            // и AE зависает на всё время распознавания. File.execute() запускает и сразу возвращается;
+            // .vbs запускает .cmd в скрытом окне.
             N.writeText(f.cmd, "@echo off\r\n" + line + "\r\n");
-            system.callSystem('cmd.exe /c start "NOIR Captions" /min "' + f.cmd.fsName + '"');
+            var vbs = File(dir.fsName + "/run_" + id + ".vbs");
+            N.writeText(vbs, 'CreateObject("WScript.Shell").Run "cmd /c ""' + f.cmd.fsName + '""", 0, False\r\n');
+            if (!vbs.execute() && !f.cmd.execute()) throw new Error("Не удалось запустить Python (File.execute).");
         } else {
             N.writeText(f.cmd, "#!/bin/sh\n" + line + "\n");
             system.callSystem('/bin/sh -c \'/bin/sh "' + f.cmd.fsName + '" >/dev/null 2>&1 &\'');

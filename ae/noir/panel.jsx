@@ -568,9 +568,14 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             var src;
             try { src = N.getAudioSource(); } catch (e) { alert(e.message, "NOIR Captions"); return; }
             if (!N.modelCached(S.model)) {
-                var m = N.MODELS[ddModel.selection.index].label;
-                if (!confirm("Модель " + m + " ещё не скачана.\nОна будет загружена один раз с Hugging Face " +
-                    "(только модель — ваше аудио никуда не отправляется).\nПродолжить?", false, "NOIR Captions")) return;
+                var m = N.MODELS[ddModel.selection.index];
+                alert("Модель " + m.id + " не скачана (или скачана не до конца).\n\n" +
+                    "Скачайте её один раз в PowerShell — там виден прогресс, а After Effects не зависает:\n\n" +
+                    "cd \"" + root + "\"\n" +
+                    ".venv\\Scripts\\python.exe recognition\\download_model.py " + m.id + "\n\n" +
+                    "Потом нажмите «Распознать речь» ещё раз. Скачивается только модель с Hugging Face, " +
+                    "ваше аудио никуда не отправляется.", "NOIR Captions");
+                return;
             }
             try {
                 N.startRecognition(src, {
