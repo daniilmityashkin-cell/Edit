@@ -307,14 +307,14 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
     function buildGroup(comp, g, style, anim, ctx) {
         var layout = style.layout;
         var hasAccent = false, i, j;
-        for (i = 0; i < g.words.length; i++) if (g.words[i].accent) hasAccent = true;
+        for (i = 0; i < g.words.length; i++) if (g.words[i].accent || g.words[i].invert) hasAccent = true;
 
         var items = [];
         if (layout.reveal === "group" && !hasAccent) {
             items.push({ text: g.text, accent: false, start: g.compStart });
         } else {
             for (i = 0; i < g.words.length; i++) items.push({
-                text: g.words[i].text, accent: !!g.words[i].accent,
+                text: g.words[i].text, accent: !!g.words[i].accent, invert: !!g.words[i].invert,
                 start: layout.reveal === "group" ? g.compStart : g.words[i].compStart
             });
         }
@@ -338,6 +338,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
                 layer.label = it.accent ? 11 : 9;
                 applyTextStyle(layer, it.display, st, it.size, ctx);
                 applyBlend(layer, st);
+                if (it.invert) setInverted(layer, true);   // слово из ~разметки~: белый + Difference
                 it.layer = layer;
                 it.rect = layer.sourceRectAtTime(Math.max(0, it.start), false);
             }
@@ -544,17 +545,20 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
     };
 
     // Инверсия одним кликом: если у всех слоёв уже Difference — вернуть Normal; иначе белый цвет + Difference.
+    function setInverted(layer, on) {
+        if (on) {
+            var prop = layer.property("Source Text"), d = prop.value;
+            d.fillColor = [1, 1, 1]; d.applyFill = true;
+            prop.setValue(d);
+            layer.blendingMode = BlendingMode.DIFFERENCE;
+        } else {
+            layer.blendingMode = BlendingMode.NORMAL;
+        }
+    }
     N.toggleInvert = function (layers) {
         var allOn = true, i;
         for (i = 0; i < layers.length; i++) if (layers[i].blendingMode !== BlendingMode.DIFFERENCE) allOn = false;
-        for (i = 0; i < layers.length; i++) {
-            var l = layers[i];
-            if (allOn) { l.blendingMode = BlendingMode.NORMAL; continue; }
-            var prop = l.property("Source Text"), d = prop.value;
-            d.fillColor = [1, 1, 1]; d.applyFill = true;
-            prop.setValue(d);
-            l.blendingMode = BlendingMode.DIFFERENCE;
-        }
+        for (i = 0; i < layers.length; i++) setInverted(layers[i], !allOn);
         return !allOn;
     };
 

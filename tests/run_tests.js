@@ -88,6 +88,15 @@ const GOPTS = { maxWords: 1, maxChars: 99, pauseBreak: 0.35, punctBreak: true, s
     const r = N.parseLine("если *квартира сдавалась*: 97K");
     assert.deepStrictEqual(r.map(x => [x.text, x.accent]), [["если", false], ["квартира", true], ["сдавалась:", true], ["97K", false]]);
   });
+  await test("инверсия ~слово~ и сочетание *~слово~*: разбор, сохранение, не меняет тайминги", () => {
+    const r = N.parseLine("если ~до этого~ *~ваша~* квартира");
+    assert.deepStrictEqual(r.map(x => [x.text, !!x.accent, !!x.invert]), [["если", false, false], ["до", false, true], ["этого", false, true], ["ваша", true, true], ["квартира", false, false]]);
+    assert.deepStrictEqual(N.parseLine("~слово~.").map(x => x.text), ["слово."]);
+    const d = sample(), w = [];
+    const words = N.applyEdits(d, "Привет, ~это~ NOIR.\nСубтитры *~сами~*", w);
+    assert.strictEqual(w.length, 0); assert.deepStrictEqual(words.map(x => !!x.invert), [false, true, false, false, true]); near(words[1].start, 1.35);
+    d.segments[0].words[1].invert = true; assert.strictEqual(N.toEditorText(d).split("\n")[0], "Привет, ~это~ NOIR.");
+  });
   await test("toEditorText сохраняет разметку (round-trip)", () => {
     const d = sample(); d.segments[0].words[1].accent = true; d.segments[1].words[1].breakBefore = true;
     const t = N.toEditorText(d);
@@ -370,6 +379,14 @@ const GOPTS = { maxWords: 1, maxChars: 99, pauseBreak: 0.35, punctBreak: true, s
     assert.strictEqual(N.toggleInvert([b]), true); assert.strictEqual(b.blendingMode, BlendingMode.DIFFERENCE); assert.deepStrictEqual(b.src.value.fillColor, [1, 1, 1]);
     assert.strictEqual(N.toggleInvert([b]), false); assert.strictEqual(b.blendingMode, BlendingMode.NORMAL);
   });
+  await test("при создании: слово ~инверсия~ — Difference и белый, остальные слова обычные", () => {
+    const c = mkComp(), st = styleOf("reels-glow"); st.layout.autoAccent = false; st.base.color = [0.5, 0.2, 0.2];
+    const words = N.applyEdits(sample(), "Привет, ~это~ NOIR.\nСубтитры сами", []);
+    N.generate(c, prep(words, st.layout), st, st.anim, true);
+    const byName = (n) => subs(c).find(l => l.name === "NOIR · " + n);
+    assert.strictEqual(byName("это").blendingMode, BlendingMode.DIFFERENCE); assert.deepStrictEqual(byName("это").src.value.fillColor, [1, 1, 1]);
+    assert.strictEqual(byName("NOIR").blendingMode, BlendingMode.NORMAL); assert.deepStrictEqual(byName("NOIR").src.value.fillColor, [0.5, 0.2, 0.2]);
+  });
   await test("все слои сразу + пользовательский слой без тега", () => {
     const c = mkComp(), st = styleOf("kinetic-stack"); gen(c, "kinetic-stack");
     const user = new mock.TextLayer(c, "мой текст", c._fonts); user.inPoint = 1; user.outPoint = 3; c._l.push(user);
@@ -480,10 +497,10 @@ const GOPTS = { maxWords: 1, maxChars: 99, pauseBreak: 0.35, punctBreak: true, s
   });
   await test("кнопка «◐ Инверсия»: без выделения — ошибка; с выделением включает и выключает", () => {
     const c = mkComp(); gen(c); const ls = subs(c); env.log.alerts.length = 0;
-    panel.button("◐ Инверсия").onClick(); assert.ok(/Выделите/.test(env.log.alerts[0]));
-    ls[0].selected = true; panel.button("◐ Инверсия").onClick();
+    panel.button("◐ Инверсия вкл/выкл для выделенных слоёв").onClick(); assert.ok(/Выделите/.test(env.log.alerts[0]));
+    ls[0].selected = true; panel.button("◐ Инверсия вкл/выкл для выделенных слоёв").onClick();
     assert.strictEqual(ls[0].blendingMode, BlendingMode.DIFFERENCE);
-    panel.button("◐ Инверсия").onClick(); assert.strictEqual(ls[0].blendingMode, BlendingMode.NORMAL);
+    panel.button("◐ Инверсия вкл/выкл для выделенных слоёв").onClick(); assert.strictEqual(ls[0].blendingMode, BlendingMode.NORMAL);
     ls[0].selected = false;
   });
   await test("Распознать без выделенного слоя -> понятная ошибка", () => {

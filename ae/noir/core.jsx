@@ -67,7 +67,10 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             var ws = data.segments[i].words, parts = [];
             for (var j = 0; j < ws.length; j++) {
                 if (ws[j].breakBefore && j) parts.push("|");
-                parts.push(ws[j].accent ? "*" + ws[j].text + "*" : ws[j].text);
+                var wt = ws[j].text;
+                if (ws[j].invert) wt = "~" + wt + "~";
+                if (ws[j].accent) wt = "*" + wt + "*";
+                parts.push(wt);
             }
             lines.push(parts.join(" "));
         }
@@ -80,18 +83,30 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
     // Возвращает [{text, accent, breakBefore}]; разметка в число слов не входит.
     N.parseLine = function (line) {
         var raw = String(line).replace(/^\s+|\s+$/g, "").split(/\s+/), out = [];
-        var inAccent = false, pendingBreak = false;
+        var inAccent = false, inInvert = false, pendingBreak = false;
         for (var i = 0; i < raw.length; i++) {
             var t = raw[i];
             if (t === "") continue;
             if (t === "|") { pendingBreak = true; continue; }
-            var open = t.charAt(0) === "*", accent;
-            if (open) { t = t.substring(1); inAccent = true; }
-            accent = inAccent;
-            if (t.length && t.charAt(t.length - 1) === "*") { t = t.substring(0, t.length - 1); inAccent = false; }
-            else if (/\*[.,!?;:…]+$/.test(t)) { t = t.replace(/\*([.,!?;:…]+)$/, "$1"); inAccent = false; }
+            // открывающие маркеры: *…  ~…  (можно оба: *~слово~*)
+            while (t.charAt(0) === "*" || t.charAt(0) === "~") {
+                if (t.charAt(0) === "*") inAccent = true; else inInvert = true;
+                t = t.substring(1);
+            }
+            var accent = inAccent, invert = inInvert;
+            // закрывающие маркеры; после них может стоять пунктуация: *слово*.
+            var again = true;
+            while (again) {
+                again = false;
+                var m = /([*~])([.,!?;:…]*)$/.exec(t);
+                if (m) {
+                    if (m[1] === "*") inAccent = false; else inInvert = false;
+                    t = t.substring(0, t.length - m[0].length) + m[2];
+                    again = true;
+                }
+            }
             if (t === "") continue;
-            out.push({ text: t, accent: accent, breakBefore: pendingBreak });
+            out.push({ text: t, accent: accent, invert: invert, breakBefore: pendingBreak });
             pendingBreak = false;
         }
         return out;
@@ -120,7 +135,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             }
             if (texts.length === ws.length) {
                 for (var j = 0; j < ws.length; j++) out.push({
-                    text: texts[j].text, accent: texts[j].accent, breakBefore: texts[j].breakBefore,
+                    text: texts[j].text, accent: texts[j].accent, invert: texts[j].invert, breakBefore: texts[j].breakBefore,
                     start: ws[j].start, end: ws[j].end, seg: s
                 });
                 continue;
@@ -133,7 +148,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             for (k = 0; k < texts.length; k++) {
                 var a = t0 + (t1 - t0) * acc / total;
                 acc += texts[k].text.length + 1;
-                out.push({ text: texts[k].text, accent: texts[k].accent, breakBefore: texts[k].breakBefore,
+                out.push({ text: texts[k].text, accent: texts[k].accent, invert: texts[k].invert, breakBefore: texts[k].breakBefore,
                     start: a, end: t0 + (t1 - t0) * acc / total, seg: s });
             }
         }
@@ -157,7 +172,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
                 if (cur.words.length >= opts.maxWords || len > opts.maxChars ||
                     gap > opts.pauseBreak || w.seg !== cur.seg || w.breakBefore) flush();
             }
-            var item = { text: text, accent: !!w.accent, start: w.start, end: w.end };
+            var item = { text: text, accent: !!w.accent, invert: !!w.invert, start: w.start, end: w.end };
             if (!cur) cur = { text: text, start: w.start, end: w.end, seg: w.seg, words: [item] };
             else { cur.text += " " + text; cur.end = w.end; cur.words.push(item); }
             if (opts.punctBreak && /[.!?…,;:]$/.test(w.text)) flush();

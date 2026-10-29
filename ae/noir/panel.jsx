@@ -7,7 +7,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
 (function (N) {
     var SECTION = "NOIR Captions";
     var SETTINGS_KEY = "settings.v2";
-    var VERSION = "0.5.1";
+    var VERSION = "0.5.2";
 
     function clone(o) { return N.parseJSON(N.stringify(o)); }
 
@@ -208,7 +208,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         stStatus.preferredSize.height = 32;
 
         // ================= Текст =================
-        tText.add("statictext", undefined, "Строка = фраза.  *слово* — акцент,  | — новая фраза");
+        tText.add("statictext", undefined, "Строка = фраза.  *слово* — акцент,  ~слово~ — инверсия,  | — новая фраза");
         var etText = tText.add("edittext", undefined, "", { multiline: true, scrolling: true, wantReturn: true });
         etText.preferredSize = [260, 120];
         etText.alignment = ["fill", "fill"];
@@ -376,7 +376,8 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         var rQuick = tLayers.add("group");
         var btnMakeAccent = rQuick.add("button", undefined, "★ Сделать акцентом");
         var btnMakeBase = rQuick.add("button", undefined, "Сделать обычным");
-        var btnInvert = rQuick.add("button", undefined, "◐ Инверсия");
+        // отдельной строкой — в узком окне третья кнопка в ряду обрезается
+        var btnInvert = tLayers.add("button", undefined, "◐ Инверсия вкл/выкл для выделенных слоёв");
         btnInvert.helpTip = "Белый текст в режиме Difference: инвертирует кадр под буквами. Повторный клик — выключить";
         var pnlApply = tLayers.add("panel", undefined, "Применить настройки панели к выделенным");
         pnlApply.alignChildren = ["fill", "top"];
