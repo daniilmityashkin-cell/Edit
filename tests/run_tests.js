@@ -852,6 +852,16 @@ const GOPTS = { maxWords: 1, maxChars: 99, pauseBreak: 0.35, punctBreak: true, s
     panel.button("◐ Инверсия вкл/выкл для выделенных слоёв").onClick(); assert.strictEqual(ls[0].blendingMode, BlendingMode.NORMAL);
     ls[0].selected = false;
   });
+  await test("инверсия для SVG/картинки: белая заливка с альфой + Difference; повторно — снимает; текст и SVG вместе", () => {
+    const c = mkComp(); gen(c); const t = subs(c)[0], v = new mock.AVLayer(c, "logo.svg"); c._l.push(v);
+    t.selected = v.selected = true; env.log.alerts.length = 0;
+    const B = "◐ Инверсия вкл/выкл для выделенных слоёв";
+    panel.button(B).onClick(); assert.strictEqual(env.log.alerts.length, 0, env.log.alerts.join("|"));
+    assert.strictEqual(v.blendingMode, BlendingMode.DIFFERENCE); assert.strictEqual(t.blendingMode, BlendingMode.DIFFERENCE);
+    assert.strictEqual(v.effects.length, 1); assert.strictEqual(v.effects[0].matchName, "ADBE Fill"); assert.deepStrictEqual(v.effects[0].property("ADBE Fill-0002").value, [1, 1, 1, 1]);
+    panel.button(B).onClick(); assert.strictEqual(v.blendingMode, BlendingMode.NORMAL); assert.strictEqual(v.effects.length, 0);
+    t.selected = v.selected = false; env.log.alerts.length = 0; panel.button(B).onClick(); assert.ok(/Выделите/.test(env.log.alerts[0]));
+  });
   await test("вкладка SFX: настройки и кнопки есть; список звуков заполнен из библиотеки", () => {
     const p = N.buildPanel(new mock.Panel(), ROOT);
     assert.ok(p.find(e => e.type === "checkbox" && e.text === "Озвучивать при создании субтитров"));

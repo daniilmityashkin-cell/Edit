@@ -476,7 +476,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         var btnReflow = tLayers.add("button", undefined, "↻ Перекласть фразу выделенных слов");
         btnReflow.helpTip = "Раскладывает слова фразы заново по настройкам вкладки «Раскладка» (строки, акцент отдельной строкой) вокруг её центра. Анимация сохраняется";
         var btnInvert = tLayers.add("button", undefined, "◐ Инверсия вкл/выкл для выделенных слоёв");
-        btnInvert.helpTip = "Белый текст в режиме Difference: инвертирует кадр под буквами. Повторный клик — выключить";
+        btnInvert.helpTip = "Белый слой в режиме Difference инвертирует кадр под собой. Работает для текста, SVG, картинок и фигур. Повторный клик — выключить";
         var pnlApply = tLayers.add("panel", undefined, "Применить настройки панели к выделенным");
         pnlApply.alignChildren = ["fill", "top"];
         pnlApply.margins = [6, 12, 6, 6];
@@ -1229,7 +1229,17 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         btnAnimApply.onClick = function () { applyToLayers("base", false, true, "NOIR Captions: анимация выделенным слоям"); };
         btnInvert.onClick = function () {
             var sel;
-            try { sel = selectedTextLayers(); } catch (e) { alert(e.message, "NOIR Captions"); return; }
+            try {
+                var ic = app.project.activeItem;
+                if (!(ic instanceof CompItem)) throw new Error("Откройте композицию.");
+                var il = [];
+                for (var ii = 0; ii < ic.selectedLayers.length; ii++) {
+                    var cand = ic.selectedLayers[ii];
+                    if (cand instanceof AVLayer && cand.hasVideo !== false) il.push(cand);
+                }
+                if (!il.length) throw new Error("Выделите в таймлайне текстовые слои, SVG, картинки или фигуры.");
+                sel = { comp: ic, layers: il };
+            } catch (e) { alert(e.message, "NOIR Captions"); return; }
             app.beginUndoGroup("NOIR Captions: инверсия");
             try {
                 var on = N.toggleInvert(sel.layers);

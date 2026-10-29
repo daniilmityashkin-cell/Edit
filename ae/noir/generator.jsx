@@ -683,7 +683,23 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
     };
 
     // Инверсия одним кликом: если у всех слоёв уже Difference — вернуть Normal; иначе белый цвет + Difference.
+    // Не текст (SVG, картинка, фигура): белая заливка с сохранением альфы (эффект Fill) + Difference.
+    function setInvertedGraphic(layer, on) {
+        clearEffect(layer, "NOIR Invert");
+        if (on) {
+            var fx = layer.property("ADBE Effect Parade");
+            if (fx && fx.canAddProperty("ADBE Fill")) {
+                var e = fx.addProperty("ADBE Fill");
+                e.name = "NOIR Invert";
+                try { e.property("ADBE Fill-0002").setValue([1, 1, 1, 1]); } catch (err) {}
+            }
+            layer.blendingMode = BlendingMode.DIFFERENCE;
+        } else {
+            layer.blendingMode = BlendingMode.NORMAL;
+        }
+    }
     function setInverted(layer, on) {
+        if (!(layer instanceof TextLayer)) { setInvertedGraphic(layer, on); return; }
         if (on) {
             var prop = layer.property("Source Text"), d = prop.value;
             d.fillColor = [1, 1, 1]; d.applyFill = true;
