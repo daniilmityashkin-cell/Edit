@@ -15,7 +15,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
     var FALLBACK_STYLE = {
         schema: "noir-style/1", id: "custom", name: "Свой",
         layout: { reveal: "word", maxWords: 1, maxChars: 28, lineChars: 16, pauseBreak: 0.35, punctBreak: true,
-            stripPunct: true, posX: 50, posY: 18, lineGap: 0.12, wordSpace: 0.28, accentOwnLine: true,
+            stripPunct: true, autoAccent: false, posX: 50, posY: 18, lineGap: 0.12, wordSpace: 0.28, accentOwnLine: true,
             safeWidth: 0.9, holdGap: 0.3 },
         base: { fonts: ["TimesNewRomanPSMT"], size: 200, color: [0.8, 0, 0], tracking: 0, caps: true,
             strokeWidth: 0, strokeColor: [0, 0, 0], shadow: null, glow: null },
@@ -281,6 +281,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         var etLineChars = field(rLine, 16, 3);
         rLine.add("statictext", undefined, "(0 — без переноса)");
         var cbAccentLine = tLayout.add("checkbox", undefined, "Акцентные слова — отдельной строкой");
+        var cbAutoAccent = tLayout.add("checkbox", undefined, "Авто-акценты: выделять главное слово во фразе");
         var rPos = row(tLayout, "Позиция X/Y, %");
         var etPosX = field(rPos, 50, 4);
         var etPosY = field(rPos, 50, 4);
@@ -337,6 +338,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         btnReset.helpTip = "Вернуть текст как после распознавания (отменить ваши правки)";
         btnSavePreset.helpTip = "Сохранить все текущие настройки (шрифты, вид, раскладка, анимация) как свой пресет";
         btnFromLayer.helpTip = "Выделите текстовый слой в AE — шрифт, размер и цвет возьмутся с него";
+        cbAutoAccent.helpTip = "В каждой фразе из нескольких слов автоматически выделяется главное слово (число или самое длинное) — оно получит акцентный стиль";
         btnGenerate.helpTip = "Создать текстовые слои с субтитрами в открытой композиции";
         cbReplace.helpTip = "Перед созданием удалить слои NOIR из прошлого запуска. Ваши слои не трогаются";
         rbBase.helpTip = rbBase2.helpTip = "Настройки ниже относятся к обычным словам";
@@ -433,6 +435,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             etMaxChars.text = String(L.maxChars);
             etLineChars.text = String(L.lineChars);
             cbAccentLine.value = !!L.accentOwnLine;
+            cbAutoAccent.value = !!L.autoAccent;
             etPosX.text = String(L.posX);
             etPosY.text = String(L.posY);
             etLineGap.text = String(L.lineGap);
@@ -479,6 +482,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             L.maxChars = Math.round(num(etMaxChars.text, 28, 1, 300));
             L.lineChars = Math.round(num(etLineChars.text, 0, 0, 300));
             L.accentOwnLine = cbAccentLine.value;
+            L.autoAccent = cbAutoAccent.value;
             L.posX = num(etPosX.text, 50, -50, 150);
             L.posY = num(etPosY.text, 50, -50, 150);
             L.lineGap = num(etLineGap.text, 0.12, -1, 5);
@@ -567,7 +571,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         var editable = [etSize, etTrack, etStroke, etGlow, etMaxWords, etMaxChars, etLineChars, etPosX, etPosY,
             etLineGap, etWordSpace, etPause, etInDur, etOutDur, etDist, etBlur, etEase];
         for (var ei = 0; ei < editable.length; ei++) editable[ei].onChange = function () { markCustom(); };
-        var toggles = [cbCaps, cbShadow, cbGlow, cbAccentLine, cbPunctBreak, cbStrip];
+        var toggles = [cbCaps, cbShadow, cbGlow, cbAccentLine, cbAutoAccent, cbPunctBreak, cbStrip];
         for (var ci = 0; ci < toggles.length; ci++) toggles[ci].onClick = function () { markCustom(); };
         ddReveal.onChange = ddIn.onChange = ddOut.onChange = function () { markCustom(); };
 
@@ -738,6 +742,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
                 maxWords: L.maxWords, maxChars: L.maxChars, pauseBreak: L.pauseBreak,
                 punctBreak: L.punctBreak, stripPunct: L.stripPunct
             });
+            if (L.autoAccent) N.autoAccent(groups);
             N.timeGroups(groups, L.holdGap, 0.08);
             var map = resolveLink(comp);
             if (map.note) warnings.push(map.note);

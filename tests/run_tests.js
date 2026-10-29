@@ -115,6 +115,15 @@ const GOPTS = { maxWords: 1, maxChars: 99, pauseBreak: 0.35, punctBreak: true, s
     const g = N.groupWords(w, Object.assign({}, GOPTS, { maxWords: 5, punctBreak: false }));
     assert.deepStrictEqual(g[0].words.map(x => x.accent), [false, true, true]);
   });
+  await test("autoAccent: число или самое длинное слово; ручной акцент и 1-словные группы не трогает", () => {
+    const o = { maxWords: 4, maxChars: 99, pauseBreak: 9, punctBreak: false, stripPunct: true };
+    const mk = (txt) => N.groupWords(N.applyEdits({ segments: [{ words: txt.split(" ").map((t, i) => ({ text: t.replace(/\*/g, ""), start: i, end: i + 0.5 })) }] }, txt, []), o);
+    let g = mk("если до этого квартира"); assert.strictEqual(N.autoAccent(g), 1);
+    assert.deepStrictEqual(g[0].words.map(w => w.accent), [false, false, false, true]);
+    g = mk("за 97 дней"); N.autoAccent(g); assert.deepStrictEqual(g[0].words.map(w => w.accent), [false, true, false]);
+    g = mk("*до* этого ваша квартира"); assert.strictEqual(N.autoAccent(g), 0);
+    g = N.groupWords(N.flattenWords(sample()), Object.assign({}, o, { maxWords: 1 })); assert.strictEqual(N.autoAccent(g), 0);
+  });
   await test("timeGroups: короткая пауза заполняется, длинная нет", () => {
     const g = N.timeGroups(N.groupWords(N.flattenWords(sample()), Object.assign({}, GOPTS, { pauseBreak: 9, punctBreak: false })), 0.3, 0.08);
     near(g[0].outTime, 1.35); near(g[2].outTime, 2.0);

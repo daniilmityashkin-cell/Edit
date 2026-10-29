@@ -17,7 +17,8 @@
   "wordSpace": 0.28,
   "accentOwnLine": true,
   "safeWidth": 0.88,
-  "holdGap": 0.3
+  "holdGap": 0.3,
+  "autoAccent": true
  },
  "base": {
   "fonts": [

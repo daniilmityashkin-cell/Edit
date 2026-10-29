@@ -166,6 +166,26 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         return groups;
     };
 
+    // Авто-акценты: в каждой группе из 2+ слов без ручного акцента выделяем одно главное слово —
+    // число, иначе самое длинное (от 4 букв; при равенстве — последнее). Текст не меняется.
+    N.autoAccent = function (groups) {
+        var marked = 0;
+        for (var i = 0; i < groups.length; i++) {
+            var ws = groups[i].words, has = false, j;
+            if (ws.length < 2) continue;
+            for (j = 0; j < ws.length; j++) if (ws[j].accent) has = true;
+            if (has) continue;
+            var best = -1, score = 0;
+            for (j = 0; j < ws.length; j++) {
+                var t = ws[j].text.replace(PUNCT_STRIP, "");
+                var sc = /\d/.test(t) ? 100 : (t.length >= 4 ? t.length : 0);
+                if (sc > 0 && sc >= score) { best = j; score = sc; }
+            }
+            if (best >= 0) { ws[best].accent = true; marked++; }
+        }
+        return marked;
+    };
+
     // Время показа: короткая пауза до следующей группы заполняется,
     // чтобы не мигал пустой кадр. Гарантирует end > start.
     N.timeGroups = function (groups, holdGap, minDur) {
