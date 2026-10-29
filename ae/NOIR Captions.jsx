@@ -23,12 +23,19 @@
         if (valid(here.fsName)) root = here.fsName;
     }
     if (!valid(root)) {
-        var f = Folder.selectDialog("NOIR Captions: укажите папку проекта (где лежат ae, recognition)");
-        if (!f || !valid(f.fsName)) {
-            alert("Папка проекта NOIR Captions не найдена (нужен файл ae/noir/panel.jsx).", SECTION);
+        var f = Folder.selectDialog("NOIR Captions: выберите папку проекта — ту, куда делали git clone " +
+            "(обычно C:\\Users\\<имя>\\edit). Путь можно вписать в поле «Папка» внизу.");
+        if (!f) return;
+        // выбрали папку ae или ae/noir внутри проекта — поднимемся выше
+        var probe = f;
+        for (var up = 0; up < 2 && probe && !valid(probe.fsName); up++) probe = probe.parent;
+        if (!probe || !valid(probe.fsName)) {
+            alert("В папке\n" + f.fsName + "\nнет файла ae\\noir\\panel.jsx.\n\n" +
+                "1) Выберите папку, куда делали git clone (например C:\\Users\\<имя>\\edit).\n" +
+                "2) Если папка верная — выполните в ней: git pull (ветка noir-captions-stage1).", SECTION);
             return;
         }
-        root = f.fsName;
+        root = probe.fsName;
     }
     app.settings.saveSetting(SECTION, KEY, root);
 
