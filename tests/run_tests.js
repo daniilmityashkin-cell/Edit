@@ -253,7 +253,7 @@ const GOPTS = { maxWords: 1, maxChars: 99, pauseBreak: 0.35, punctBreak: true, s
   });
   await test("сохранить свой пресет -> появляется в списке", () => {
     global.prompt = () => "Мой тест";
-    panel.button("Сохранить…").onClick();
+    panel.button("Сохранить как пресет…").onClick();
     assert.ok(findDD(panel, "★ Мой тест"));
   });
   await test("Распознать без выделенного слоя -> понятная ошибка", () => {

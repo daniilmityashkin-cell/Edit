@@ -112,9 +112,10 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         var tSpeech = tabs.add("tab", undefined, "Речь");
         var tText = tabs.add("tab", undefined, "Текст");
         var tStyle = tabs.add("tab", undefined, "Стиль");
+        var tView = tabs.add("tab", undefined, "Вид");
         var tLayout = tabs.add("tab", undefined, "Раскладка");
         var tAnim = tabs.add("tab", undefined, "Анимация");
-        var all = [tSpeech, tText, tStyle, tLayout, tAnim];
+        var all = [tSpeech, tText, tStyle, tView, tLayout, tAnim];
         for (var ti = 0; ti < all.length; ti++) {
             all[ti].orientation = "column";
             all[ti].alignChildren = ["fill", "top"];
@@ -171,7 +172,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         var rBtns = tSpeech.add("group");
         var btnRecognize = rBtns.add("button", undefined, "Распознать речь");
         var btnCancel = rBtns.add("button", undefined, "Отмена");
-        var btnLoad = rBtns.add("button", undefined, "Открыть JSON…");
+        var btnLoad = rBtns.add("button", undefined, "Загрузить результат…");
         btnCancel.enabled = false;
         var progress = tSpeech.add("progressbar", undefined, 0, 100);
         progress.preferredSize.height = 6;
@@ -187,14 +188,14 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         etText.preferredSize = [260, 220];
         etText.alignment = ["fill", "fill"];
         var rTextBtns = tText.add("group");
-        var btnSave = rTextBtns.add("button", undefined, "Сохранить JSON…");
+        var btnSave = rTextBtns.add("button", undefined, "Сохранить результат…");
         var btnReset = rTextBtns.add("button", undefined, "Сбросить правки");
 
         // ================= Стиль =================
         var rPreset = row(tStyle, "Пресет", 60);
         var ddPreset = rPreset.add("dropdownlist", undefined, []);
         ddPreset.alignment = ["fill", "center"];
-        var btnSavePreset = rPreset.add("button", undefined, "Сохранить…");
+        var btnSavePreset = rPreset.add("button", undefined, "Сохранить как пресет…");
         var stPresetDesc = tStyle.add("statictext", undefined, "", { multiline: true });
         stPresetDesc.preferredSize.height = 30;
 
@@ -223,21 +224,29 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             etPs.alignment = ["fill", "center"];
         }
         var btnFromLayer = pnlText.add("button", undefined, "Взять стиль с выделенного текстового слоя");
-        var rSize = row(pnlText, "Размер");
+        // ---- вкладка «Вид»: размер, цвет, обводка, эффекты ----
+        var rTarget2 = row(tView, "Настраиваю", 95);
+        var rbBase2 = rTarget2.add("radiobutton", undefined, "Обычные слова");
+        var rbAccent2 = rTarget2.add("radiobutton", undefined, "*Акцент*");
+        rbBase2.value = true;
+        var pnlView = tView.add("panel", undefined, "");
+        pnlView.alignChildren = ["fill", "top"];
+        pnlView.margins = [8, 10, 8, 8];
+        var rSize = row(pnlView, "Размер");
         var etSize = field(rSize, 0, 5);
         rSize.add("statictext", undefined, "Трекинг");
         var etTrack = field(rSize, 0, 5);
         var cbCaps = rSize.add("checkbox", undefined, "КАПС");
-        var rColor = row(pnlText, "Цвет");
+        var rColor = row(pnlView, "Цвет");
         var swatch = rColor.add("panel");
         swatch.preferredSize = [40, 18];
         var btnColor = rColor.add("button", undefined, "Выбрать…");
-        var rStroke = row(pnlText, "Обводка, px");
+        var rStroke = row(pnlView, "Обводка, px");
         var etStroke = field(rStroke, 0, 4);
         var swatchStroke = rStroke.add("panel");
         swatchStroke.preferredSize = [40, 18];
         var btnStrokeColor = rStroke.add("button", undefined, "Цвет…");
-        var rFx = row(pnlText, "Эффекты");
+        var rFx = row(pnlView, "Эффекты");
         var cbShadow = rFx.add("checkbox", undefined, "Тень");
         var cbGlow = rFx.add("checkbox", undefined, "Свечение");
         rFx.add("statictext", undefined, "размер");
@@ -290,6 +299,19 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         var btnGenerate = win.add("button", undefined, "Создать субтитры");
         btnGenerate.preferredSize.height = 30;
         win.add("statictext", undefined, "NOIR CAPTIONS " + VERSION);
+
+        // ================= подсказки (наведите курсор) =================
+        btnRecognize.helpTip = "Распознать речь в выделенном слое со звуком (локально, без интернета)";
+        btnCancel.helpTip = "Остановить распознавание";
+        btnLoad.helpTip = "Открыть ранее сохранённый результат распознавания, чтобы не распознавать заново";
+        btnSave.helpTip = "Сохранить распознанный текст с таймингами и вашими правками в файл";
+        btnReset.helpTip = "Вернуть текст как после распознавания (отменить ваши правки)";
+        btnSavePreset.helpTip = "Сохранить все текущие настройки (шрифты, вид, раскладка, анимация) как свой пресет";
+        btnFromLayer.helpTip = "Выделите текстовый слой в AE — шрифт, размер и цвет возьмутся с него";
+        btnGenerate.helpTip = "Создать текстовые слои с субтитрами в открытой композиции";
+        cbReplace.helpTip = "Перед созданием удалить слои NOIR из прошлого запуска. Ваши слои не трогаются";
+        rbBase.helpTip = rbBase2.helpTip = "Настройки ниже относятся к обычным словам";
+        rbAccent.helpTip = rbAccent2.helpTip = "Настройки ниже относятся к словам, которые вы выделили *звёздочками* на вкладке «Текст»";
 
         // ================= логика =================
         function paintSwatch(p, c) {
@@ -359,7 +381,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         // Показать стиль в контролах
         function syncTextUI() {
             var t = tgt();
-            pnlText.text = state.target === "base" ? "Обычные слова" : "Акцентные слова (*в звёздочках*)";
+            pnlText.text = pnlView.text = state.target === "base" ? "Обычные слова" : "Акцентные слова (*в звёздочках*)";
             stFont.text = t.fonts.join(", ");
             if (etPs) etPs.text = t.fonts[0] || "";
             if (families) fillFamilies();
@@ -496,8 +518,13 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             syncTextUI();
             state.syncing = false;
         }
-        rbBase.onClick = function () { switchTarget("base"); };
-        rbAccent.onClick = function () { switchTarget("accent"); };
+        function pickTarget(t) {
+            rbBase.value = rbBase2.value = (t === "base");
+            rbAccent.value = rbAccent2.value = (t === "accent");
+            switchTarget(t);
+        }
+        rbBase.onClick = rbBase2.onClick = function () { pickTarget("base"); };
+        rbAccent.onClick = rbAccent2.onClick = function () { pickTarget("accent"); };
 
         if (families) {
             etFilter.onChanging = function () { fillFamilies(); };
