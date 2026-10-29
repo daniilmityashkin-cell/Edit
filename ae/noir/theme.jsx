@@ -99,6 +99,18 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             btn.addEventListener("mouseout", function () { this._hot = false; redraw(this); });
         } catch (e) {}
     };
+    // Числовой бегунок: значение голубым (как в AE), при перетаскивании — акцентом.
+    T.scrub = function (btn) {
+        try {
+            btn.onDraw = function () {
+                var g = this.graphics, w = this.size.width, h = this.size.height;
+                var drag = !!this._dragging, hot = !!this._hot;
+                fillRound(g, 0, 0, w, h, 4, brush(g, drag ? C.accent : (hot ? C.lineHi : C.line)));
+                fillRound(g, 1, 1, w - 2, h - 2, 3, brush(g, C.bg));
+                drawLabel(this, g, w, h, drag ? C.accentHi : [0.42, 0.72, 1.0], false);
+            };
+        } catch (e) {}
+    };
     T.setChip = function (btn, on) { btn._on = !!on; redraw(btn); };
 
     // Замена tabbedpanel: полоса текстовых вкладок + стопка групп.

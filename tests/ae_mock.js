@@ -179,6 +179,9 @@ class UI {
     this.children.push(el); return el;
   }
   removeAll() { this.items = []; this._sel = null; }
+  addEventListener(type, fn) { (this._ev = this._ev || {})[type] = ((this._ev || {})[type] || []).concat(fn); }
+  fire(type, ev) { ((this._ev || {})[type] || []).forEach(fn => fn.call(this, Object.assign({ clientX: 0, shiftKey: false, ctrlKey: false, altKey: false }, ev))); }
+  notify() {}
   get selection() { return this._sel; }
   set selection(v) { this._sel = typeof v === "number" ? this.items[v] : v; if (this.onChange) this.onChange(); }
   find(pred) { if (pred(this)) return this; for (const c of this.children) { const r = c.find(pred); if (r) return r; } return null; }

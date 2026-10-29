@@ -497,6 +497,40 @@ const GOPTS = { maxWords: 1, maxChars: 99, pauseBreak: 0.35, punctBreak: true, s
     const iTabs = kids.findIndex(k => k.type === "group" && k.orientation === "stack");
     assert.ok(iGen >= 0 && iTabs >= 0 && iGen < iTabs, "gen " + iGen + " tabs " + iTabs);
   });
+  await test("бегунки: у всех числовых полей есть spec и подсказка; текстовое поле осталось текстовым", () => {
+    const p = N.buildPanel(new mock.Panel(), ROOT), sc = [];
+    (function walk(e) { if (e._scrub) sc.push(e); (e.children || []).forEach(walk); })(p);
+    assert.ok(sc.length >= 21, "бегунков: " + sc.length);
+    sc.forEach(b => { assert.ok(b.helpTip && /Shift/.test(b.helpTip)); assert.ok(isFinite(parseFloat(b.text)), "значение не число: " + b.text); });
+    assert.ok(p.find(e => e.type === "edittext" && e.text === "" && e.helpTip && /Подсказка модели/.test(e.helpTip)), "поле имён/терминов должно быть текстовым");
+  });
+  await test("бегунок: перетаскивание меняет значение, Shift — точнее, Ctrl — быстрее, границы соблюдаются, onChange один раз в конце", () => {
+    const p = N.buildPanel(new mock.Panel(), ROOT); let calls = 0;
+    const b = p.find(e => e._scrub && e._scrub.name === "Размер"); b.onChange = () => calls++;
+    const t0 = parseFloat(b.text);
+    b.fire("mousedown", { clientX: 200 }); b.fire("mousemove", { clientX: 210 }); assert.strictEqual(parseFloat(b.text), t0 + 10); assert.strictEqual(calls, 0, "onChange во время перетаскивания");
+    b.fire("mousemove", { clientX: 220, shiftKey: true }); assert.strictEqual(parseFloat(b.text), t0 + 11);      // 10 px при Shift = 1
+    b.fire("mousemove", { clientX: 225, ctrlKey: true }); assert.strictEqual(parseFloat(b.text), t0 + 61);      // 5 px при Ctrl = 50
+    b.fire("mousemove", { clientX: -5000 }); assert.strictEqual(parseFloat(b.text), 4, "нижняя граница");
+    b.fire("mousemove", { clientX: 99999 }); assert.strictEqual(parseFloat(b.text), 2000, "верхняя граница");
+    b.fire("mouseup", {}); assert.strictEqual(calls, 1);
+  });
+  await test("бегунок: дробные поля округляются по dec, целые накапливают дробную часть", () => {
+    const p = N.buildPanel(new mock.Panel(), ROOT);
+    const gap = p.find(e => e._scrub && e._scrub.name === "Мин. интервал, с"); gap.fire("mousedown", { clientX: 0 }); gap.fire("mousemove", { clientX: 10 }); gap.fire("mouseup", {});
+    assert.strictEqual(parseFloat(gap.text), 0.17);   // 0.12 + 10 px × 0.005
+    const w = p.find(e => e._scrub && e._scrub.name === "Слов на экране"); w.fire("mousedown", { clientX: 0 });
+    for (let x = 1; x <= 40; x++) w.fire("mousemove", { clientX: x }); w.fire("mouseup", {});
+    assert.strictEqual(w.text, "4");   // 1 + 40 px × 0.08 = 4.2 → «4»: дробная часть копится без потерь, показывается целое
+  });
+  await test("бегунок: клик без движения открывает ввод; неверный ввод и отмена не меняют значение; ввод ограничивается min/max", () => {
+    const p = N.buildPanel(new mock.Panel(), ROOT), b = p.find(e => e._scrub && e._scrub.name === "Размер"); let calls = 0; b.onChange = () => calls++;
+    const answer = (v) => { global.prompt = () => v; b.fire("mousedown", { clientX: 50 }); b.fire("mousemove", { clientX: 51 }); b.fire("mouseup", {}); };   // 1 px — дрожание, не перетаскивание
+    answer("150"); assert.strictEqual(b.text, "150"); assert.strictEqual(calls, 1);
+    answer("abc"); assert.strictEqual(b.text, "150"); assert.strictEqual(calls, 1);
+    answer(null); assert.strictEqual(b.text, "150"); assert.strictEqual(calls, 1);
+    answer("99999"); assert.strictEqual(b.text, "2000"); answer("1"); assert.strictEqual(b.text, "4"); answer("12,5"); assert.strictEqual(b.text, "13");   // запятая принимается, значение округляется до целого
+  });
   await test("тема: вкладки-кнопки переключают страницы, кнопки получили onDraw", () => {
     assert.ok(N.theme && N.theme.makeTabs, "theme.jsx не загрузилась");
     const tabBtn = (t) => panel.find(e => e.type === "button" && e.text === t);
@@ -521,8 +555,8 @@ const GOPTS = { maxWords: 1, maxChars: 99, pauseBreak: 0.35, punctBreak: true, s
     dd.selection = dd.items.findIndex(i => i.text.indexOf("Kinetic Blue") >= 0);
     const S = N.parseJSON(env.settings["NOIR Captions/settings.v2"]);
     assert.strictEqual(S.presetId, "kinetic-stack"); assert.strictEqual(S.style.anim.animIn, "blurRise");
-    const size = panel.find(e => e.type === "edittext" && e.text === "108");
-    size.text = "70"; size.onChange();
+    const size = panel.find(e => e._scrub && e.text === "108");
+    size.fire("mousedown", { clientX: 100 }); size.fire("mousemove", { clientX: 62 }); size.fire("mouseup", {});   // перетащили влево на 38 px: 108 → 70
     panel.button("Создать субтитры").onClick(); // readUI + сохранение (данных нет -> алерт)
     const S2 = N.parseJSON(env.settings["NOIR Captions/settings.v2"]);
     assert.strictEqual(S2.presetId, ""); assert.strictEqual(S2.style.base.size, 70);

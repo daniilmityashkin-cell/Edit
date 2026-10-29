@@ -7,7 +7,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
 (function (N) {
     var SECTION = "NOIR Captions";
     var SETTINGS_KEY = "settings.v2";
-    var VERSION = "0.6.0";
+    var VERSION = "0.6.1";
 
     function clone(o) { return N.parseJSON(N.stringify(o)); }
 
@@ -67,6 +67,28 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             }
         }
         return out;
+    };
+
+    // ---------- «бегунки»: числа меняются перетаскиванием, как в After Effects ----------
+    // spec: { min, max, step (единиц на пиксель), dec (знаков после запятой), name }
+    N.scrubFormat = function (v, dec) {
+        var p = Math.pow(10, dec || 0), r = Math.round(v * p) / p;
+        return String(r);
+    };
+    // Прибавка при сдвиге мыши на dx пикселей: Shift — точнее (÷10), Ctrl/Alt — быстрее (×10). Результат — без округления.
+    N.scrubAdvance = function (val, dx, spec, mods) {
+        var mult = mods && mods.shift ? 0.1 : (mods && (mods.ctrl || mods.alt) ? 10 : 1);
+        var v = val + dx * spec.step * mult;
+        if (spec.min !== undefined && v < spec.min) v = spec.min;
+        if (spec.max !== undefined && v > spec.max) v = spec.max;
+        return v;
+    };
+    N.scrubParse = function (txt, spec) {
+        var v = parseFloat(String(txt).replace(",", "."));
+        if (isNaN(v)) return null;
+        if (spec.min !== undefined && v < spec.min) v = spec.min;
+        if (spec.max !== undefined && v > spec.max) v = spec.max;
+        return v;
     };
 
     function num(txt, def, min, max) {
@@ -186,10 +208,61 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             dd.selection = idx;
         }
         function idOf(dd, items) { return items[dd.selection ? dd.selection.index : 0].id; }
-        function field(parent, value, chars) {
-            var e = parent.add("edittext", undefined, String(value));
-            e.characters = chars || 4;
-            return e;
+        // Числовое поле-бегунок: зажать левую кнопку на числе и двигать мышью (Shift — точнее, Ctrl/Alt — быстрее);
+        // простой клик — ввод значения. Ведёт себя как edittext: .text (строка), .onChange, .helpTip.
+        var scrubs = [];
+        function redrawScrubs() { for (var i = 0; i < scrubs.length; i++) { try { scrubs[i].notify("onDraw"); } catch (e) {} } }
+        function field(parent, value, chars, spec) {
+            if (!spec) {
+                var e = parent.add("edittext", undefined, String(value));
+                e.characters = chars || 4;
+                return e;
+            }
+            var b = parent.add("button", undefined, N.scrubFormat(value, spec.dec));
+            b._scrub = spec;
+            b.preferredSize = [Math.max(54, (chars || 4) * 8 + 14), 22];
+            var st = { down: false, moved: false, lastX: 0, val: 0 };
+            function redraw() { try { b.notify("onDraw"); } catch (e1) {} }
+            b.addEventListener("mousedown", function (ev) {
+                st.down = true; st.moved = false; st.lastX = ev.clientX;
+                st.val = N.scrubParse(b.text, spec);
+                if (st.val === null) st.val = spec.min !== undefined ? spec.min : 0;
+                b._dragging = true; redraw();
+            });
+            b.addEventListener("mousemove", function (ev) {
+                if (!st.down) return;
+                var dx = ev.clientX - st.lastX;
+                if (!st.moved && Math.abs(dx) < 2) return;     // дрожание руки при клике — не считаем перетаскиванием
+                st.moved = true;
+                st.lastX = ev.clientX;
+                st.val = N.scrubAdvance(st.val, dx, spec, { shift: ev.shiftKey, ctrl: ev.ctrlKey, alt: ev.altKey });
+                b.text = N.scrubFormat(st.val, spec.dec);
+                redraw();
+            });
+            b.addEventListener("mouseup", function () {
+                if (!st.down) return;
+                st.down = false; b._dragging = false;
+                if (st.moved) {
+                    st.moved = false; redraw();
+                    if (b.onChange) b.onChange();
+                    return;
+                }
+                redraw();
+                var ans = prompt((spec.name || "Значение") + " (" +
+                    (spec.min !== undefined ? spec.min : "…") + " … " + (spec.max !== undefined ? spec.max : "…") + "):",
+                    b.text, "NOIR Captions");
+                if (ans === null || ans === undefined) return;
+                var v = N.scrubParse(ans, spec);
+                if (v === null) return;
+                b.text = N.scrubFormat(v, spec.dec);
+                redraw();
+                if (b.onChange) b.onChange();
+            });
+            b.addEventListener("mouseout", function () { b._hot = false; redraw(); });
+            b.addEventListener("mouseover", function () { b._hot = true; redraw(); });
+            b.helpTip = (spec.name ? spec.name + ". " : "") + "Зажмите левую кнопку и двигайте мышь влево/вправо. Shift — точнее, Ctrl — быстрее. Клик — ввести число.";
+            scrubs.push(b);
+            return b;
         }
 
         // ================= Речь =================
@@ -273,16 +346,16 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         pnlView.margins = [6, 10, 6, 6];
         pnlView.spacing = 3;
         var rSize = row(pnlView, "Размер");
-        var etSize = field(rSize, 0, 5);
+        var etSize = field(rSize, 0, 5, { min: 4, max: 2000, step: 1, dec: 0, name: "Размер" });
         rSize.add("statictext", undefined, "Трекинг");
-        var etTrack = field(rSize, 0, 5);
+        var etTrack = field(rSize, 0, 5, { min: -1000, max: 3000, step: 2, dec: 0, name: "Трекинг" });
         var cbCaps = rSize.add("checkbox", undefined, "КАПС");
         var rColor = row(pnlView, "Цвет");
         var swatch = rColor.add("panel");
         swatch.preferredSize = [40, 18];
         var btnColor = rColor.add("button", undefined, "Выбрать…");
         var rStroke = row(pnlView, "Обводка, px");
-        var etStroke = field(rStroke, 0, 4);
+        var etStroke = field(rStroke, 0, 4, { min: 0, max: 200, step: 0.25, dec: 1, name: "Обводка, px" });
         var swatchStroke = rStroke.add("panel");
         swatchStroke.preferredSize = [40, 18];
         var btnStrokeColor = rStroke.add("button", undefined, "Цвет…");
@@ -290,12 +363,12 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         var cbShadow = rFx.add("checkbox", undefined, "Тень");
         var cbGlow = rFx.add("checkbox", undefined, "Свечение");
         rFx.add("statictext", undefined, "размер");
-        var etGlow = field(rFx, 30, 4);
+        var etGlow = field(rFx, 30, 4, { min: 1, max: 500, step: 1, dec: 0, name: "Размер свечения" });
         var rBlend = row(pnlView, "Режим");
         var ddBlend = dropdown(rBlend, N.BLEND_MODES, "normal");
         ddBlend.helpTip = "Инверсия: белый текст + режим Difference инвертирует кадр под буквами";
         rBlend.add("statictext", undefined, "прозр. %");
-        var etOpacity = field(rBlend, 100, 4);
+        var etOpacity = field(rBlend, 100, 4, { min: 0, max: 100, step: 0.5, dec: 0, name: "Прозрачность, %" });
         etOpacity.helpTip = "Прозрачность текста в покое, % (анимация входа и выхода идёт от 0 до этого значения)";
 
         // ================= Раскладка =================
@@ -303,22 +376,22 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             { id: "group", label: "Фраза появляется целиком" }];
         var ddReveal = dropdown(row(tLayout, "Появление"), REVEALS, "word");
         var rWords = row(tLayout, "Слов");
-        var etMaxWords = field(rWords, 1, 3);
+        var etMaxWords = field(rWords, 1, 3, { min: 1, max: 30, step: 0.08, dec: 0, name: "Слов на экране" });
         rWords.add("statictext", undefined, "макс. симв.");
-        var etMaxChars = field(rWords, 28, 3);
+        var etMaxChars = field(rWords, 28, 3, { min: 1, max: 300, step: 0.5, dec: 0, name: "Макс. символов" });
         rWords.add("statictext", undefined, "в строке");
-        var etLineChars = field(rWords, 16, 3);
+        var etLineChars = field(rWords, 16, 3, { min: 0, max: 300, step: 0.3, dec: 0, name: "Символов в строке" });
         etLineChars.helpTip = "Символов в строке (0 — без переноса)";
         var rPos = row(tLayout, "Позиция X/Y, %");
-        var etPosX = field(rPos, 50, 3);
-        var etPosY = field(rPos, 50, 3);
+        var etPosX = field(rPos, 50, 3, { min: -50, max: 150, step: 0.25, dec: 1, name: "Позиция X, %" });
+        var etPosY = field(rPos, 50, 3, { min: -50, max: 150, step: 0.25, dec: 1, name: "Позиция Y, %" });
         rPos.add("statictext", undefined, "интервал");
-        var etLineGap = field(rPos, 0.12, 4);
+        var etLineGap = field(rPos, 0.12, 4, { min: -1, max: 5, step: 0.005, dec: 2, name: "Межстрочный интервал" });
         etLineGap.helpTip = "Межстрочный интервал (доля размера шрифта)";
-        var etWordSpace = field(rPos, 0.28, 4);
+        var etWordSpace = field(rPos, 0.28, 4, { min: 0, max: 3, step: 0.005, dec: 2, name: "Пробел между словами" });
         etWordSpace.helpTip = "Пробел между словами в строке (доля размера шрифта)";
         var rBreak = row(tLayout, "Разрыв на паузе, с");
-        var etPause = field(rBreak, 0.35, 4);
+        var etPause = field(rBreak, 0.35, 4, { min: 0.05, max: 10, step: 0.01, dec: 2, name: "Разрыв на паузе, с" });
         var cbPunctBreak = rBreak.add("checkbox", undefined, "и на . , ! ?");
         var cbStrip = rBreak.add("checkbox", undefined, "без пунктуации");
         var rAcc = row(tLayout, "");
@@ -332,9 +405,9 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         rbAnimIn.value = true;
         var rbAnimOut = rMode.add("radiobutton", undefined, "Выход");
         rMode.add("statictext", undefined, "длит., с:");
-        var etInDur = field(rMode, 0.2, 4);
+        var etInDur = field(rMode, 0.2, 4, { min: 0, max: 5, step: 0.005, dec: 2, name: "Длительность входа, с" });
         etInDur.helpTip = "Длительность входа, с";
-        var etOutDur = field(rMode, 0.15, 4);
+        var etOutDur = field(rMode, 0.15, 4, { min: 0, max: 5, step: 0.005, dec: 2, name: "Длительность выхода, с" });
         etOutDur.helpTip = "Длительность выхода, с";
         var galStack = tAnim.add("group");
         galStack.orientation = "stack";
@@ -371,11 +444,11 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         var stAnimCur = tAnim.add("statictext", undefined, "");
         stAnimCur.alignment = ["fill", "top"];
         var rDist = row(tAnim, "Сдвиг, px");
-        var etDist = field(rDist, 40, 4);
+        var etDist = field(rDist, 40, 4, { min: 0, max: 5000, step: 1, dec: 0, name: "Сдвиг, px" });
         rDist.add("statictext", undefined, "Blur, px");
-        var etBlur = field(rDist, 0, 4);
+        var etBlur = field(rDist, 0, 4, { min: 0, max: 500, step: 0.5, dec: 1, name: "Blur, px" });
         rDist.add("statictext", undefined, "Плавность, %");
-        var etEase = field(rDist, 80, 4);
+        var etEase = field(rDist, 80, 4, { min: 0.1, max: 100, step: 0.5, dec: 0, name: "Плавность, %" });
         rDist.helpTip = "Размеры заданы для кадра шириной 1080 и масштабируются под композицию. У коротких слов вход и выход автоматически укорачиваются";
         var btnAnimApply = tAnim.add("button", undefined, "Применить анимацию к выделенным слоям");
 
@@ -430,11 +503,11 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         var ddSfxAccent = ddChoice("Акцент", "accent");
         var ddSfxExit = ddChoice("Выход", "exit");
         var rSfxVol = row(tSfx, "Громкость, дБ", 85);
-        var etSfxDb = field(rSfxVol, S.sfx.db, 4);
+        var etSfxDb = field(rSfxVol, S.sfx.db, 4, { min: -60, max: 12, step: 0.1, dec: 1, name: "Громкость, дБ" });
         rSfxVol.add("statictext", undefined, "разброс");
-        var etSfxRand = field(rSfxVol, S.sfx.dbRand, 3);
+        var etSfxRand = field(rSfxVol, S.sfx.dbRand, 3, { min: 0, max: 12, step: 0.05, dec: 1, name: "Разброс, дБ" });
         rSfxVol.add("statictext", undefined, "мин. интервал, с");
-        var etSfxGap = field(rSfxVol, S.sfx.minGap, 4);
+        var etSfxGap = field(rSfxVol, S.sfx.minGap, 4, { min: 0, max: 5, step: 0.005, dec: 2, name: "Мин. интервал, с" });
         var rSfxBtn = tSfx.add("group");
         var btnSfxSelected = rSfxBtn.add("button", undefined, "Озвучить выделенные слои");
         var btnSfxRemove = rSfxBtn.add("button", undefined, "Убрать SFX");
@@ -504,6 +577,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             btnGenerate.preferredSize.height = 32;
             btnRecognize.preferredSize.height = 28;
             TH.text(stLine, TH.colors.muted);
+            for (var si = 0; si < scrubs.length; si++) TH.scrub(scrubs[si]);
             for (var ci2 = 0; ci2 < chipsIn.length; ci2++) TH.chip(chipsIn[ci2]);
             for (var co2 = 0; co2 < chipsOut.length; co2++) TH.chip(chipsOut[co2]);
             TH.styleTree(win);
@@ -619,6 +693,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             etGlow.text = String(t.glow ? t.glow.softness : 30);
             selectId(ddBlend, N.BLEND_MODES, t.blend || "normal");
             etOpacity.text = String(t.opacity === undefined ? 100 : t.opacity);
+            redrawScrubs();
         }
         function syncUI() {
             var L = S.style.layout, A = S.style.anim;
@@ -646,6 +721,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             var p = presetById(S.presetId);
             stPresetDesc.text = p ? (p.description || "") : "Свои настройки.";
             state.syncing = false;
+            redrawScrubs();
         }
 
         // Прочитать контролы в S
@@ -1131,6 +1207,12 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         }
         fillPresets();
         syncUI();
+
+        // подсказка про перетаскивание — у всех бегунков, даже если у поля уже есть своя подсказка
+        for (var hi = 0; hi < scrubs.length; hi++) {
+            var ht = scrubs[hi].helpTip || "";
+            if (ht.indexOf("Shift") < 0) scrubs[hi].helpTip = ht + (ht ? ". " : "") + "Зажмите левую кнопку и двигайте мышь. Shift — точнее, Ctrl — быстрее. Клик — ввести число.";
+        }
 
         win.onResizing = win.onResize = function () { this.layout.resize(); };
         if (win instanceof Window) { win.center(); win.show(); }
