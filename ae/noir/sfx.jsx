@@ -51,28 +51,62 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         return decodeURI(String(path).replace(/^.*[\/\\]/, "")).replace(/\.[^.]*$/, "");
     };
 
-    // { names: [категории], files: { категория: [полные пути] } }
-    N.sfxLibrary = function (root) {
-        var lib = { names: [], files: {} }, dirs = N.sfxFolders(root), d, i, j;
-        function add(cat, path) {
-            if (!lib.files[cat]) { lib.files[cat] = []; lib.names.push(cat); }
-            lib.files[cat].push(path);
+    // Категория по имени папки/файла: text_shimmer → shimmer, title_scale_down → scale_down, «Блеск» → shimmer…
+    // null — имя не распознано (тогда используется имя папки как своя категория).
+    var ALIASES = [
+        ["blur_out", /blur[ _\-]?out|уход в блюр|уход_в_блюр/],
+        ["scale_down", /scale[ _\-]?down|масштаб вниз|масштаб_вниз/],
+        ["shimmer", /shimmer|sparkle|(^|[^a-z0-9])shine([^a-z0-9]|$)|блеск|мерцан/],
+        ["morph", /morph|смена слова|смена_слова/],
+        ["counter", /counter|count[ _\-]?up|счётчик|счетчик/],
+        ["whoosh", /whoosh|swoosh|swish|вжух|взмах/],
+        ["glitch", /glitch|глитч/],
+        ["rise", /riser|(^|[^a-z0-9])rise([^a-z0-9]|$)|нарастан/],
+        ["pop", /(^|[^a-z0-9])pop([^a-z0-9]|$)/],
+        ["hit", /(^|[^a-z0-9])(hit|impact|slam|boom|thud)([^a-z0-9]|$)|удар/],
+        ["click", /(^|[^a-z0-9])(click|tick|tap)([^a-z0-9]|$)|щелчок/]
+    ];
+    N.sfxGuessCategory = function (name) {
+        var n = decodeURI(String(name)).replace(/\.[A-Za-z0-9]+$/, "").toLowerCase();
+        for (var i = 0; i < ALIASES.length; i++) if (ALIASES[i][1].test(n)) return ALIASES[i][0];
+        return null;
+    };
+
+    // { names: [категории], files: { категория: [полные пути] }, source: { путь: "base"|"user" } }
+    // Свои звуки (папка пользователя) главнее базовых: если у категории есть свои файлы, используются только они,
+    // пока opts.mixBase не включён (тогда базовые подмешиваются).
+    N.sfxLibrary = function (root, opts) {
+        var mix = !!(opts && opts.mixBase);
+        var dirs = N.sfxFolders(root), maps = [{}, {}], source = {}, seen = {}, names = [], d, i, j, k;
+        function add(map, cat, path, kind) {
+            if (!map[cat]) map[cat] = [];
+            map[cat].push(path);
+            source[path] = kind;
+            if (!seen[cat]) { seen[cat] = true; names.push(cat); }
         }
         for (d = 0; d < dirs.length; d++) {
             if (!dirs[d].exists) continue;
-            var items = dirs[d].getFiles();
+            var kind = d === 0 ? "base" : "user", items = dirs[d].getFiles();
             for (i = 0; i < items.length; i++) {
                 var it = items[i];
                 if (it instanceof Folder) {
-                    var cat = decodeURI(it.name), fl = it.getFiles();
-                    for (j = 0; j < fl.length; j++) if (isAudio(fl[j])) add(cat, fl[j].fsName);
+                    var folderName = decodeURI(it.name), folderCat = N.sfxGuessCategory(folderName), fl = it.getFiles();
+                    for (j = 0; j < fl.length; j++) {
+                        if (!isAudio(fl[j])) continue;
+                        add(maps[d], folderCat || N.sfxGuessCategory(fl[j].name) || folderName, fl[j].fsName, kind);
+                    }
                 } else if (isAudio(it)) {
-                    add("other", it.fsName);
+                    add(maps[d], N.sfxGuessCategory(it.name) || "other", it.fsName, kind);
                 }
             }
         }
+        var lib = { names: names, files: {}, source: source };
+        for (k = 0; k < names.length; k++) {
+            var cat = names[k], b = maps[0][cat] || [], u = maps[1][cat] || [];
+            lib.files[cat] = (u.length && !mix) ? u.slice(0) : b.concat(u);
+            lib.files[cat].sort();
+        }
         lib.names.sort();
-        for (i = 0; i < lib.names.length; i++) lib.files[lib.names[i]].sort();
         return lib;
     };
 

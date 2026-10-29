@@ -7,7 +7,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
 (function (N) {
     var SECTION = "NOIR Captions";
     var SETTINGS_KEY = "settings.v2";
-    var VERSION = "0.6.1";
+    var VERSION = "0.6.2";
 
     function clone(o) { return N.parseJSON(N.stringify(o)); }
 
@@ -29,7 +29,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         language: "ru", model: "large-v3", device: "auto", prompt: "",
         replace: true, python: "", presetId: "", style: FALLBACK_STYLE,
         // sfx: appear/accent/exit — "auto" | "off" | "same" (только accent) | "cat:<категория>"
-        sfx: { enabled: false, appear: "auto", accent: "same", exit: "off", db: -6, dbRand: 2, minGap: 0.12, file: "" }
+        sfx: { enabled: false, appear: "auto", accent: "same", exit: "off", db: -6, dbRand: 2, minGap: 0.12, file: "", mixBase: false }
     };
 
     function loadSettings() {
@@ -490,7 +490,8 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         btnApply.helpTip = "Позиция и тайминг слоя не меняются. Регистр букв (КАПС) вернуть назад нельзя";
 
         // ================= SFX: озвучивание текста =================
-        var sfxLib = SFX ? N.sfxLibrary(root) : { names: [], files: {} };
+        function loadLib() { return SFX ? N.sfxLibrary(root, { mixBase: !!S.sfx.mixBase }) : { names: [], files: {}, source: {} }; }
+        var sfxLib = loadLib();
         var cbSfx = tSfx.add("checkbox", undefined, "Озвучивать при создании субтитров");
         cbSfx.value = !!S.sfx.enabled;
         function ddChoice(label, kind) {
@@ -508,6 +509,9 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         var etSfxRand = field(rSfxVol, S.sfx.dbRand, 3, { min: 0, max: 12, step: 0.05, dec: 1, name: "Разброс, дБ" });
         rSfxVol.add("statictext", undefined, "мин. интервал, с");
         var etSfxGap = field(rSfxVol, S.sfx.minGap, 4, { min: 0, max: 5, step: 0.005, dec: 2, name: "Мин. интервал, с" });
+        var cbSfxMix = tSfx.add("checkbox", undefined, "Подмешивать базовые звуки к своим");
+        cbSfxMix.value = !!S.sfx.mixBase;
+        cbSfxMix.helpTip = "Выкл: если в вашей папке SFX есть звуки категории, используются только они. Вкл: базовые и свои вместе";
         var rSfxBtn = tSfx.add("group");
         var btnSfxSelected = rSfxBtn.add("button", undefined, "Озвучить выделенные слои");
         var btnSfxRemove = rSfxBtn.add("button", undefined, "Убрать SFX");
@@ -546,7 +550,8 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             for (var c = 0; c < sfxLib.names.length; c++) {
                 var list = sfxLib.files[sfxLib.names[c]];
                 for (var f = 0; f < list.length; f++)
-                    items.push({ id: list[f], label: N.sfxCategoryLabel(sfxLib.names[c]) + " · " + N.sfxName(list[f]) });
+                    items.push({ id: list[f], label: (sfxLib.source && sfxLib.source[list[f]] === "user" ? "★ " : "") +
+                        N.sfxCategoryLabel(sfxLib.names[c]) + " · " + N.sfxName(list[f]) });
             }
             return items;
         }
@@ -557,9 +562,13 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             fillDD(ddSfxExit, choiceItems("exit"), S.sfx.exit);
             fillDD(ddSfxFile, fileItems(), S.sfx.file);
             state.syncing = false;
-            var n = 0;
-            for (var c = 0; c < sfxLib.names.length; c++) n += sfxLib.files[sfxLib.names[c]].length;
-            stSfxInfo.text = SFX ? ("В библиотеке: " + n + " звуков, " + sfxLib.names.length + " категорий. Свои звуки: кнопка «Папка SFX».")
+            var nBase = 0, nUser = 0, c, f;
+            for (c = 0; c < sfxLib.names.length; c++) {
+                var lst = sfxLib.files[sfxLib.names[c]];
+                for (f = 0; f < lst.length; f++) { if (sfxLib.source && sfxLib.source[lst[f]] === "user") nUser++; else nBase++; }
+            }
+            stSfxInfo.text = SFX ? ("Базовых: " + nBase + ", своих ★: " + nUser + ", категорий: " + sfxLib.names.length +
+                ". Свои звуки кладите через «Папка SFX» (имя файла text_shimmer, blur_out… определяет категорию).")
                 : "Модуль SFX не загружен (нет файла ae/noir/sfx.jsx).";
         }
         refillSfx();
@@ -747,6 +756,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             S.prompt = etPrompt.text;
             S.replace = cbReplace.value;
             S.sfx.enabled = cbSfx.value;
+            S.sfx.mixBase = cbSfxMix.value;
             S.sfx.appear = ddValue(ddSfxAppear) || "auto";
             S.sfx.accent = ddValue(ddSfxAccent) || "same";
             S.sfx.exit = ddValue(ddSfxExit) || "off";
@@ -1095,7 +1105,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         }
         // Озвучить созданные слои (res.made) — вызывается из «Создать субтитры».
         function voiceGenerated(comp, made, warnings) {
-            var libNow = N.sfxLibrary(root), A = S.style.anim, ev = [], k;
+            var libNow = loadLib(), A = S.style.anim, ev = [], k;
             if (S.replace) N.removeSfx(comp);
             for (k = 0; k < made.length; k++) {
                 ev.push({ t: made[k].tIn, kind: "in", accent: made[k].accent, anim: A.animIn });
@@ -1118,7 +1128,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             readUI();
             try { sel = selectedTextLayers(); } catch (e) { alert(e.message, "NOIR Captions"); return; }
             sfxAction("NOIR Captions: озвучить выделенные", function () {
-                sfxLib = N.sfxLibrary(root);
+                sfxLib = loadLib();
                 var plan = N.planSfx(N.sfxEventsFromLayers(sel.layers, S.style.anim), sfxLib, sfxConfig());
                 var r = N.placeSfx(sel.comp, plan);
                 setStatus("Звуков добавлено: " + r.placed + (r.warnings.length ? "\n" + r.warnings.join("\n") : "") +
@@ -1144,7 +1154,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         };
         btnSfxRescan.onClick = function () {
             readUI();
-            if (SFX) sfxLib = N.sfxLibrary(root);
+            sfxLib = loadLib();
             refillSfx();
         };
         btnSfxFolder.onClick = function () {

@@ -424,6 +424,40 @@ const GOPTS = { maxWords: 1, maxChars: 99, pauseBreak: 0.35, punctBreak: true, s
     assert.ok(lib.files["мой пак"].length === 1 && /стук\.wav$/.test(lib.files["мой пак"][0])); assert.strictEqual(lib.files.other.length, 1);
     assert.ok(lib.files.whoosh.length >= 3, "встроенные пропали");
   });
+  await test("категория по имени: text_shimmer, blur_out_03, Title_Scale_Down, «Счётчик», whoosh 2… (и не путает похожие слова)", () => {
+    const g = N.sfxGuessCategory;
+    assert.deepStrictEqual(["text_shimmer.wav", "blur_out_03.wav", "Title_Scale_Down.mp3", "Счётчик 1.wav", "Swoosh-fast.wav", "UI_Click_2.wav", "big impact.wav", "Riser 3.wav", "Pop.wav", "Glitch_x.wav", "Смена слова.wav", "morph.wav", "counter.wav"].map(g),
+      ["shimmer", "blur_out", "scale_down", "counter", "whoosh", "click", "hit", "rise", "pop", "glitch", "morph", "morph", "counter"]);
+    ["popcorn.wav", "white.wav", "ticket.wav", "bonk.wav"].forEach(n => assert.strictEqual(g(n), null, n));
+  });
+  const userSfx = path.join(TMP, "userData", "NOIR Captions", "sfx");
+  const withUserFiles = (files, fn) => {
+    for (const f of files) { fs.mkdirSync(path.dirname(path.join(userSfx, f)), { recursive: true }); fs.writeFileSync(path.join(userSfx, f), "x"); }
+    try { fn(); } finally { for (const f of files) { fs.rmSync(path.join(userSfx, f), { force: true }); const d = path.dirname(path.join(userSfx, f)); if (d !== userSfx && !fs.readdirSync(d).length) fs.rmdirSync(d); } }
+  };
+  await test("свои звуки главнее базовых: категория берёт только свои; «подмешивать» добавляет базовые; помечаются ★ (source)", () => {
+    withUserFiles(["shimmer/мой_блеск.wav"], () => {
+      const lib = N.sfxLibrary(ROOT); assert.deepStrictEqual(lib.files.shimmer.map(p => path.basename(p)), ["мой_блеск.wav"]);
+      assert.strictEqual(lib.source[lib.files.shimmer[0]], "user"); assert.ok(lib.files.whoosh.every(p => lib.source[p] === "base"), "остальные категории — базовые");
+      const mix = N.sfxLibrary(ROOT, { mixBase: true }); assert.strictEqual(mix.files.shimmer.length, 3); assert.ok(mix.files.shimmer.some(p => lib.source[p] === "base"));
+    });
+    assert.ok(N.sfxLibrary(ROOT).files.shimmer.length === 2, "после удаления своих — снова базовые");
+  });
+  await test("пак из Telegram: файлы лежат в куче/в одной папке — категории определяются по именам", () => {
+    withUserFiles(["text_shimmer.wav", "pack41/blur_out_03.wav", "pack41/Title_Scale_Down.wav", "pack41/bonk.wav", "pack41/counter-fast.mp3", "pack41/заметки.txt"], () => {
+      const lib = N.sfxLibrary(ROOT), nm = (c) => (lib.files[c] || []).map(p => path.basename(p));
+      assert.deepStrictEqual(nm("shimmer"), ["text_shimmer.wav"]); assert.deepStrictEqual(nm("blur_out"), ["blur_out_03.wav"]);
+      assert.deepStrictEqual(nm("scale_down"), ["Title_Scale_Down.wav"]); assert.deepStrictEqual(nm("counter"), ["counter-fast.mp3"]);
+      assert.deepStrictEqual(nm("pack41"), ["bonk.wav"], "нераспознанный файл — в категорию по имени папки"); assert.ok(!Object.values(lib.files).flat().some(p => /\.txt$/.test(p)));
+      assert.ok(lib.files.whoosh.length >= 3 && lib.files.hit.length >= 2, "не затронутые категории остались базовыми");
+    });
+  });
+  await test("авто-озвучивание использует свои звуки, если они есть", () => {
+    withUserFiles(["pop/свой_поп.wav"], () => {
+      const lib = N.sfxLibrary(ROOT), p = N.planSfx([{ t: 0, kind: "in", accent: false, anim: "pop" }], lib, Object.assign({}, { appear: { mode: "auto" }, accent: { mode: "same" }, exit: { mode: "off" }, db: -6, dbRand: 0, minGap: 0 }));
+      assert.ok(/свой_поп\.wav$/.test(p[0].file));
+    });
+  });
   const CFG = { appear: { mode: "auto" }, accent: { mode: "same" }, exit: { mode: "off" }, db: -6, dbRand: 0, minGap: 0.1 };
   await test("авто-подбор: pop→pop, slam→hit, whip→whoosh, none→click; выход blur→blur_out; чередование файлов", () => {
     const ev = (anim, t, extra) => Object.assign({ t, kind: "in", accent: false, anim }, extra);
@@ -646,6 +680,17 @@ const GOPTS = { maxWords: 1, maxChars: 99, pauseBreak: 0.35, punctBreak: true, s
     const starts = txt().map(l => l.inPoint); inSfx.forEach(l => assert.ok(starts.some(t => Math.abs(t - l.startTime) < 1e-6), "звук не на слове " + l.startTime));
     const n1 = sfx().length; p.button("Создать субтитры").onClick(); assert.strictEqual(sfx().length, n1, "звуки задублировались");
     const S = N.parseJSON(env.settings["NOIR Captions/settings.v2"]); assert.strictEqual(S.sfx.enabled, true); assert.strictEqual(S.sfx.exit, "auto");
+  });
+  await test("вкладка SFX: переключатель «Подмешивать базовые» и ★ у своих звуков в списке", () => {
+    withUserFiles(["pop/свой_поп.wav"], () => {
+      env.settings["NOIR Captions/settings.v2"] = N.stringify({ style: styleOf("reels-glow"), sfx: { mixBase: false } });
+      const p = N.buildPanel(new mock.Panel(), ROOT), files = () => p.find(e => e.type === "dropdownlist" && e._items && e._items.some(i => /Поп · /.test(i.label)));
+      assert.ok(files()._items.some(i => /^★ Поп · свой_поп$/.test(i.label)), "нет ★ у своего звука");
+      assert.strictEqual(files()._items.filter(i => /Поп · pop_/.test(i.label)).length, 0, "базовые pop не должны быть видны");
+      const mix = p.find(e => e.type === "checkbox" && e.text === "Подмешивать базовые звуки к своим"); mix.value = true; p.button("Обновить список").onClick();
+      assert.strictEqual(files()._items.filter(i => /Поп · pop_/.test(i.label)).length, 3);
+      assert.ok(p.find(e => e.type === "statictext" && /Базовых: \d+, своих ★: [1-9]\d*/.test(e.text)), "счётчики в подписи");
+    });
   });
   await test("SFX выключен по умолчанию: «Создать субтитры» не добавляет звуков", () => {
     const jf = path.join(TMP, "sfx_sample.json");
