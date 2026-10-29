@@ -14,41 +14,41 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
 
     // Анимации описаны состоянием «вне кадра»: op — прозрачность (0 = невидим),
     // sc — масштаб %, dx/dy — смещение в долях параметра distance, rot — поворот в градусах,
-    // blur — размытие в долях параметра blur, over — перелёт масштаба. short — подпись на кнопке.
+    // blur — размытие в долях параметра blur, over — перелёт масштаба. abbr — подпись на кнопке.
     N.ANIM_IN = [
-        { id: "none", label: "Нет — жёсткая смена", short: "Нет" },
-        { id: "fade", label: "Fade", short: "Fade", op: 0 },
-        { id: "blur", label: "Blur + fade", short: "Blur", op: 0, blur: 1 },
-        { id: "blurRise", label: "Снизу + blur", short: "Blur ↑", op: 0, dy: 1, blur: 1 },
-        { id: "rise", label: "Снизу вверх", short: "Вверх ↑", op: 0, dy: 1 },
-        { id: "drop", label: "Сверху вниз", short: "Вниз ↓", op: 0, dy: -1 },
-        { id: "left", label: "Слева", short: "Слева →", op: 0, dx: -1 },
-        { id: "right", label: "Справа", short: "Справа ←", op: 0, dx: 1 },
-        { id: "pop", label: "Pop (scale + overshoot)", short: "Pop", op: 0, sc: 70, over: 108 },
-        { id: "punch", label: "Punch (удар 125 → 100)", short: "Punch", sc: 125 },
-        { id: "zoom", label: "Zoom из крупного", short: "Zoom", op: 0, sc: 150 },
-        { id: "slam", label: "Slam (падает с размытием)", short: "Slam", op: 0, sc: 260, blur: 1 },
-        { id: "whipL", label: "Whip слева (быстрый вылет)", short: "Whip →", op: 0, dx: -4, blur: 1.4 },
-        { id: "whipR", label: "Whip справа (быстрый вылет)", short: "Whip ←", op: 0, dx: 4, blur: 1.4 },
-        { id: "rotate", label: "Поворот + scale", short: "Rotate", op: 0, rot: -14, sc: 85 },
-        { id: "grow", label: "Grow (вырастает с overshoot)", short: "Grow", op: 0, sc: 30, over: 108 },
-        { id: "blurPop", label: "Blur Pop", short: "Blur Pop", op: 0, sc: 75, over: 104, blur: 1 }
+        { id: "none", label: "Нет — жёсткая смена", abbr: "Нет" },
+        { id: "fade", label: "Fade", abbr: "Fade", op: 0 },
+        { id: "blur", label: "Blur + fade", abbr: "Blur", op: 0, blur: 1 },
+        { id: "blurRise", label: "Снизу + blur", abbr: "Blur ↑", op: 0, dy: 1, blur: 1 },
+        { id: "rise", label: "Снизу вверх", abbr: "Вверх ↑", op: 0, dy: 1 },
+        { id: "drop", label: "Сверху вниз", abbr: "Вниз ↓", op: 0, dy: -1 },
+        { id: "left", label: "Слева", abbr: "Слева →", op: 0, dx: -1 },
+        { id: "right", label: "Справа", abbr: "Справа ←", op: 0, dx: 1 },
+        { id: "pop", label: "Pop (scale + overshoot)", abbr: "Pop", op: 0, sc: 70, over: 108 },
+        { id: "punch", label: "Punch (удар 125 → 100)", abbr: "Punch", sc: 125 },
+        { id: "zoom", label: "Zoom из крупного", abbr: "Zoom", op: 0, sc: 150 },
+        { id: "slam", label: "Slam (падает с размытием)", abbr: "Slam", op: 0, sc: 260, blur: 1 },
+        { id: "whipL", label: "Whip слева (быстрый вылет)", abbr: "Whip →", op: 0, dx: -4, blur: 1.4 },
+        { id: "whipR", label: "Whip справа (быстрый вылет)", abbr: "Whip ←", op: 0, dx: 4, blur: 1.4 },
+        { id: "rotate", label: "Поворот + scale", abbr: "Rotate", op: 0, rot: -14, sc: 85 },
+        { id: "grow", label: "Grow (вырастает с overshoot)", abbr: "Grow", op: 0, sc: 30, over: 108 },
+        { id: "blurPop", label: "Blur Pop", abbr: "Blur Pop", op: 0, sc: 75, over: 104, blur: 1 }
     ];
     N.ANIM_OUT = [
-        { id: "none", label: "Нет — жёсткая смена", short: "Нет" },
-        { id: "fade", label: "Fade", short: "Fade", op: 0 },
-        { id: "blur", label: "Blur + fade", short: "Blur", op: 0, blur: 1 },
-        { id: "blurUp", label: "Вверх + blur", short: "Blur ↑", op: 0, dy: -1, blur: 1 },
-        { id: "shrink", label: "Уменьшение", short: "Shrink", op: 0, sc: 70 },
-        { id: "up", label: "Уход вверх", short: "Вверх ↑", op: 0, dy: -1 },
-        { id: "down", label: "Уход вниз", short: "Вниз ↓", op: 0, dy: 1 },
-        { id: "left", label: "Уход влево", short: "← Влево", op: 0, dx: -1 },
-        { id: "right", label: "Уход вправо", short: "Вправо →", op: 0, dx: 1 },
-        { id: "zoom", label: "Zoom в камеру", short: "Zoom", op: 0, sc: 150 },
-        { id: "whipL", label: "Whip влево", short: "← Whip", op: 0, dx: -4, blur: 1.4 },
-        { id: "whipR", label: "Whip вправо", short: "Whip →", op: 0, dx: 4, blur: 1.4 },
-        { id: "rotate", label: "Поворот + scale", short: "Rotate", op: 0, rot: 14, sc: 85 },
-        { id: "slamOut", label: "Slam (схлопывается с размытием)", short: "Slam", op: 0, sc: 40, blur: 1 }
+        { id: "none", label: "Нет — жёсткая смена", abbr: "Нет" },
+        { id: "fade", label: "Fade", abbr: "Fade", op: 0 },
+        { id: "blur", label: "Blur + fade", abbr: "Blur", op: 0, blur: 1 },
+        { id: "blurUp", label: "Вверх + blur", abbr: "Blur ↑", op: 0, dy: -1, blur: 1 },
+        { id: "shrink", label: "Уменьшение", abbr: "Shrink", op: 0, sc: 70 },
+        { id: "up", label: "Уход вверх", abbr: "Вверх ↑", op: 0, dy: -1 },
+        { id: "down", label: "Уход вниз", abbr: "Вниз ↓", op: 0, dy: 1 },
+        { id: "left", label: "Уход влево", abbr: "← Влево", op: 0, dx: -1 },
+        { id: "right", label: "Уход вправо", abbr: "Вправо →", op: 0, dx: 1 },
+        { id: "zoom", label: "Zoom в камеру", abbr: "Zoom", op: 0, sc: 150 },
+        { id: "whipL", label: "Whip влево", abbr: "← Whip", op: 0, dx: -4, blur: 1.4 },
+        { id: "whipR", label: "Whip вправо", abbr: "Whip →", op: 0, dx: 4, blur: 1.4 },
+        { id: "rotate", label: "Поворот + scale", abbr: "Rotate", op: 0, rot: 14, sc: 85 },
+        { id: "slamOut", label: "Slam (схлопывается с размытием)", abbr: "Slam", op: 0, sc: 40, blur: 1 }
     ];
 
     // Режимы наложения слоя. «Инверсия» = Difference: белый текст инвертирует кадр под буквами.

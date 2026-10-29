@@ -43,6 +43,10 @@ const GOPTS = { maxWords: 1, maxChars: 99, pauseBreak: 0.35, punctBreak: true, s
 
 (async () => {
   console.log("core");
+  await test("код совместим с ExtendScript (нет зарезервированных слов ES3, ES6-синтаксиса, висячих запятых)", () => {
+    const r = require("child_process").spawnSync(process.execPath, [path.join(__dirname, "check_es3.js")], { encoding: "utf8" });
+    assert.strictEqual(r.status, 0, r.stdout);
+  });
   await test("JSON round-trip с кириллицей и спецсимволами", () => {
     const o = { a: "Привет \"мир\"\n\\", b: [1, 2.5, -3e-4, true, null], c: { d: "ё" } };
     assert.deepStrictEqual(N.parseJSON(N.stringify(o)), o);

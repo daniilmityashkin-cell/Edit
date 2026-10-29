@@ -349,7 +349,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
                     rowG.orientation = "row";
                     rowG.spacing = 3;
                 }
-                var b = rowG.add("button", undefined, list[i].short);
+                var b = rowG.add("button", undefined, list[i].abbr);
                 b.preferredSize = [72, 24];
                 b._id = list[i].id;
                 b._which = which;
@@ -864,8 +864,8 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             var A = S.style.anim, i;
             for (i = 0; i < chipsIn.length; i++) { if (TH) TH.setChip(chipsIn[i], chipsIn[i]._id === A.animIn); }
             for (i = 0; i < chipsOut.length; i++) { if (TH) TH.setChip(chipsOut[i], chipsOut[i]._id === A.animOut); }
-            stAnimCur.text = "Вход: " + N.findAnim(N.ANIM_IN, A.animIn).short + "   ·   Выход: " +
-                N.findAnim(N.ANIM_OUT, A.animOut).short;
+            stAnimCur.text = "Вход: " + N.findAnim(N.ANIM_IN, A.animIn).abbr + "   ·   Выход: " +
+                N.findAnim(N.ANIM_OUT, A.animOut).abbr;
         }
         function hasSelectedText() { try { selectedTextLayers(); return true; } catch (e) { return false; } }
         // Выбор вылета: запоминаем для новых субтитров и, если выделены текстовые слои, сразу применяем к ним.
