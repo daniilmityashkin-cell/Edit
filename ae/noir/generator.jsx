@@ -234,18 +234,42 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         var key = fonts.join("|");
         var chosen = ctx.fontCache[key];
         if (chosen === undefined) {
-            chosen = null;
-            for (var i = 0; i < fonts.length && chosen === null; i++) {
-                doc.font = fonts[i];
-                prop.setValue(doc);
-                if (prop.value.font === fonts[i]) chosen = fonts[i];
-            }
+            chosen = pickFont(fonts);
             ctx.fontCache[key] = chosen;
-            if (fonts.length && chosen !== fonts[0]) ctx.warnings.push("Шрифт " + fonts[0] + " не найден — " +
-                (chosen ? "использован " + chosen : "оставлен шрифт по умолчанию " + prop.value.font));
+            if (fonts.length && chosen !== fonts[0]) ctx.warnings.push(fontMissingMessage(fonts, chosen));
         }
         if (chosen) doc.font = chosen;
         prop.setValue(doc);
+    }
+
+    // Шрифт установлен? true/false; null — проверить нельзя (AE старше 24.0).
+    // AE принимает и НЕсуществующие PostScript-имена (слой получает «потерянный» шрифт, а при открытии
+    // проекта появляется окно Resolve Fonts), поэтому наличие проверяем ДО назначения.
+    N.fontInstalled = function (ps) {
+        try {
+            if (app.fonts && app.fonts.getFontsByPostScriptName) {
+                var r = app.fonts.getFontsByPostScriptName(ps);
+                return !!(r && r.length > 0);
+            }
+        } catch (e) {}
+        return null;
+    };
+
+    // Первый установленный шрифт из цепочки; null — ни одного (слой останется со шрифтом по умолчанию).
+    function pickFont(fonts) {
+        var unknown = null;
+        for (var i = 0; i < fonts.length; i++) {
+            var inst = N.fontInstalled(fonts[i]);
+            if (inst === true) return fonts[i];
+            if (inst === null && unknown === null) unknown = fonts[i];
+        }
+        return unknown;
+    }
+
+    function fontMissingMessage(fonts, chosen) {
+        if (chosen) return "Шрифта " + fonts[0] + " нет на компьютере — использован " + chosen + ".";
+        return "Ни одного шрифта стиля нет на компьютере (" + fonts.slice(0, 3).join(", ") +
+            "…) — оставлен шрифт по умолчанию. Установите шрифт или выберите другой на вкладке «Стиль».";
     }
 
     function displayText(text, st) { return st.caps ? text.toUpperCase() : text; }
@@ -415,16 +439,11 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         var prop = layer.property("Source Text"), doc = prop.value, i;
         var geometry = parts.font || parts.size || parts.stroke;
         if (parts.font && st.fonts && st.fonts.length) {
-            var orig = doc.font, ok = null;
-            for (i = 0; i < st.fonts.length && ok === null; i++) {
-                doc.font = st.fonts[i];
-                prop.setValue(doc);
-                if (prop.value.font === st.fonts[i]) ok = st.fonts[i];
-            }
-            doc = prop.value;
-            if (ok === null) {
-                doc.font = orig;
-                var msg = "Шрифт " + st.fonts[0] + " не найден — слой оставлен со шрифтом " + orig;
+            var ok = pickFont(st.fonts);
+            if (ok) doc.font = ok;
+            if (ok !== st.fonts[0]) {
+                var msg = ok ? fontMissingMessage(st.fonts, ok)
+                    : "Шрифта " + st.fonts[0] + " нет на компьютере — слой оставлен со своим шрифтом.";
                 if (ctx._fontMsg !== msg) { ctx.warnings.push(msg); ctx._fontMsg = msg; }
             }
         }

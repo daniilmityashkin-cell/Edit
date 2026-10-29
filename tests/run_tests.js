@@ -143,7 +143,7 @@ const GOPTS = { maxWords: 1, maxChars: 99, pauseBreak: 0.35, punctBreak: true, s
   });
 
   console.log("generator (мок AE)");
-  const mkComp = (o) => { const c = new mock.CompItem(Object.assign({ _fonts: ["TimesNewRomanPSMT", "Inter-Bold", "ArialMT", "Arial-BoldMT"] }, o)); global.app.project.activeItem = c; return c; };
+  const mkComp = (o) => { const c = new mock.CompItem(Object.assign({ _fonts: ["TimesNewRomanPSMT", "Inter-Bold", "ArialMT", "Arial-BoldMT"] }, o)); global.__installedFonts = c._fonts; global.app.project.activeItem = c; return c; };
   const prep = (words, layout) => N.timeGroups(N.groupWords(words, layout), layout.holdGap, 0.08).map(g => {
     g.compStart = g.start; g.compOut = g.outTime; g.words.forEach(w => (w.compStart = w.start)); return g;
   });
@@ -234,6 +234,18 @@ const GOPTS = { maxWords: 1, maxChars: 99, pauseBreak: 0.35, punctBreak: true, s
     assert.strictEqual(r.warnings.filter(w => /Montserrat-Bold/.test(w)).length, 1);
   });
 
+  await test("НИ ОДНОГО шрифта стиля нет в системе: слои не получают несуществующий шрифт (нет окна Resolve Fonts), есть предупреждение", () => {
+    const c = mkComp(), st = styleOf("editorial"); // Bodoni/Montserrat/SF Pro в «системе» отсутствуют
+    st.base.fonts = ["Nope-A", "Nope-B"]; st.accent.fonts = ["BodoniModa28pt-Regular", "BodoniModa-Regular"];
+    const r = N.generate(c, prep(N.flattenWords(sample()), st.layout), st, st.anim, true);
+    subs(c).forEach(l => assert.ok(c._fonts.includes(l.src.value.font), "слой со шрифтом, которого нет: " + l.src.value.font));
+    assert.ok(r.warnings.some(w => /нет на компьютере/.test(w)), r.warnings.join("|"));
+  });
+  await test("шрифт слоя не меняется на несуществующий при «Шрифт → выделенным»", () => {
+    const c = mkComp(), st = styleOf("editorial"); N.generate(c, prep(N.flattenWords(sample()), st.layout), st, st.anim, true); const a = subs(c)[0], before = a.src.value.font;
+    const r = N.restyleLayers(c, [a], { style: Object.assign({}, st.accent, { fonts: ["BodoniModa28pt-Regular"] }), parts: { font: true }, safeWidth: 0.88, anim: null });
+    assert.strictEqual(a.src.value.font, before); assert.ok(r.warnings.some(w => /BodoniModa28pt-Regular/.test(w)));
+  });
   await test("длинное слово ужимается в безопасную ширину", () => {
     const c = mkComp(), st = styleOf("noir-red"); const d = { segments: [{ words: [{ text: "Достопримечательность", start: 0, end: 1 }] }] };
     N.generate(c, prep(N.flattenWords(d), st.layout), st, st.anim, true);

@@ -10,6 +10,7 @@
 | «Python не найден» | Не выполнен шаг 3 установки (`recognition\setup_windows.ps1`) или `.venv` удалён |
 | «Модель … не скачана» | Скачайте командой `.venv\Scripts\python.exe recognition\download_model.py <модель>` (см. INSTALLATION, шаг 4) |
 | AE «Не отвечает» при распознавании | Исправлено в версии 0.3+ (запуск Python больше не блокирует AE). Обновитесь (`git pull`). Если осталось — завершите `python.exe` в Диспетчере задач и пришлите `log_*.txt` и `status_*.json` |
+| Окно «Resolve Fonts» при открытии проекта (Unresolvable: BodoniModa…) | В слоях записан шрифт, которого нет на компьютере. До версии 0.5.1 панель назначала шрифт, не проверив, что он установлен. Обновитесь (`git pull`) и пересоздайте субтитры. Старые слои: выделить → вкладка «Стиль» → выбрать установленный шрифт → «Шрифт → выделенным слоям». Шрифты пресетов (Bodoni Moda, Montserrat, Inter) бесплатны: https://fonts.google.com |
 | Окно AE «You are about to run the script… .vbs» | Нормально: AE спрашивает разрешение на запуск. Нажмите Yes или отключите «Warn User When Executing Files» (Preferences → Scripting & Expressions) |
 | «CUDA устройств: 0» после установки | Обновите драйвер NVIDIA; без GPU выберите устройство «CPU» в панели |
 | «Загрузка модели … (cuda)» висит дольше 2–3 минут | Нажмите «Отмена», запустите вручную `recognition\noir_recognize.py … --device cpu`, затем `--device cuda`, и пришлите вывод |

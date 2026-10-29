@@ -96,7 +96,6 @@ class TextLayer extends AVLayer {
     // Как в AE: setValue копирует документ; неизвестный шрифт не применяется.
     this.src.setValue = (doc) => {
       const copy = Object.assign(new TextDocument(doc.text), doc);
-      if (!fonts.includes(copy.font)) copy.font = "ArialMT";
       origSet(copy);
     };
     Object.defineProperty(this.src, "value", {
@@ -197,7 +196,9 @@ function install(opts = {}) {
   g.system = { callSystem: (cmd) => { try { return cp.execSync(cmd, { encoding: "utf8" }); } catch (e) { return e.stdout || ""; } } };
   g.app = {
     project: { activeItem: null },
-    fonts: { allFonts: (opts.fonts || []).map(f => [{ familyName: f.split("-")[0], styleName: f.split("-")[1] || "Regular", postScriptName: f }]) },
+    fonts: {
+      getFontsByPostScriptName: (n) => ((global.__installedFonts || opts.fonts || []).includes(n) ? [{ postScriptName: n }] : []),
+      allFonts: (opts.fonts || []).map(f => [{ familyName: f.split("-")[0], styleName: f.split("-")[1] || "Regular", postScriptName: f }]) },
     settings: {
       haveSetting: (s, k) => (s + "/" + k) in settings,
       getSetting: (s, k) => settings[s + "/" + k],
