@@ -304,6 +304,14 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         return lines;
     };
 
+    // Копия стиля с очередным цветом из палитры (st.colors) — для акцентных слов «каждое своего цвета».
+    function withPaletteColor(st, ordinal) {
+        var c = {};
+        for (var k in st) c[k] = st[k];
+        c.color = st.colors[(ordinal || 0) % st.colors.length];
+        return c;
+    }
+
     function buildGroup(comp, g, style, anim, ctx) {
         var layout = style.layout;
         var hasAccent = false, i, j;
@@ -314,7 +322,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             items.push({ text: g.text, accent: false, start: g.compStart });
         } else {
             for (i = 0; i < g.words.length; i++) items.push({
-                text: g.words[i].text, accent: !!g.words[i].accent, invert: !!g.words[i].invert,
+                text: g.words[i].text, accent: !!g.words[i].accent, invert: !!g.words[i].invert, ord: g.words[i].ord,
                 start: layout.reveal === "group" ? g.compStart : g.words[i].compStart
             });
         }
@@ -329,6 +337,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             for (j = 0; j < lines[i].length; j++) {
                 var it = lines[i][j];
                 var st = it.accent ? style.accent : style.base;
+                if (it.accent && st.colors && st.colors.length) st = withPaletteColor(st, it.ord);   // палитра по кругу
                 it.st = st;
                 it.size = st.size * ctx.scale;
                 it.display = displayText(it.text, st);
@@ -408,6 +417,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
                 a.opacity = styleOpacity(w.st);
                 N.applyAnimation(L, pos, tIn, tOut, a, blurProp);
                 ctx.created++;
+                ctx.made.push({ tIn: tIn, tOut: tOut, accent: !!w.accent });
             }
             y += ln.ascent + ln.descent + gap;
         }
@@ -571,10 +581,12 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
     // groups: из N.groupWords + N.timeGroups; у групп и слов есть compStart/compOut.
     // style: { layout, base, accent }, anim: { animIn, animOut, inDur, outDur, distance, blur, easeInfluence }
     N.generate = function (comp, groups, style, anim, replace) {
-        var ctx = { warnings: [], fontCache: {}, created: 0, scale: comp.width / N.REF_WIDTH,
+        var ctx = { warnings: [], fontCache: {}, created: 0, made: [], scale: comp.width / N.REF_WIDTH,
             minDur: Math.max(comp.frameDuration, 0.04) };
         var removed = replace ? N.removeGenerated(comp) : 0;
-        var skipped = 0;
+        var skipped = 0, ordinal = 0, gi, wi;
+        for (gi = 0; gi < groups.length; gi++)             // номер акцентного слова в порядке чтения — для палитры
+            for (wi = 0; wi < groups[gi].words.length; wi++) if (groups[gi].words[wi].accent) groups[gi].words[wi].ord = ordinal++;
         for (var i = groups.length - 1; i >= 0; i--) { // с конца: ранние слова окажутся сверху
             var g = groups[i];
             if (g.compOut <= 0 || g.compStart >= comp.duration) { skipped++; continue; }
@@ -584,6 +596,6 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             buildGroup(comp, g, style, anim, ctx);
         }
         if (skipped) ctx.warnings.push("Пропущено групп вне композиции или короче кадра: " + skipped);
-        return { created: ctx.created, removed: removed, warnings: ctx.warnings };
+        return { created: ctx.created, removed: removed, warnings: ctx.warnings, made: ctx.made };
     };
 })(NOIR);

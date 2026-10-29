@@ -7,7 +7,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
 (function (N) {
     var SECTION = "NOIR Captions";
     var SETTINGS_KEY = "settings.v2";
-    var VERSION = "0.5.2";
+    var VERSION = "0.6.0";
 
     function clone(o) { return N.parseJSON(N.stringify(o)); }
 
@@ -27,7 +27,9 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
 
     var DEFAULTS = {
         language: "ru", model: "large-v3", device: "auto", prompt: "",
-        replace: true, python: "", presetId: "", style: FALLBACK_STYLE
+        replace: true, python: "", presetId: "", style: FALLBACK_STYLE,
+        // sfx: appear/accent/exit — "auto" | "off" | "same" (только accent) | "cat:<категория>"
+        sfx: { enabled: false, appear: "auto", accent: "same", exit: "off", db: -6, dbRand: 2, minGap: 0.12, file: "" }
     };
 
     function loadSettings() {
@@ -38,6 +40,9 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
                 for (var k in saved) if (DEFAULTS.hasOwnProperty(k)) s[k] = saved[k];
             }
         } catch (e) {}
+        var sf = clone(DEFAULTS.sfx);                       // старые сохранения без новых полей
+        for (var k2 in (s.sfx || {})) sf[k2] = s.sfx[k2];
+        s.sfx = sf;
         return s;
     }
     function saveSettings(s) {
@@ -103,6 +108,8 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         // Тема необязательна: если файла нет или он сломан — обычные вкладки и кнопки.
         try { $.evalFile(File(root + "/ae/noir/theme.jsx")); } catch (eTheme) {}
         var TH = N.theme && N.theme.makeTabs ? N.theme : null;
+        try { $.evalFile(File(root + "/ae/noir/sfx.jsx")); } catch (eSfx) {}
+        var SFX = !!(N.planSfx && N.sfxLibrary);
 
         var win = (thisObj instanceof Panel) ? thisObj
             : new Window("palette", "NOIR CAPTIONS", undefined, { resizeable: true });
@@ -146,7 +153,8 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         var tLayout = tabs.add("tab", undefined, "Раскладка");
         var tAnim = tabs.add("tab", undefined, "Анимация");
         var tLayers = tabs.add("tab", undefined, "Слои");
-        var all = [tSpeech, tText, tStyle, tView, tLayout, tAnim, tLayers];
+        var tSfx = tabs.add("tab", undefined, "SFX");
+        var all = [tSpeech, tText, tStyle, tView, tLayout, tAnim, tLayers, tSfx];
         for (var ti = 0; ti < all.length; ti++) {
             all[ti].orientation = "column";
             all[ti].alignChildren = ["fill", "top"];
@@ -408,6 +416,81 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         var btnApply = pnlApply.add("button", undefined, "Применить к выделенным");
         btnApply.helpTip = "Позиция и тайминг слоя не меняются. Регистр букв (КАПС) вернуть назад нельзя";
 
+        // ================= SFX: озвучивание текста =================
+        var sfxLib = SFX ? N.sfxLibrary(root) : { names: [], files: {} };
+        var cbSfx = tSfx.add("checkbox", undefined, "Озвучивать при создании субтитров");
+        cbSfx.value = !!S.sfx.enabled;
+        function ddChoice(label, kind) {
+            var r = row(tSfx, label, 70), dd = r.add("dropdownlist", undefined, []);
+            dd.alignment = ["fill", "center"];
+            dd._kind = kind;
+            return dd;
+        }
+        var ddSfxAppear = ddChoice("Появление", "appear");
+        var ddSfxAccent = ddChoice("Акцент", "accent");
+        var ddSfxExit = ddChoice("Выход", "exit");
+        var rSfxVol = row(tSfx, "Громкость, дБ", 85);
+        var etSfxDb = field(rSfxVol, S.sfx.db, 4);
+        rSfxVol.add("statictext", undefined, "разброс");
+        var etSfxRand = field(rSfxVol, S.sfx.dbRand, 3);
+        rSfxVol.add("statictext", undefined, "мин. интервал, с");
+        var etSfxGap = field(rSfxVol, S.sfx.minGap, 4);
+        var rSfxBtn = tSfx.add("group");
+        var btnSfxSelected = rSfxBtn.add("button", undefined, "Озвучить выделенные слои");
+        var btnSfxRemove = rSfxBtn.add("button", undefined, "Убрать SFX");
+        var rSfxFile = row(tSfx, "Звук", 40);
+        var ddSfxFile = rSfxFile.add("dropdownlist", undefined, []);
+        ddSfxFile.alignment = ["fill", "center"];
+        var btnSfxHere = rSfxFile.add("button", undefined, "В текущее время");
+        var rSfxLib = tSfx.add("group");
+        var btnSfxRescan = rSfxLib.add("button", undefined, "Обновить список");
+        var btnSfxFolder = rSfxLib.add("button", undefined, "Папка SFX");
+        var stSfxInfo = tSfx.add("statictext", undefined, "");
+        stSfxInfo.alignment = ["fill", "top"];
+
+        function choiceItems(kind) {
+            var items = [];
+            if (kind === "accent") items.push({ id: "same", label: "Как появление" });
+            items.push({ id: "auto", label: "Авто (по анимации)" });
+            items.push({ id: "off", label: "Выкл" });
+            for (var i = 0; i < sfxLib.names.length; i++)
+                items.push({ id: "cat:" + sfxLib.names[i], label: N.sfxCategoryLabel ? N.sfxCategoryLabel(sfxLib.names[i]) : sfxLib.names[i] });
+            return items;
+        }
+        function fillDD(dd, items, id) {
+            dd.removeAll();
+            dd._items = items;
+            var sel = 0;
+            for (var i = 0; i < items.length; i++) {
+                dd.add("item", items[i].label);
+                if (items[i].id === id) sel = i;
+            }
+            dd.selection = sel;
+        }
+        function ddValue(dd) { return dd._items && dd.selection ? dd._items[dd.selection.index].id : ""; }
+        function fileItems() {
+            var items = [];
+            for (var c = 0; c < sfxLib.names.length; c++) {
+                var list = sfxLib.files[sfxLib.names[c]];
+                for (var f = 0; f < list.length; f++)
+                    items.push({ id: list[f], label: N.sfxCategoryLabel(sfxLib.names[c]) + " · " + N.sfxName(list[f]) });
+            }
+            return items;
+        }
+        function refillSfx() {
+            state.syncing = true;
+            fillDD(ddSfxAppear, choiceItems("appear"), S.sfx.appear);
+            fillDD(ddSfxAccent, choiceItems("accent"), S.sfx.accent);
+            fillDD(ddSfxExit, choiceItems("exit"), S.sfx.exit);
+            fillDD(ddSfxFile, fileItems(), S.sfx.file);
+            state.syncing = false;
+            var n = 0;
+            for (var c = 0; c < sfxLib.names.length; c++) n += sfxLib.files[sfxLib.names[c]].length;
+            stSfxInfo.text = SFX ? ("В библиотеке: " + n + " звуков, " + sfxLib.names.length + " категорий. Свои звуки: кнопка «Папка SFX».")
+                : "Модуль SFX не загружен (нет файла ae/noir/sfx.jsx).";
+        }
+        refillSfx();
+
         // ================= низ =================
         if (!TH) win.add("statictext", undefined, "NOIR CAPTIONS " + VERSION);
 
@@ -415,7 +498,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         if (TH) {
             var primary = [btnRecognize, btnGenerate, btnMakeAccent];
             var ghost = [btnCancel, btnLoad, btnSave, btnReset, btnSavePreset, btnFromLayer, btnFontToLayers,
-                btnColor, btnStrokeColor, btnMakeBase, btnApply, btnInvert, btnAnimApply];
+                btnColor, btnStrokeColor, btnMakeBase, btnApply, btnInvert, btnAnimApply, btnSfxSelected, btnSfxRemove, btnSfxHere, btnSfxRescan, btnSfxFolder];
             for (var bi = 0; bi < primary.length; bi++) TH.button(primary[bi], "primary");
             for (var gi = 0; gi < ghost.length; gi++) TH.button(ghost[gi], "ghost");
             btnGenerate.preferredSize.height = 32;
@@ -440,6 +523,13 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         btnMakeAccent.helpTip = "Выделенные текстовые слои получат акцентный стиль (шрифт, размер, цвет, эффекты из настроек «Акцент»)";
         btnMakeBase.helpTip = "Выделенные текстовые слои получат обычный стиль";
         btnApply.helpTip = "Применить вид и/или анимацию из панели к выделенным слоям. Выделите все слои — применится ко всем";
+        btnSfxSelected.helpTip = "Добавить звуки к выделенным текстовым слоям: на появление (и выход, если включён) по настройкам выше";
+        btnSfxRemove.helpTip = "Удалить из композиции все слои «NOIR SFX»";
+        btnSfxHere.helpTip = "Вставить выбранный звук в позицию текущего времени (индикатор на таймлайне)";
+        btnSfxFolder.helpTip = "Открыть папку, куда можно класть свои звуки (подпапка = категория)";
+        cbSfx.helpTip = "При «Создать субтитры» сразу расставить звуки на появление/акцент/выход";
+        etSfxRand.helpTip = "Случайный разброс громкости ± дБ (повторяемый), чтобы звуки не звучали одинаково";
+        etSfxGap.helpTip = "Если звуки ближе друг к другу — лишние пропускаются (акцент главнее)";
         btnGenerate.helpTip = "Создать текстовые слои с субтитрами в открытой композиции";
         cbReplace.helpTip = "Перед созданием удалить слои NOIR из прошлого запуска. Ваши слои не трогаются";
         rbBase.helpTip = rbBase2.helpTip = "Настройки ниже относятся к обычным словам";
@@ -580,6 +670,14 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             S.device = idOf(ddDev, DEVICES);
             S.prompt = etPrompt.text;
             S.replace = cbReplace.value;
+            S.sfx.enabled = cbSfx.value;
+            S.sfx.appear = ddValue(ddSfxAppear) || "auto";
+            S.sfx.accent = ddValue(ddSfxAccent) || "same";
+            S.sfx.exit = ddValue(ddSfxExit) || "off";
+            S.sfx.file = ddValue(ddSfxFile);
+            S.sfx.db = num(etSfxDb.text, -6, -60, 12);
+            S.sfx.dbRand = num(etSfxRand.text, 2, 0, 12);
+            S.sfx.minGap = num(etSfxGap.text, 0.12, 0, 5);
             readTextUI();
             var L = S.style.layout, A = S.style.anim;
             L.reveal = idOf(ddReveal, REVEALS);
@@ -909,6 +1007,77 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             applyToLayers(state.target, { font: true }, false, "NOIR Captions: шрифт выделенным слоям");
         };
 
+        // ----- SFX -----
+        function sfxChoice(id) {
+            if (id === "auto" || id === "off" || id === "same") return { mode: id };
+            if (id.indexOf("cat:") === 0) return { mode: "cat", value: id.substring(4) };
+            return { mode: "off" };
+        }
+        function sfxConfig() {
+            return { appear: sfxChoice(S.sfx.appear), accent: sfxChoice(S.sfx.accent), exit: sfxChoice(S.sfx.exit),
+                db: S.sfx.db, dbRand: S.sfx.dbRand, minGap: S.sfx.minGap };
+        }
+        // Озвучить созданные слои (res.made) — вызывается из «Создать субтитры».
+        function voiceGenerated(comp, made, warnings) {
+            var libNow = N.sfxLibrary(root), A = S.style.anim, ev = [], k;
+            if (S.replace) N.removeSfx(comp);
+            for (k = 0; k < made.length; k++) {
+                ev.push({ t: made[k].tIn, kind: "in", accent: made[k].accent, anim: A.animIn });
+                if (A.animOut !== "none") ev.push({ t: Math.max(made[k].tIn, made[k].tOut - A.outDur), kind: "out", accent: false, anim: A.animOut });
+            }
+            var r = N.placeSfx(comp, N.planSfx(ev, libNow, sfxConfig()));
+            for (k = 0; k < r.warnings.length; k++) warnings.push(r.warnings[k]);
+            if (!libNow.names.length) warnings.push("Библиотека SFX пуста: положите звуки в папку sfx (кнопка «Папка SFX» на вкладке SFX).");
+            return r.placed;
+        }
+        function sfxAction(undoName, fn) {
+            app.beginUndoGroup(undoName);
+            try { fn(); }
+            catch (e) { alert(e.message || e.toString(), "NOIR Captions"); }
+            finally { app.endUndoGroup(); }
+        }
+        btnSfxSelected.onClick = function () {
+            if (!SFX) return;
+            var sel;
+            readUI();
+            try { sel = selectedTextLayers(); } catch (e) { alert(e.message, "NOIR Captions"); return; }
+            sfxAction("NOIR Captions: озвучить выделенные", function () {
+                sfxLib = N.sfxLibrary(root);
+                var plan = N.planSfx(N.sfxEventsFromLayers(sel.layers, S.style.anim), sfxLib, sfxConfig());
+                var r = N.placeSfx(sel.comp, plan);
+                setStatus("Звуков добавлено: " + r.placed + (r.warnings.length ? "\n" + r.warnings.join("\n") : "") +
+                    (sfxLib.names.length ? "" : "\nБиблиотека SFX пуста."));
+            });
+        };
+        btnSfxRemove.onClick = function () {
+            if (!SFX) return;
+            var comp = app.project.activeItem;
+            if (!(comp instanceof CompItem)) { alert("Откройте композицию.", "NOIR Captions"); return; }
+            sfxAction("NOIR Captions: убрать SFX", function () { setStatus("Убрано звуков: " + N.removeSfx(comp)); });
+        };
+        btnSfxHere.onClick = function () {
+            if (!SFX) return;
+            var comp = app.project.activeItem;
+            if (!(comp instanceof CompItem)) { alert("Откройте композицию.", "NOIR Captions"); return; }
+            readUI();
+            if (!S.sfx.file) { alert("В списке «Звук» нет звуков. Положите файлы в папку SFX и нажмите «Обновить список».", "NOIR Captions"); return; }
+            sfxAction("NOIR Captions: звук в текущее время", function () {
+                var r = N.placeSfx(comp, [{ t: comp.time, file: S.sfx.file, cat: "manual", db: S.sfx.db }]);
+                setStatus(r.placed ? "Звук добавлен в " + comp.time.toFixed(2) + " с" : r.warnings.join("\n"));
+            });
+        };
+        btnSfxRescan.onClick = function () {
+            readUI();
+            if (SFX) sfxLib = N.sfxLibrary(root);
+            refillSfx();
+        };
+        btnSfxFolder.onClick = function () {
+            var f = Folder(Folder.userData.fsName + "/NOIR Captions/sfx");
+            if (!f.exists) f.create();
+            f.execute();
+            setStatus("Положите звуки в подпапки (например whoosh, pop, hit) и нажмите «Обновить список».");
+        };
+
         btnGenerate.onClick = function () {
             readUI();
             if (!state.data) { alert("Сначала распознайте речь или откройте JSON.", "NOIR Captions"); return; }
@@ -939,7 +1108,9 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             try {
                 var res = N.generate(comp, groups, S.style, S.style.anim, S.replace);
                 warnings = warnings.concat(res.warnings);
-                var msg = "Создано слоёв: " + res.created + (res.removed ? ", заменено старых: " + res.removed : "");
+                var voiced = (SFX && S.sfx.enabled) ? voiceGenerated(comp, res.made, warnings) : -1;
+                var msg = "Создано слоёв: " + res.created + (res.removed ? ", заменено старых: " + res.removed : "") +
+                    (voiced >= 0 ? ", звуков: " + voiced : "");
                 setStatus(msg);
                 if (warnings.length) alert(msg + "\n\n- " + warnings.join("\n- "), "NOIR Captions");
             } catch (e2) {

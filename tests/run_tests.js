@@ -12,7 +12,7 @@ const mock = require("./ae_mock");
 const ROOT = path.resolve(__dirname, "..");
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), "noir-test-"));
 const env = mock.install({ temp: TMP, fonts: ["TimesNewRomanPSMT", "Inter-Bold"] });
-for (const m of ["core.jsx", "generator.jsx", "recognizer.jsx", "panel.jsx"])
+for (const m of ["core.jsx", "generator.jsx", "recognizer.jsx", "sfx.jsx", "panel.jsx"])
   (0, eval)(fs.readFileSync(path.join(ROOT, "ae/noir", m), "utf8"));
 const N = global.NOIR;
 
@@ -387,6 +387,17 @@ const GOPTS = { maxWords: 1, maxChars: 99, pauseBreak: 0.35, punctBreak: true, s
     assert.strictEqual(byName("это").blendingMode, BlendingMode.DIFFERENCE); assert.deepStrictEqual(byName("это").src.value.fillColor, [1, 1, 1]);
     assert.strictEqual(byName("NOIR").blendingMode, BlendingMode.NORMAL); assert.deepStrictEqual(byName("NOIR").src.value.fillColor, [0.5, 0.2, 0.2]);
   });
+  await test("палитра акцентов: акцентные слова получают цвета по кругу, обычные — свой цвет", () => {
+    const c = mkComp(), st = styleOf("mix-colors"); st.layout.autoAccent = false;
+    const words = N.applyEdits(sample(), "*Привет,* это *NOIR.*\n*Субтитры* *сами*", []);
+    N.generate(c, prep(words, st.layout), st, st.anim, true);
+    const col = (n) => JSON.stringify(subs(c).find(l => l.name === "NOIR · " + n).src.value.fillColor);
+    const pal = st.accent.colors.map(x => JSON.stringify(x));
+    assert.deepStrictEqual(["Привет", "NOIR", "Субтитры", "сами"].map(col), [pal[0], pal[1], pal[2], pal[3]]);
+    assert.strictEqual(col("это"), JSON.stringify(st.base.color));
+    const c2 = mkComp(); N.generate(c2, prep(N.applyEdits(sample(), "*а* *б* *в* *г* *д*\nб", []).slice(0, 5), st.layout), st, st.anim, true);
+    const cols = subs(c2).map(l => JSON.stringify(l.src.value.fillColor)); assert.strictEqual(new Set(cols).size, 4, "палитра должна повторяться по кругу");
+  });
   await test("все слои сразу + пользовательский слой без тега", () => {
     const c = mkComp(), st = styleOf("kinetic-stack"); gen(c, "kinetic-stack");
     const user = new mock.TextLayer(c, "мой текст", c._fonts); user.inPoint = 1; user.outPoint = 3; c._l.push(user);
@@ -397,6 +408,78 @@ const GOPTS = { maxWords: 1, maxChars: 99, pauseBreak: 0.35, punctBreak: true, s
     assert.ok(all2.every(l => JSON.stringify(l.src.value.fillColor) === JSON.stringify(st.accent.color)));
     assert.ok(!N.isGenerated(user), "пользовательский слой получил тег");
     assert.deepStrictEqual(N.baseOf(user).slice(0, 2), [300, 700]);
+  });
+
+  console.log("SFX");
+  const LIB = N.sfxLibrary(ROOT);
+  await test("библиотека SFX: все категории стартового набора, файлы только аудио, пути существуют", () => {
+    for (const c of ["whoosh", "pop", "hit", "click", "rise", "shimmer", "morph", "counter", "blur_out", "scale_down", "glitch"]) assert.ok(LIB.files[c] && LIB.files[c].length, "нет категории " + c);
+    assert.ok(Object.values(LIB.files).flat().every(f => fs.existsSync(f) && /\.wav$/.test(f)));
+    assert.deepStrictEqual(LIB.names, LIB.names.slice().sort());
+  });
+  await test("библиотека SFX: пользовательская папка (категория = подпапка), чужие файлы игнорируются", () => {
+    const ud = path.join(TMP, "userData", "NOIR Captions", "sfx"); fs.mkdirSync(path.join(ud, "мой пак"), { recursive: true });
+    fs.writeFileSync(path.join(ud, "мой пак", "стук.wav"), "x"); fs.writeFileSync(path.join(ud, "мой пак", "заметки.txt"), "x"); fs.writeFileSync(path.join(ud, "loose.mp3"), "x");
+    const lib = N.sfxLibrary(ROOT);
+    assert.ok(lib.files["мой пак"].length === 1 && /стук\.wav$/.test(lib.files["мой пак"][0])); assert.strictEqual(lib.files.other.length, 1);
+    assert.ok(lib.files.whoosh.length >= 3, "встроенные пропали");
+  });
+  const CFG = { appear: { mode: "auto" }, accent: { mode: "same" }, exit: { mode: "off" }, db: -6, dbRand: 0, minGap: 0.1 };
+  await test("авто-подбор: pop→pop, slam→hit, whip→whoosh, none→click; выход blur→blur_out; чередование файлов", () => {
+    const ev = (anim, t, extra) => Object.assign({ t, kind: "in", accent: false, anim }, extra);
+    const cats = (list, cfg) => N.planSfx(list, LIB, cfg || CFG).map(p => p.cat);
+    assert.deepStrictEqual(cats([ev("pop", 0), ev("slam", 1), ev("whipL", 2), ev("none", 3), ev("fade", 4)]), ["pop", "hit", "whoosh", "click", "shimmer"]);
+    assert.deepStrictEqual(cats([ev("blur", 0, { kind: "out" })], Object.assign({}, CFG, { exit: { mode: "auto" } })), ["blur_out"]);
+    const p = N.planSfx([ev("pop", 0), ev("pop", 1), ev("pop", 2), ev("pop", 3)], LIB, CFG);
+    assert.strictEqual(new Set(p.slice(0, 3).map(x => x.file)).size, 3, "файлы не чередуются"); assert.strictEqual(p[3].file, p[0].file);
+  });
+  await test("режимы: выкл, конкретная категория, «акцент = другой звук», «как появление»", () => {
+    const evs = [{ t: 0, kind: "in", accent: false, anim: "pop" }, { t: 1, kind: "in", accent: true, anim: "pop" }];
+    assert.deepStrictEqual(N.planSfx(evs, LIB, Object.assign({}, CFG, { appear: { mode: "off" }, accent: { mode: "same" } })), []);
+    assert.deepStrictEqual(N.planSfx(evs, LIB, Object.assign({}, CFG, { appear: { mode: "cat", value: "hit" } })).map(p => p.cat), ["hit", "hit"]);
+    assert.deepStrictEqual(N.planSfx(evs, LIB, Object.assign({}, CFG, { accent: { mode: "cat", value: "shimmer" } })).map(p => p.cat), ["pop", "shimmer"]);
+    assert.deepStrictEqual(N.planSfx(evs, LIB, Object.assign({}, CFG, { appear: { mode: "off" }, accent: { mode: "cat", value: "shimmer" } })).map(p => p.cat), ["shimmer"]);
+  });
+  await test("мин. интервал: близкие звуки пропускаются, акцент вытесняет обычный", () => {
+    const e = (t, accent) => ({ t, kind: "in", accent, anim: "pop" });
+    assert.strictEqual(N.planSfx([e(0), e(0.05), e(0.2), e(0.25)], LIB, CFG).length, 2);
+    const p = N.planSfx([e(0, false), e(0.05, true)], LIB, Object.assign({}, CFG, { accent: { mode: "cat", value: "hit" } }));
+    assert.strictEqual(p.length, 1); assert.strictEqual(p[0].cat, "hit"); near(p[0].t, 0.05);
+    assert.strictEqual(N.planSfx([e(0), e(0.05)], LIB, Object.assign({}, CFG, { minGap: 0 })).length, 2);
+  });
+  await test("нет нужной категории: запасная (whoosh/pop/click); пустая библиотека — пустой план", () => {
+    const lib = { names: ["click"], files: { click: ["/x/c.wav"] } };
+    assert.strictEqual(N.planSfx([{ t: 0, kind: "in", accent: false, anim: "slam" }], lib, CFG)[0].cat, "click");
+    assert.deepStrictEqual(N.planSfx([{ t: 0, kind: "in", accent: false, anim: "slam" }], { names: [], files: {} }, CFG), []);
+  });
+  await test("громкость: разброс повторяем и укладывается в ±dbRand", () => {
+    const evs = []; for (let i = 0; i < 20; i++) evs.push({ t: i, kind: "in", accent: false, anim: "pop" });
+    const c = Object.assign({}, CFG, { db: -6, dbRand: 3 }), a = N.planSfx(evs, LIB, c), b = N.planSfx(evs, LIB, c);
+    assert.deepStrictEqual(a.map(p => p.db), b.map(p => p.db)); assert.ok(a.every(p => p.db >= -9 - 1e-9 && p.db <= -3 + 1e-9)); assert.ok(new Set(a.map(p => p.db)).size > 5);
+  });
+  await test("события из слоёв: появление на inPoint, выход за outDur до outPoint, акцент по метке", () => {
+    const c = mkComp(); gen(c); const ls = subs(c).slice(0, 2); ls[1].label = 11;
+    const ev = N.sfxEventsFromLayers(ls, { animIn: "pop", animOut: "blur", outDur: 0.2 });
+    assert.strictEqual(ev.length, 4); near(ev[0].t, ls[0].inPoint); near(ev[1].t, Math.max(ls[0].inPoint, ls[0].outPoint - 0.2)); assert.strictEqual(ev[2].accent, true);
+    assert.strictEqual(N.sfxEventsFromLayers(ls, { animIn: "pop", animOut: "none", outDur: 0.2 }).length, 2);
+  });
+  await test("расстановка в AE: слои в нужное время, громкость, метка; звук импортируется один раз", () => {
+    const c = mkComp({ duration: 10 }); gen(c); const textCount = c.numLayers;
+    const plan = N.planSfx([{ t: 1, kind: "in", accent: false, anim: "pop" }, { t: 2, kind: "in", accent: false, anim: "pop" }, { t: 4, kind: "in", accent: false, anim: "pop" }, { t: 20, kind: "in", accent: false, anim: "pop" }],
+      { names: ["pop"], files: { pop: [LIB.files.pop[0]] } }, Object.assign({}, CFG, { db: -9 }));
+    const r = N.placeSfx(c, plan);
+    assert.strictEqual(r.placed, 3, "пятый — за пределами композиции"); const sfx = c._l.filter(l => String(l.comment).indexOf(N.SFX_TAG) === 0);
+    assert.deepStrictEqual(sfx.map(l => l.startTime).sort((a, b) => a - b), [1, 2, 4]); assert.ok(sfx.every(l => l.label === 13 && /^NOIR SFX · pop_1$/.test(l.name)));
+    assert.deepStrictEqual(sfx[0].audioLevels.value, [-9, -9]);
+    const footage = global.app.project._items.filter(i => i instanceof mock.FootageItem && /pop_1\.wav$/.test(i.mainSource.file.fsName)); assert.strictEqual(footage.length, 1, "импортирован не один раз");
+    assert.ok(global.app.project._items.some(i => i instanceof mock.FolderItem && i.name === "NOIR SFX"));
+    assert.strictEqual(c._l.indexOf(sfx[0]) >= textCount, true, "звук должен лежать под текстом");
+    assert.strictEqual(N.removeSfx(c), 3); assert.strictEqual(c.numLayers, textCount);
+  });
+  await test("расстановка: нет файла — предупреждение, остальные звуки ставятся", () => {
+    const c = mkComp({ duration: 10 });
+    const r = N.placeSfx(c, [{ t: 1, file: "/nope/missing.wav", cat: "x", db: 0 }, { t: 2, file: LIB.files.hit[0], cat: "hit", db: 0 }]);
+    assert.strictEqual(r.placed, 1); assert.strictEqual(r.warnings.length, 1); assert.ok(/missing/.test(r.warnings[0]));
   });
 
   console.log("panel (мок ScriptUI)");
@@ -419,9 +502,9 @@ const GOPTS = { maxWords: 1, maxChars: 99, pauseBreak: 0.35, punctBreak: true, s
     const tabBtn = (t) => panel.find(e => e.type === "button" && e.text === t);
     tabBtn("Стиль").onClick(); tabBtn("Раскладка").onClick();
     const stack = panel.find(e => e.type === "group" && e.orientation === "stack");
-    assert.deepStrictEqual(stack.children.map(c => c.visible), [false, false, false, false, true, false, false]);
+    assert.deepStrictEqual(stack.children.map(c => c.visible), [false, false, false, false, true, false, false, false]);
     tabBtn("Речь").onClick();
-    assert.deepStrictEqual(stack.children.map(c => c.visible), [true, false, false, false, false, false, false]);
+    assert.deepStrictEqual(stack.children.map(c => c.visible), [true, false, false, false, false, false, false, false]);
     assert.strictEqual(typeof panel.button("Создать субтитры").onDraw, "function");
   });
   await test("без theme.jsx панель строится на обычных вкладках", () => {
@@ -502,6 +585,49 @@ const GOPTS = { maxWords: 1, maxChars: 99, pauseBreak: 0.35, punctBreak: true, s
     assert.strictEqual(ls[0].blendingMode, BlendingMode.DIFFERENCE);
     panel.button("◐ Инверсия вкл/выкл для выделенных слоёв").onClick(); assert.strictEqual(ls[0].blendingMode, BlendingMode.NORMAL);
     ls[0].selected = false;
+  });
+  await test("вкладка SFX: настройки и кнопки есть; список звуков заполнен из библиотеки", () => {
+    const p = N.buildPanel(new mock.Panel(), ROOT);
+    assert.ok(p.find(e => e.type === "checkbox" && e.text === "Озвучивать при создании субтитров"));
+    for (const b of ["Озвучить выделенные слои", "Убрать SFX", "В текущее время", "Обновить список", "Папка SFX"]) assert.ok(p.button(b), "нет кнопки " + b);
+    const files = p.find(e => e.type === "dropdownlist" && e._items && e._items.some(i => /pop_1/.test(i.label)));
+    assert.ok(files && files._items.length >= 25, "список звуков пуст");
+    const accent = p.find(e => e._kind === "accent"); assert.strictEqual(accent._items[0].id, "same");
+  });
+  await test("SFX при создании субтитров: звуки встают на слова (и на выход), повторное создание не дублирует", async () => {
+    const jf = path.join(TMP, "sfx_sample.json"); fs.writeFileSync(jf, JSON.stringify(Object.assign(sample(), { engine: { model: "small", device: "cpu" } })));
+    const p = N.buildPanel(new mock.Panel(), ROOT); const c = mkComp({ duration: 12 });
+    const origOpen = mock.File.openDialog; mock.File.openDialog = () => mock.File(jf); global.File.openDialog = mock.File.openDialog;
+    p.button("Загрузить результат…").onClick(); mock.File.openDialog = origOpen; global.File.openDialog = origOpen;
+    p.find(e => e.type === "checkbox" && e.text === "Озвучивать при создании субтитров").value = true;
+    const dd = p.find(e => e._kind === "exit"); dd.selection = dd._items.findIndex(i => i.id === "auto");
+    const kb = (id) => p.find(e => e.type === "button" && e._id === id && e._which === "in"); kb("pop").onClick();
+    const ob = p.find(e => e.type === "button" && e._id === "blur" && e._which === "out"); ob.onClick();
+    env.log.alerts.length = 0; p.button("Создать субтитры").onClick();
+    assert.ok(!env.log.alerts.some(a => /Ошибка|SFX|Не удалось/.test(a)), env.log.alerts.join("|")); // предупреждение про шрифт в моке допустимо
+    assert.ok(env.log.alerts.some(a => /звуков: 7/.test(a)), "в сообщении нет числа звуков: " + env.log.alerts.join("|"));
+    const sfx = () => c._l.filter(l => String(l.comment).indexOf(N.SFX_TAG) === 0), txt = () => c._l.filter(l => N.isGenerated(l));
+    const inSfx = sfx().filter(l => /\|pop$/.test(l.comment)), outSfx = sfx().filter(l => /\|blur_out$/.test(l.comment));
+    assert.ok(inSfx.length >= 3, "звуков появления: " + inSfx.length); assert.ok(outSfx.length >= 1, "звуков выхода: " + outSfx.length);
+    const starts = txt().map(l => l.inPoint); inSfx.forEach(l => assert.ok(starts.some(t => Math.abs(t - l.startTime) < 1e-6), "звук не на слове " + l.startTime));
+    const n1 = sfx().length; p.button("Создать субтитры").onClick(); assert.strictEqual(sfx().length, n1, "звуки задублировались");
+    const S = N.parseJSON(env.settings["NOIR Captions/settings.v2"]); assert.strictEqual(S.sfx.enabled, true); assert.strictEqual(S.sfx.exit, "auto");
+  });
+  await test("SFX выключен по умолчанию: «Создать субтитры» не добавляет звуков", () => {
+    const jf = path.join(TMP, "sfx_sample.json");
+    env.settings["NOIR Captions/settings.v2"] = N.stringify({ style: styleOf("reels-glow") });
+    const p = N.buildPanel(new mock.Panel(), ROOT); const c = mkComp({ duration: 12 });
+    global.File.openDialog = () => mock.File(jf); p.button("Загрузить результат…").onClick(); global.File.openDialog = () => null;
+    p.button("Создать субтитры").onClick(); assert.strictEqual(c._l.filter(l => String(l.comment).indexOf(N.SFX_TAG) === 0).length, 0);
+  });
+  await test("«Озвучить выделенные слои», «В текущее время», «Убрать SFX»", () => {
+    const p = N.buildPanel(new mock.Panel(), ROOT); const c = mkComp({ duration: 12 }); gen(c); const ls = subs(c);
+    const sfx = () => c._l.filter(l => String(l.comment).indexOf(N.SFX_TAG) === 0);
+    env.log.alerts.length = 0; p.button("Озвучить выделенные слои").onClick(); assert.ok(/Выделите/.test(env.log.alerts[0]));
+    ls[0].selected = true; ls[1].selected = true; env.log.alerts.length = 0; p.button("Озвучить выделенные слои").onClick();
+    assert.strictEqual(env.log.alerts.length, 0, env.log.alerts.join("|")); assert.strictEqual(sfx().length, 2); ls.forEach(l => (l.selected = false));
+    c.time = 3.25; p.button("В текущее время").onClick(); assert.strictEqual(sfx().length, 3); assert.ok(sfx().some(l => Math.abs(l.startTime - 3.25) < 1e-9));
+    p.button("Убрать SFX").onClick(); assert.strictEqual(sfx().length, 0); assert.ok(subs(c).length === ls.length, "текстовые слои не должны пострадать");
   });
   await test("Распознать без выделенного слоя -> понятная ошибка", () => {
     mkComp(); env.log.alerts.length = 0;

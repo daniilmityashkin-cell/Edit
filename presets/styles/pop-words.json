@@ -1,0 +1,105 @@
+{
+ "schema": "noir-style/1",
+ "id": "pop-words",
+ "name": "Pop Words (реф. 5 — интервью)",
+ "description": "По одному слову по центру белым округлым шрифтом; выделенные слова — розовый жирный курсив крупнее.",
+ "layout": {
+  "reveal": "word",
+  "maxWords": 1,
+  "maxChars": 30,
+  "lineChars": 0,
+  "pauseBreak": 0.35,
+  "punctBreak": true,
+  "stripPunct": true,
+  "autoAccent": false,
+  "posX": 50,
+  "posY": 48,
+  "lineGap": 0.05,
+  "wordSpace": 0.26,
+  "accentOwnLine": false,
+  "safeWidth": 0.9,
+  "holdGap": 0.3
+ },
+ "base": {
+  "fonts": [
+   "Poppins-SemiBold",
+   "Montserrat-SemiBold",
+   "SFProDisplay-Semibold",
+   "Inter-SemiBold",
+   "SegoeUI-Semibold",
+   "ArialMT"
+  ],
+  "size": 64,
+  "color": [
+   1,
+   1,
+   1
+  ],
+  "tracking": 0,
+  "caps": false,
+  "strokeWidth": 0,
+  "strokeColor": [
+   0,
+   0,
+   0
+  ],
+  "shadow": {
+   "color": [
+    0,
+    0,
+    0
+   ],
+   "opacity": 45,
+   "distance": 3,
+   "softness": 10
+  },
+  "glow": null,
+  "blend": "normal",
+  "opacity": 100
+ },
+ "accent": {
+  "fonts": [
+   "Poppins-ExtraBoldItalic",
+   "Montserrat-ExtraBoldItalic",
+   "SFProDisplay-HeavyItalic",
+   "Inter-ExtraBoldItalic",
+   "Arial-BoldItalicMT"
+  ],
+  "size": 140,
+  "color": [
+   1.0,
+   0.1,
+   0.85
+  ],
+  "tracking": -6,
+  "caps": false,
+  "strokeWidth": 0,
+  "strokeColor": [
+   0,
+   0,
+   0
+  ],
+  "shadow": {
+   "color": [
+    0,
+    0,
+    0
+   ],
+   "opacity": 35,
+   "distance": 3,
+   "softness": 12
+  },
+  "glow": null,
+  "blend": "normal",
+  "opacity": 100
+ },
+ "anim": {
+  "animIn": "blur",
+  "inDur": 0.14,
+  "animOut": "none",
+  "outDur": 0.1,
+  "distance": 0,
+  "blur": 14,
+  "easeInfluence": 80
+ }
+}

@@ -74,6 +74,7 @@ class Layer {
   property(n) {
     if (n === "Transform") return { property: k => this.transform[k] };
     if (this.src && n === "Source Text") return this.src;
+    if (n === "ADBE Audio Group") { this.audioLevels = this.audioLevels || new Prop(PropertyValueType.TwoD, [0, 0]); return { property: () => this.audioLevels }; }
     if (n === "ADBE Effect Parade") {
       const self = this; self.effects = self.effects || [];
       return {
@@ -86,6 +87,7 @@ class Layer {
     throw new Error("no property " + n);
   }
   remove() { this.comp._l.splice(this.comp._l.indexOf(this), 1); }
+  moveToEnd() { this.comp._l.splice(this.comp._l.indexOf(this), 1); this.comp._l.push(this); }
 }
 class AVLayer extends Layer {}
 class TextLayer extends AVLayer {
@@ -109,13 +111,19 @@ class TextLayer extends AVLayer {
     return { left: 0, top: -d.fontSize * 0.75, width: d.text.length * d.fontSize * 0.5, height: d.fontSize * 0.75 };
   }
 }
-class FootageItem { constructor(file) { this.mainSource = { file }; } }
+class FootageItem { constructor(file) { this.mainSource = { file }; this.name = file ? file.name : ""; } }
+class FolderItem { constructor(name) { this.name = name; } }
+function ImportOptions(file) { this.file = file; }
 class CompItem {
   constructor(o) {
     Object.assign(this, { id: 1, name: "Comp", width: 1080, height: 1920, duration: 30, frameRate: 30 }, o);
     this.frameDuration = 1 / this.frameRate; this._l = [];
     const self = this;
-    this.layers = { addText(t) { const l = new TextLayer(self, t, self._fonts || []); self._l.unshift(l); return l; } };
+    this.time = 0;
+    this.layers = {
+      addText(t) { const l = new TextLayer(self, t, self._fonts || []); self._l.unshift(l); return l; },
+      add(item) { const l = new AVLayer(self, item.name); l.source = item; l.hasAudio = true; self._l.unshift(l); return l; },
+    };
   }
   get numLayers() { return this._l.length; }
   layer(i) { return this._l[i - 1]; }
@@ -137,14 +145,20 @@ class FileC extends FSItem {
 }
 class FolderC extends FSItem {
   create() { fs.mkdirSync(this.fsName, { recursive: true }); return true; }
+  execute() { return true; }
   getFiles(mask) {
-    const re = new RegExp("^" + String(mask || "*").replace(/\./g, "\\.").replace(/\*/g, ".*") + "$", "i");
-    return fs.readdirSync(this.fsName).filter(f => re.test(f)).map(f => new FileC(path.join(this.fsName, f)));
+    const re = typeof mask === "string" ? new RegExp("^" + mask.replace(/\./g, "\\.").replace(/\*/g, ".*") + "$", "i") : /.*/;
+    return fs.readdirSync(this.fsName).filter(f => re.test(f)).map(f => {
+      const p = path.join(this.fsName, f);
+      return fs.statSync(p).isDirectory() ? new FolderC(p) : new FileC(p);
+    });
   }
 }
-const File = (p) => new FileC(p);
+function File(p) { return new FileC(p); }
+File.prototype = FileC.prototype;
 File.openDialog = () => null; File.saveDialog = () => null;
-const Folder = (p) => new FolderC(p);
+function Folder(p) { return new FolderC(p); }
+Folder.prototype = FolderC.prototype;
 
 // ---------- ScriptUI ----------
 class UI {
@@ -181,6 +195,7 @@ function install(opts = {}) {
   const g = global;
   Object.assign(g, {
     BlendingMode: { NORMAL: 1, DIFFERENCE: 2, EXCLUSION: 3, OVERLAY: 4, SOFT_LIGHT: 5, SCREEN: 6, ADD: 7, MULTIPLY: 8 },
+    FolderItem, ImportOptions,
     PropertyValueType, ParagraphJustification, KeyframeEase, CompItem, AVLayer, TextLayer, FootageItem,
     File, Folder, Panel, Window,
     alert: (m) => { log.alerts.push(String(m)); if (opts.verbose) console.log("ALERT:", m); },
@@ -195,7 +210,17 @@ function install(opts = {}) {
   };
   g.system = { callSystem: (cmd) => { try { return cp.execSync(cmd, { encoding: "utf8" }); } catch (e) { return e.stdout || ""; } } };
   g.app = {
-    project: { activeItem: null },
+    project: (() => {
+      const items = [];
+      return {
+        activeItem: null,
+        get numItems() { return items.length; },
+        item: (i) => items[i - 1],
+        items: { addFolder: (n) => { const f = new FolderItem(n); items.push(f); return f; } },
+        importFile: (io) => { if (!io.file.exists) throw new Error("Файл не найден: " + io.file.fsName); const it = new FootageItem(io.file); items.push(it); return it; },
+        _items: items,
+      };
+    })(),
     fonts: {
       getFontsByPostScriptName: (n) => ((global.__installedFonts || opts.fonts || []).includes(n) ? [{ postScriptName: n }] : []),
       allFonts: (opts.fonts || []).map(f => [{ familyName: f.split("-")[0], styleName: f.split("-")[1] || "Regular", postScriptName: f }]) },
@@ -211,4 +236,4 @@ function install(opts = {}) {
   return { log, settings, tasks };
 }
 
-module.exports = { install, CompItem, AVLayer, TextLayer, FootageItem, File, Folder, Panel, UI };
+module.exports = { install, CompItem, AVLayer, TextLayer, FootageItem, FolderItem, File, Folder, Panel, UI };
