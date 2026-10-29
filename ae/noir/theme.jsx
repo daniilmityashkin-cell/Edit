@@ -112,7 +112,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             page.orientation = "column";
             page.visible = (idx === 0);
             var b = bar.add("button", undefined, label);
-            b.preferredSize = [Math.max(48, label.length * 7 + 18), 28];
+            b.preferredSize = [Math.max(48, label.length * 7 + 16), 24];
             try {
                 b.onDraw = function () {
                     var g = this.graphics, w = this.size.width, h = this.size.height;

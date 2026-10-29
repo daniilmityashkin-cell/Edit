@@ -108,11 +108,10 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             : new Window("palette", "NOIR CAPTIONS", undefined, { resizeable: true });
         win.orientation = "column";
         win.alignChildren = ["fill", "top"];
-        win.spacing = 6;
-        win.margins = 8;
+        win.spacing = 4;
+        win.margins = [6, 4, 6, 4];
         if (TH) {
             TH.background(win);
-            win.spacing = 8;
             var head = win.add("group");
             head.orientation = "row";
             head.alignChildren = ["left", "center"];
@@ -123,6 +122,20 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             stVer._keep = true;
             TH.text(stVer, TH.colors.muted);
         }
+
+        // Главное действие и статус — над вкладками, чтобы они были видны при любой высоте панели.
+        var rMain = win.add("group");
+        rMain.orientation = "row";
+        rMain.alignChildren = ["fill", "center"];
+        var btnGenerate = rMain.add("button", undefined, "Создать субтитры");
+        btnGenerate.alignment = ["fill", "center"];
+        btnGenerate.preferredSize = [120, 30];
+        var cbReplace = rMain.add("checkbox", undefined, "Заменить старые");
+        cbReplace.value = S.replace;
+        cbReplace.alignment = ["right", "center"];
+        var stLine = win.add("statictext", undefined, "Готов");
+        stLine.alignment = ["fill", "top"];
+        stLine._keep = true;
 
         var tabs = TH ? TH.makeTabs(win) : win.add("tabbedpanel");
         tabs.alignChildren = ["fill", "top"];
@@ -137,8 +150,8 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         for (var ti = 0; ti < all.length; ti++) {
             all[ti].orientation = "column";
             all[ti].alignChildren = ["fill", "top"];
-            all[ti].spacing = 5;
-            all[ti].margins = 8;
+            all[ti].spacing = 3;
+            all[ti].margins = [2, 4, 2, 2];
         }
 
         function row(parent, label, labelWidth) {
@@ -184,9 +197,6 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         var etPrompt = rPrompt.add("edittext", undefined, S.prompt);
         etPrompt.alignment = ["fill", "center"];
         etPrompt.helpTip = "Подсказка модели: имена, бренды, термины через запятую";
-        tSpeech.add("statictext", undefined,
-            "Выделите в таймлайне слой со звуком и нажмите «Распознать речь». " +
-            "Для английских и смешанных роликов выберите язык «Авто».", { multiline: true });
         var rBtns = tSpeech.add("group");
         var btnRecognize = rBtns.add("button", undefined, "Распознать речь");
         var btnCancel = rBtns.add("button", undefined, "Отмена");
@@ -195,15 +205,12 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         var progress = tSpeech.add("progressbar", undefined, 0, 100);
         progress.preferredSize.height = 6;
         var stStatus = tSpeech.add("statictext", undefined, "Готов", { multiline: true });
-        stStatus.preferredSize.height = 44;
+        stStatus.preferredSize.height = 32;
 
         // ================= Текст =================
-        tText.add("statictext", undefined,
-            "Одна строка = одна фраза распознавания. Правьте слова внутри строк.\n" +
-            "*слово* или *два слова* — акцент (свой стиль).   | — начать новую фразу здесь.",
-            { multiline: true });
+        tText.add("statictext", undefined, "Строка = фраза.  *слово* — акцент,  | — новая фраза");
         var etText = tText.add("edittext", undefined, "", { multiline: true, scrolling: true, wantReturn: true });
-        etText.preferredSize = [260, 220];
+        etText.preferredSize = [260, 120];
         etText.alignment = ["fill", "fill"];
         var rTextBtns = tText.add("group");
         var btnSave = rTextBtns.add("button", undefined, "Сохранить результат…");
@@ -214,8 +221,8 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         var ddPreset = rPreset.add("dropdownlist", undefined, []);
         ddPreset.alignment = ["fill", "center"];
         var btnSavePreset = rPreset.add("button", undefined, "Сохранить как пресет…");
-        var stPresetDesc = tStyle.add("statictext", undefined, "", { multiline: true });
-        stPresetDesc.preferredSize.height = 30;
+        var stPresetDesc = tStyle.add("statictext", undefined, "");
+        stPresetDesc.alignment = ["fill", "top"];
 
         var rTarget = row(tStyle, "Настраиваю", 95);
         var rbBase = rTarget.add("radiobutton", undefined, "Обычные слова");
@@ -224,18 +231,21 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
 
         var pnlText = tStyle.add("panel", undefined, "");
         pnlText.alignChildren = ["fill", "top"];
-        pnlText.margins = [8, 10, 8, 8];
+        pnlText.margins = [6, 10, 6, 6];
+        pnlText.spacing = 3;
         var families = getFontFamilies();
         var rFont = row(pnlText, "Шрифт");
         var stFont = rFont.add("statictext", undefined, "");
         stFont.alignment = ["fill", "center"];
         var ddFamily = null, ddStyle = null, etFilter = null, etPs = null;
         if (families) {
-            etFilter = row(pnlText, "Поиск").add("edittext", undefined, "");
-            etFilter.alignment = ["fill", "center"];
-            ddFamily = row(pnlText, "Семейство").add("dropdownlist", undefined, []);
+            // поиск, семейство и начертание — в одну строку
+            var rFind = row(pnlText, "Поиск", 42);
+            etFilter = rFind.add("edittext", undefined, "");
+            etFilter.characters = 8;
+            ddFamily = rFind.add("dropdownlist", undefined, []);
             ddFamily.alignment = ["fill", "center"];
-            ddStyle = row(pnlText, "Начертание").add("dropdownlist", undefined, []);
+            ddStyle = rFind.add("dropdownlist", undefined, []);
             ddStyle.alignment = ["fill", "center"];
         } else {
             etPs = row(pnlText, "PostScript").add("edittext", undefined, "");
@@ -249,7 +259,8 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         rbBase2.value = true;
         var pnlView = tView.add("panel", undefined, "");
         pnlView.alignChildren = ["fill", "top"];
-        pnlView.margins = [8, 10, 8, 8];
+        pnlView.margins = [6, 10, 6, 6];
+        pnlView.spacing = 3;
         var rSize = row(pnlView, "Размер");
         var etSize = field(rSize, 0, 5);
         rSize.add("statictext", undefined, "Трекинг");
@@ -274,72 +285,70 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         var REVEALS = [{ id: "word", label: "Слова появляются по очереди" },
             { id: "group", label: "Фраза появляется целиком" }];
         var ddReveal = dropdown(row(tLayout, "Появление"), REVEALS, "word");
-        var rWords = row(tLayout, "Слов на экране");
+        var rWords = row(tLayout, "Слов");
         var etMaxWords = field(rWords, 1, 3);
-        rWords.add("statictext", undefined, "макс. символов");
+        rWords.add("statictext", undefined, "макс. симв.");
         var etMaxChars = field(rWords, 28, 3);
-        var rLine = row(tLayout, "Символов в строке");
-        var etLineChars = field(rLine, 16, 3);
-        rLine.add("statictext", undefined, "(0 — без переноса)");
-        var cbAccentLine = tLayout.add("checkbox", undefined, "Акцентные слова — отдельной строкой");
-        var cbAutoAccent = tLayout.add("checkbox", undefined, "Авто-акценты: выделять главное слово во фразе");
+        rWords.add("statictext", undefined, "в строке");
+        var etLineChars = field(rWords, 16, 3);
+        etLineChars.helpTip = "Символов в строке (0 — без переноса)";
         var rPos = row(tLayout, "Позиция X/Y, %");
-        var etPosX = field(rPos, 50, 4);
-        var etPosY = field(rPos, 50, 4);
-        var rGap = row(tLayout, "Межстрочный");
-        var etLineGap = field(rGap, 0.12, 4);
-        rGap.add("statictext", undefined, "пробел");
-        var etWordSpace = field(rGap, 0.28, 4);
+        var etPosX = field(rPos, 50, 3);
+        var etPosY = field(rPos, 50, 3);
+        rPos.add("statictext", undefined, "интервал");
+        var etLineGap = field(rPos, 0.12, 4);
+        etLineGap.helpTip = "Межстрочный интервал (доля размера шрифта)";
+        var etWordSpace = field(rPos, 0.28, 4);
+        etWordSpace.helpTip = "Пробел между словами в строке (доля размера шрифта)";
         var rBreak = row(tLayout, "Разрыв на паузе, с");
         var etPause = field(rBreak, 0.35, 4);
         var cbPunctBreak = rBreak.add("checkbox", undefined, "и на . , ! ?");
-        var cbStrip = tLayout.add("checkbox", undefined, "Убрать пунктуацию из субтитров");
+        var cbStrip = rBreak.add("checkbox", undefined, "без пунктуации");
+        var rAcc = row(tLayout, "");
+        var cbAccentLine = rAcc.add("checkbox", undefined, "Акцент отдельной строкой");
+        var cbAutoAccent = rAcc.add("checkbox", undefined, "Авто-акценты");
 
         // ================= Анимация =================
-        var ddIn = dropdown(row(tAnim, "Появление"), N.ANIM_IN, "none");
-        var rInDur = row(tAnim, "  длит., с");
-        var etInDur = field(rInDur, 0.2, 5);
-        var ddOut = dropdown(row(tAnim, "Исчезновение"), N.ANIM_OUT, "none");
-        var rOutDur = row(tAnim, "  длит., с");
-        var etOutDur = field(rOutDur, 0.15, 5);
+        var rIn = row(tAnim, "Появление");
+        var ddIn = dropdown(rIn, N.ANIM_IN, "none");
+        var etInDur = field(rIn, 0.2, 4);
+        etInDur.helpTip = "Длительность появления, с";
+        var rOut = row(tAnim, "Исчезновение");
+        var ddOut = dropdown(rOut, N.ANIM_OUT, "none");
+        var etOutDur = field(rOut, 0.15, 4);
+        etOutDur.helpTip = "Длительность исчезновения, с";
         var rDist = row(tAnim, "Сдвиг, px");
-        var etDist = field(rDist, 40, 5);
+        var etDist = field(rDist, 40, 4);
         rDist.add("statictext", undefined, "Blur, px");
         var etBlur = field(rDist, 0, 4);
-        var rEase = row(tAnim, "Плавность, %");
-        var etEase = field(rEase, 80, 4);
-        tAnim.add("statictext", undefined,
-            "Размеры заданы для кадра шириной 1080 и масштабируются под композицию. " +
-            "У коротких слов вход и выход автоматически укорачиваются.", { multiline: true });
+        rDist.add("statictext", undefined, "Плавность, %");
+        var etEase = field(rDist, 80, 4);
+        rDist.helpTip = "Размеры заданы для кадра шириной 1080 и масштабируются под композицию. У коротких слов вход и выход автоматически укорачиваются";
 
         // ================= Слои: правка выделенных слоёв =================
-        tLayers.add("statictext", undefined,
-            "Выделите в таймлайне текстовые слои. Выделено несколько (или все) — изменится сразу везде.",
-            { multiline: true });
+        tLayers.add("statictext", undefined, "Выделите слои в таймлайне. Выделено несколько — изменятся все.");
         var rQuick = tLayers.add("group");
         var btnMakeAccent = rQuick.add("button", undefined, "★ Сделать акцентом");
         var btnMakeBase = rQuick.add("button", undefined, "Сделать обычным");
         var pnlApply = tLayers.add("panel", undefined, "Применить настройки панели к выделенным");
         pnlApply.alignChildren = ["fill", "top"];
-        pnlApply.margins = [8, 12, 8, 8];
+        pnlApply.margins = [6, 12, 6, 6];
+        pnlApply.spacing = 3;
         var rWhich = row(pnlApply, "Стиль", 60);
         var rbApplyBase = rWhich.add("radiobutton", undefined, "Обычный");
         var rbApplyAccent = rWhich.add("radiobutton", undefined, "Акцент");
         rbApplyBase.value = true;
-        var cbApplyLook = pnlApply.add("checkbox", undefined, "Вид: шрифт, размер, цвет, обводка, эффекты");
+        var rWhat = row(pnlApply, "Что", 60);
+        var cbApplyLook = rWhat.add("checkbox", undefined, "Вид");
         cbApplyLook.value = true;
-        var cbApplyAnim = pnlApply.add("checkbox", undefined, "Анимацию появления и исчезновения");
+        cbApplyLook.helpTip = "Шрифт, размер, цвет, обводка, эффекты — с вкладок «Стиль» и «Вид»";
+        var cbApplyAnim = rWhat.add("checkbox", undefined, "Анимацию");
         cbApplyAnim.value = true;
+        cbApplyAnim.helpTip = "Появление и исчезновение — с вкладки «Анимация»";
         var btnApply = pnlApply.add("button", undefined, "Применить к выделенным");
-        tLayers.add("statictext", undefined,
-            "Вид берётся с вкладок «Стиль» и «Вид», анимация — с вкладки «Анимация». Позиция и тайминг слоя не меняются. " +
-            "Регистр букв (КАПС) вернуть назад нельзя.", { multiline: true });
+        btnApply.helpTip = "Позиция и тайминг слоя не меняются. Регистр букв (КАПС) вернуть назад нельзя";
 
         // ================= низ =================
-        var cbReplace = win.add("checkbox", undefined, "Заменить ранее созданные субтитры в этой композиции");
-        cbReplace.value = S.replace;
-        var btnGenerate = win.add("button", undefined, "Создать субтитры");
-        btnGenerate.preferredSize.height = 30;
         if (!TH) win.add("statictext", undefined, "NOIR CAPTIONS " + VERSION);
 
         // ================= тема =================
@@ -349,14 +358,15 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
                 btnMakeBase, btnApply];
             for (var bi = 0; bi < primary.length; bi++) TH.button(primary[bi], "primary");
             for (var gi = 0; gi < ghost.length; gi++) TH.button(ghost[gi], "ghost");
-            btnGenerate.preferredSize.height = 34;
-            btnRecognize.preferredSize.height = 30;
+            btnGenerate.preferredSize.height = 32;
+            btnRecognize.preferredSize.height = 28;
+            TH.text(stLine, TH.colors.muted);
             TH.styleTree(win);
             for (var pi = 0; pi < tabs.pages.length; pi++) TH.background(tabs.pages[pi]);
         }
 
         // ================= подсказки (наведите курсор) =================
-        btnRecognize.helpTip = "Распознать речь в выделенном слое со звуком (локально, без интернета)";
+        btnRecognize.helpTip = "Выделите в таймлайне слой со звуком. Распознаёт речь локально, без интернета. Для английских и смешанных роликов выберите язык «Авто»";
         btnCancel.helpTip = "Остановить распознавание";
         btnLoad.helpTip = "Открыть ранее сохранённый результат распознавания, чтобы не распознавать заново";
         btnSave.helpTip = "Сохранить распознанный текст с таймингами и вашими правками в файл";
@@ -380,6 +390,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         }
         function setStatus(text, pct) {
             stStatus.text = text;
+            stLine.text = String(text).split("\n")[0];
             if (pct !== undefined && pct !== null) progress.value = Math.round(pct * 100);
         }
         function tgt() { return S.style[state.target]; }

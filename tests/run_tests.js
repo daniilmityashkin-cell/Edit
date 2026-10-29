@@ -309,6 +309,12 @@ const GOPTS = { maxWords: 1, maxChars: 99, pauseBreak: 0.35, punctBreak: true, s
     assert.ok(findDD(panel, "Kinetic Stack"), "пресеты не загрузились");
     assert.ok(findDD(panel, "Inter"), "шрифты не загрузились");
   });
+  await test("кнопка «Создать субтитры» закреплена над вкладками (видна при любой высоте окна)", () => {
+    const kids = panel.children;
+    const iGen = kids.findIndex(k => k.children && k.children.some(c => c.type === "button" && c.text === "Создать субтитры"));
+    const iTabs = kids.findIndex(k => k.type === "group" && k.orientation === "stack");
+    assert.ok(iGen >= 0 && iTabs >= 0 && iGen < iTabs, "gen " + iGen + " tabs " + iTabs);
+  });
   await test("тема: вкладки-кнопки переключают страницы, кнопки получили onDraw", () => {
     assert.ok(N.theme && N.theme.makeTabs, "theme.jsx не загрузилась");
     const tabBtn = (t) => panel.find(e => e.type === "button" && e.text === t);
