@@ -23,12 +23,14 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
     N.AUTO_SFX_IN = {
         none: "click", fade: "shimmer", blur: "morph", blurRise: "whoosh", rise: "whoosh", drop: "whoosh",
         left: "whoosh", right: "whoosh", pop: "pop", punch: "hit", zoom: "whoosh", slam: "hit",
-        whipL: "whoosh", whipR: "whoosh", rotate: "whoosh", grow: "pop", blurPop: "pop"
+        whipL: "whoosh", whipR: "whoosh", rotate: "whoosh", grow: "pop", blurPop: "pop",
+        letFade: "shimmer", letRise: "whoosh", letPop: "pop", letBlur: "morph", type: "click"
     };
     N.AUTO_SFX_OUT = {
         none: "", fade: "blur_out", blur: "blur_out", blurUp: "blur_out", shrink: "scale_down",
         up: "whoosh", down: "whoosh", left: "whoosh", right: "whoosh", zoom: "scale_down",
-        whipL: "whoosh", whipR: "whoosh", rotate: "whoosh", slamOut: "scale_down"
+        whipL: "whoosh", whipR: "whoosh", rotate: "whoosh", slamOut: "scale_down",
+        letFade: "blur_out", letRise: "whoosh", letType: "click"
     };
     var FALLBACK_IN = ["whoosh", "pop", "click"];
     var FALLBACK_OUT = ["blur_out", "whoosh"];

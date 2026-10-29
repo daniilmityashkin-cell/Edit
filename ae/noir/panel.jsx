@@ -7,7 +7,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
 (function (N) {
     var SECTION = "NOIR Captions";
     var SETTINGS_KEY = "settings.v2";
-    var VERSION = "0.6.2";
+    var VERSION = "0.7.0";
 
     function clone(o) { return N.parseJSON(N.stringify(o)); }
 
@@ -27,7 +27,13 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
 
     var DEFAULTS = {
         language: "ru", model: "large-v3", device: "auto", prompt: "",
-        replace: true, python: "", presetId: "", style: FALLBACK_STYLE,
+        replace: true, python: "", presetId: "", style: FALLBACK_STYLE, reflow: true,
+        tools: {
+            counter: { from: 0, to: 100, duration: 2, hold: 1, step: 0, interval: 0, decimals: 0, pad: 0, thousands: "none", ease: "out",
+                prefix: "", suffix: "", side: "accent", size: 0, posX: 50, posY: 50, sound: false },
+            strike: { color: [1, 0.2, 0.15], thickness: 8, offsetY: 0, tilt: 0, padding: 8, duration: 0.3, delay: 0.1, dir: "ltr" },
+            mask: { mode: "video", invert: false, restart: false, hideSource: true, opacity: 100 }
+        },
         // sfx: appear/accent/exit — "auto" | "off" | "same" (только accent) | "cat:<категория>"
         sfx: { enabled: false, appear: "auto", accent: "same", exit: "off", db: -6, dbRand: 2, minGap: 0.12, file: "", mixBase: false }
     };
@@ -43,6 +49,9 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         var sf = clone(DEFAULTS.sfx);                       // старые сохранения без новых полей
         for (var k2 in (s.sfx || {})) sf[k2] = s.sfx[k2];
         s.sfx = sf;
+        var tl = clone(DEFAULTS.tools);                     // то же для вкладки «Функции»
+        for (var tk in tl) for (var tf in (s.tools && s.tools[tk] ? s.tools[tk] : {})) tl[tk][tf] = s.tools[tk][tf];
+        s.tools = tl;
         return s;
     }
     function saveSettings(s) {
@@ -132,6 +141,8 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         var TH = N.theme && N.theme.makeTabs ? N.theme : null;
         try { $.evalFile(File(root + "/ae/noir/sfx.jsx")); } catch (eSfx) {}
         var SFX = !!(N.planSfx && N.sfxLibrary);
+        try { $.evalFile(File(root + "/ae/noir/tools.jsx")); } catch (eTools) {}
+        var TOOLS = !!(N.createCounter && N.strikeLayers && N.maskTextLayers);
 
         var win = (thisObj instanceof Panel) ? thisObj
             : new Window("palette", "NOIR CAPTIONS", undefined, { resizeable: true });
@@ -175,8 +186,9 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         var tLayout = tabs.add("tab", undefined, "Раскладка");
         var tAnim = tabs.add("tab", undefined, "Анимация");
         var tLayers = tabs.add("tab", undefined, "Слои");
+        var tTools = tabs.add("tab", undefined, "Функции");
         var tSfx = tabs.add("tab", undefined, "SFX");
-        var all = [tSpeech, tText, tStyle, tView, tLayout, tAnim, tLayers, tSfx];
+        var all = [tSpeech, tText, tStyle, tView, tLayout, tAnim, tLayers, tTools, tSfx];
         for (var ti = 0; ti < all.length; ti++) {
             all[ti].orientation = "column";
             all[ti].alignChildren = ["fill", "top"];
@@ -397,6 +409,9 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         var rAcc = row(tLayout, "");
         var cbAccentLine = rAcc.add("checkbox", undefined, "Акцент отдельной строкой");
         var cbAutoAccent = rAcc.add("checkbox", undefined, "Авто-акценты");
+        var cbReflow = row(tLayout, "").add("checkbox", undefined, "Автоперекладка фразы при смене акцента");
+        cbReflow.value = !!S.reflow;
+        cbReflow.helpTip = "Когда вы делаете слово акцентным/обычным (вкладка «Слои»), слова этой фразы снова раскладываются по правилам раскладки";
 
         // ================= Анимация =================
         // Сетка вылетов: клик по кнопке — выбрать анимацию; если выделены текстовые слои — она сразу применится к ним.
@@ -458,6 +473,8 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         var btnMakeAccent = rQuick.add("button", undefined, "★ Сделать акцентом");
         var btnMakeBase = rQuick.add("button", undefined, "Сделать обычным");
         // отдельной строкой — в узком окне третья кнопка в ряду обрезается
+        var btnReflow = tLayers.add("button", undefined, "↻ Перекласть фразу выделенных слов");
+        btnReflow.helpTip = "Раскладывает слова фразы заново по настройкам вкладки «Раскладка» (строки, акцент отдельной строкой) вокруг её центра. Анимация сохраняется";
         var btnInvert = tLayers.add("button", undefined, "◐ Инверсия вкл/выкл для выделенных слоёв");
         btnInvert.helpTip = "Белый текст в режиме Difference: инвертирует кадр под буквами. Повторный клик — выключить";
         var pnlApply = tLayers.add("panel", undefined, "Применить настройки панели к выделенным");
@@ -488,6 +505,109 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         cbApplyAnim.helpTip = "Появление и исчезновение — с вкладки «Анимация»";
         var btnApply = pnlApply.add("button", undefined, "Применить к выделенным");
         btnApply.helpTip = "Позиция и тайминг слоя не меняются. Регистр букв (КАПС) вернуть назад нельзя";
+
+        // ================= Функции: счётчик, зачёркивание, маска =================
+        var TL = S.tools;
+        var STRIKE_DIRS = [{ id: "ltr", label: "Слева направо" }, { id: "rtl", label: "Справа налево" }, { id: "center", label: "От центра" }];
+        var MASK_MODES = [{ id: "video", label: "Видео внутри букв" }, { id: "cut", label: "Вырез (буквы прозрачны)" }];
+        var rTool = row(tTools, "", 0);
+        var rbToolCounter = rTool.add("radiobutton", undefined, "Счётчик");
+        rbToolCounter.value = true;
+        var rbToolStrike = rTool.add("radiobutton", undefined, "Зачёркивание");
+        var rbToolMask = rTool.add("radiobutton", undefined, "Маска");
+        var toolStack = tTools.add("group");
+        toolStack.orientation = "stack";
+        toolStack.alignChildren = ["fill", "top"];
+        function toolPage(visible) {
+            var g = toolStack.add("group");
+            g.orientation = "column";
+            g.alignChildren = ["fill", "top"];
+            g.spacing = 3;
+            g.visible = visible;
+            return g;
+        }
+        var pgCounter = toolPage(true), pgStrike = toolPage(false), pgMask = toolPage(false);
+        if (!TOOLS) tTools.add("statictext", undefined, "Модуль функций не загружен (нет файла ae/noir/tools.jsx).");
+
+        // --- счётчик ---
+        var rcRange = row(pgCounter, "От / до", 50);
+        var etCoFrom = field(rcRange, TL.counter.from, 6, { min: -1000000000, max: 1000000000, step: 1, dec: 2, name: "Счётчик: от" });
+        var etCoTo = field(rcRange, TL.counter.to, 6, { min: -1000000000, max: 1000000000, step: 1, dec: 2, name: "Счётчик: до" });
+        rcRange.add("statictext", undefined, "длит., с");
+        var etCoDur = field(rcRange, TL.counter.duration, 4, { min: 0.1, max: 600, step: 0.05, dec: 2, name: "Длительность счёта, с" });
+        var rcStep = row(pgCounter, "Шаг", 50);
+        var etCoStep = field(rcStep, TL.counter.step, 4, { min: 0, max: 1000000, step: 0.1, dec: 2, name: "Шаг (0 — плавно по 1)" });
+        rcStep.add("statictext", undefined, "интервал, с");
+        var etCoIvl = field(rcStep, TL.counter.interval, 4, { min: 0, max: 5, step: 0.005, dec: 3, name: "Интервал обновления, с (0 — каждый кадр)" });
+        rcStep.add("statictext", undefined, "держать, с");
+        var etCoHold = field(rcStep, TL.counter.hold, 4, { min: 0, max: 600, step: 0.05, dec: 2, name: "Держать после конца, с" });
+        var rcFmt = row(pgCounter, "Формат", 50);
+        var etCoDec = field(rcFmt, TL.counter.decimals, 3, { min: 0, max: 6, step: 0.05, dec: 0, name: "Знаков после запятой" });
+        rcFmt.add("statictext", undefined, "нули");
+        var etCoPad = field(rcFmt, TL.counter.pad, 3, { min: 0, max: 12, step: 0.05, dec: 0, name: "Дополнить нулями до цифр" });
+        var ddCoSep = dropdown(rcFmt, N.COUNTER_SEPS || [{ id: "none", label: "—" }], TL.counter.thousands);
+        var rcEase = row(pgCounter, "Ход", 50);
+        var ddCoEase = dropdown(rcEase, N.COUNTER_EASES || [{ id: "out", label: "—" }], TL.counter.ease);
+        var rcText = row(pgCounter, "Текст", 50);
+        rcText.add("statictext", undefined, "перед");
+        var etCoPre = rcText.add("edittext", undefined, TL.counter.prefix);
+        etCoPre.characters = 6;
+        rcText.add("statictext", undefined, "после");
+        var etCoSuf = rcText.add("edittext", undefined, TL.counter.suffix);
+        etCoSuf.characters = 6;
+        var rcLook = row(pgCounter, "Вид", 50);
+        var rbCoAccent = rcLook.add("radiobutton", undefined, "Акцент");
+        var rbCoBase = rcLook.add("radiobutton", undefined, "Обычный");
+        rbCoAccent.value = TL.counter.side !== "base";
+        rbCoBase.value = TL.counter.side === "base";
+        rcLook.add("statictext", undefined, "размер");
+        var etCoSize = field(rcLook, TL.counter.size, 4, { min: 0, max: 2000, step: 1, dec: 0, name: "Размер, px (0 — из стиля)" });
+        var rcPos = row(pgCounter, "Позиция %", 70);
+        var etCoX = field(rcPos, TL.counter.posX, 4, { min: -50, max: 150, step: 0.2, dec: 1, name: "Позиция X, %" });
+        var etCoY = field(rcPos, TL.counter.posY, 4, { min: -50, max: 150, step: 0.2, dec: 1, name: "Позиция Y, %" });
+        var cbCoSound = pgCounter.add("checkbox", undefined, "Звук счётчика (SFX «counter»)");
+        cbCoSound.value = !!TL.counter.sound;
+        var btnCounter = pgCounter.add("button", undefined, "Создать счётчик с текущего времени");
+
+        // --- зачёркивание ---
+        pgStrike.add("statictext", undefined, "Выделите текстовые слои (слова) — на каждом появится полоса.");
+        var rsA = row(pgStrike, "Цвет", 60);
+        var swatchStrike = rsA.add("panel");
+        swatchStrike.preferredSize = [40, 18];
+        var btnStrikeColor = rsA.add("button", undefined, "Выбрать…");
+        rsA.add("statictext", undefined, "толщина");
+        var etStrThick = field(rsA, TL.strike.thickness, 3, { min: 0.5, max: 200, step: 0.1, dec: 1, name: "Толщина, px" });
+        var rsB = row(pgStrike, "Положение", 60);
+        rsB.add("statictext", undefined, "смещ. %");
+        var etStrOff = field(rsB, TL.strike.offsetY, 4, { min: -100, max: 100, step: 0.2, dec: 1, name: "Смещение по высоте, %" });
+        rsB.add("statictext", undefined, "наклон °");
+        var etStrTilt = field(rsB, TL.strike.tilt, 4, { min: -45, max: 45, step: 0.1, dec: 1, name: "Наклон, °" });
+        rsB.add("statictext", undefined, "шире %");
+        var etStrPad = field(rsB, TL.strike.padding, 3, { min: -50, max: 200, step: 0.2, dec: 0, name: "Шире текста, %" });
+        var rsC = row(pgStrike, "Анимация", 60);
+        var ddStrDir = dropdown(rsC, STRIKE_DIRS, TL.strike.dir);
+        rsC.add("statictext", undefined, "длит.");
+        var etStrDur = field(rsC, TL.strike.duration, 4, { min: 0, max: 5, step: 0.005, dec: 2, name: "Длительность вытирания, с" });
+        rsC.add("statictext", undefined, "задержка");
+        var etStrDelay = field(rsC, TL.strike.delay, 4, { min: 0, max: 10, step: 0.005, dec: 2, name: "Задержка после появления слова, с" });
+        var btnStrike = pgStrike.add("button", undefined, "Зачеркнуть выделенные слои");
+        var btnStrikeRemove = pgStrike.add("button", undefined, "Убрать зачёркивания");
+
+        // --- маска ---
+        pgMask.add("statictext", undefined, "Видео внутри букв: выделите текстовые слои и один видео/фото слой.");
+        var rmA = row(pgMask, "Режим", 50);
+        var ddMaskMode = dropdown(rmA, MASK_MODES, TL.mask.mode);
+        var cbMaskInvert = pgMask.add("checkbox", undefined, "Инвертировать (видео везде, кроме букв)");
+        cbMaskInvert.value = !!TL.mask.invert;
+        var cbMaskRestart = pgMask.add("checkbox", undefined, "Клип с начала каждого слова");
+        cbMaskRestart.value = !!TL.mask.restart;
+        var cbMaskHide = pgMask.add("checkbox", undefined, "Скрыть исходное видео");
+        cbMaskHide.value = !!TL.mask.hideSource;
+        var rmB = row(pgMask, "Вырез", 50);
+        rmB.add("statictext", undefined, "цвет — как у «Обычного», прозр. %");
+        var etMaskOp = field(rmB, TL.mask.opacity, 4, { min: 0, max: 100, step: 0.5, dec: 0, name: "Непрозрачность выреза, %" });
+        var btnMask = pgMask.add("button", undefined, "Создать маску по выделенным");
+        var btnMaskRemove = pgMask.add("button", undefined, "Убрать маски");
 
         // ================= SFX: озвучивание текста =================
         function loadLib() { return SFX ? N.sfxLibrary(root, { mixBase: !!S.sfx.mixBase }) : { names: [], files: {}, source: {} }; }
@@ -578,9 +698,9 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
 
         // ================= тема =================
         if (TH) {
-            var primary = [btnRecognize, btnGenerate, btnMakeAccent];
+            var primary = [btnRecognize, btnGenerate, btnMakeAccent, btnCounter, btnStrike, btnMask];
             var ghost = [btnCancel, btnLoad, btnSave, btnReset, btnSavePreset, btnFromLayer, btnFontToLayers,
-                btnColor, btnStrokeColor, btnMakeBase, btnApply, btnInvert, btnAnimApply, btnSfxSelected, btnSfxRemove, btnSfxHere, btnSfxRescan, btnSfxFolder];
+                btnColor, btnStrokeColor, btnMakeBase, btnApply, btnInvert, btnReflow, btnAnimApply, btnStrikeColor, btnStrikeRemove, btnMaskRemove, btnSfxSelected, btnSfxRemove, btnSfxHere, btnSfxRescan, btnSfxFolder];
             for (var bi = 0; bi < primary.length; bi++) TH.button(primary[bi], "primary");
             for (var gi = 0; gi < ghost.length; gi++) TH.button(ghost[gi], "ghost");
             btnGenerate.preferredSize.height = 32;
@@ -614,6 +734,11 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         etSfxRand.helpTip = "Случайный разброс громкости ± дБ (повторяемый), чтобы звуки не звучали одинаково";
         etSfxGap.helpTip = "Если звуки ближе друг к другу — лишние пропускаются (акцент главнее)";
         btnGenerate.helpTip = "Создать текстовые слои с субтитрами в открытой композиции";
+        btnCounter.helpTip = "Создаёт текстовый слой-счётчик с текущего положения индикатора времени. Число считает выражение в Source Text";
+        etCoStep.helpTip = "Шаг значения (0 — любые значения). Например 10: 0, 10, 20…";
+        etCoIvl.helpTip = "Как часто меняется число, с (0 — каждый кадр). Например 0.1 — десять смен в секунду";
+        btnStrike.helpTip = "На каждый выделенный текстовый слой — полоса, которая «вытирается» поверх слова";
+        btnMask.helpTip = "Выделите текстовые слои и (для режима «видео внутри букв») ещё один видео/фото слой. Текст станет маской";
         cbReplace.helpTip = "Перед созданием удалить слои NOIR из прошлого запуска. Ваши слои не трогаются";
         rbBase.helpTip = rbBase2.helpTip = "Настройки ниже относятся к обычным словам";
         rbAccent.helpTip = rbAccent2.helpTip = "Настройки ниже относятся к словам, которые вы выделили *звёздочками* на вкладке «Текст»";
@@ -721,6 +846,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             etPause.text = String(L.pauseBreak);
             cbPunctBreak.value = !!L.punctBreak;
             cbStrip.value = !!L.stripPunct;
+            paintSwatch(swatchStrike, S.tools.strike.color);
             refreshChips();
             etInDur.text = String(A.inDur);
             etOutDur.text = String(A.outDur);
@@ -764,6 +890,37 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             S.sfx.db = num(etSfxDb.text, -6, -60, 12);
             S.sfx.dbRand = num(etSfxRand.text, 2, 0, 12);
             S.sfx.minGap = num(etSfxGap.text, 0.12, 0, 5);
+            S.reflow = cbReflow.value;
+            var tc = S.tools.counter, ts = S.tools.strike, tm = S.tools.mask;
+            tc.from = num(etCoFrom.text, 0, -1000000000, 1000000000);
+            tc.to = num(etCoTo.text, 100, -1000000000, 1000000000);
+            tc.duration = num(etCoDur.text, 2, 0.1, 600);
+            tc.step = num(etCoStep.text, 0, 0, 1000000);
+            tc.interval = num(etCoIvl.text, 0, 0, 5);
+            tc.hold = num(etCoHold.text, 1, 0, 600);
+            tc.decimals = Math.round(num(etCoDec.text, 0, 0, 6));
+            tc.pad = Math.round(num(etCoPad.text, 0, 0, 12));
+            tc.thousands = idOf(ddCoSep, N.COUNTER_SEPS || [{ id: "none" }]);
+            tc.ease = idOf(ddCoEase, N.COUNTER_EASES || [{ id: "out" }]);
+            tc.prefix = etCoPre.text;
+            tc.suffix = etCoSuf.text;
+            tc.side = rbCoBase.value ? "base" : "accent";
+            tc.size = num(etCoSize.text, 0, 0, 2000);
+            tc.posX = num(etCoX.text, 50, -50, 150);
+            tc.posY = num(etCoY.text, 50, -50, 150);
+            tc.sound = cbCoSound.value;
+            ts.thickness = num(etStrThick.text, 8, 0.5, 200);
+            ts.offsetY = num(etStrOff.text, 0, -100, 100);
+            ts.tilt = num(etStrTilt.text, 0, -45, 45);
+            ts.padding = num(etStrPad.text, 8, -50, 200);
+            ts.dir = idOf(ddStrDir, STRIKE_DIRS);
+            ts.duration = num(etStrDur.text, 0.3, 0, 5);
+            ts.delay = num(etStrDelay.text, 0.1, 0, 10);
+            tm.mode = idOf(ddMaskMode, MASK_MODES);
+            tm.invert = cbMaskInvert.value;
+            tm.restart = cbMaskRestart.value;
+            tm.hideSource = cbMaskHide.value;
+            tm.opacity = num(etMaskOp.text, 100, 0, 100);
             readTextUI();
             var L = S.style.layout, A = S.style.anim;
             L.reveal = idOf(ddReveal, REVEALS);
@@ -1038,7 +1195,12 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
                     accent: which === "accent",
                     safeWidth: S.style.layout.safeWidth, anim: anim ? S.style.anim : null
                 });
-                setStatus("Изменено слоёв: " + res.changed + (res.warnings.length ? "\n" + res.warnings.join("\n") : ""));
+                var rf = "";
+                if (S.reflow && look && N.reflowGroups) {
+                    var rr = N.reflowGroups(sel.comp, sel.layers, S.style.layout);
+                    if (rr.groups) rf = ", фраз переложено: " + rr.groups;
+                }
+                setStatus("Изменено слоёв: " + res.changed + rf + (res.warnings.length ? "\n" + res.warnings.join("\n") : ""));
             } catch (e2) {
                 alert("Ошибка: " + e2.toString() + (e2.line ? " (строка " + e2.line + ")" : ""), "NOIR Captions");
             } finally {
@@ -1079,6 +1241,21 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             }
         };
 
+        btnReflow.onClick = function () {
+            readUI();
+            var sel;
+            try { sel = selectedTextLayers(); } catch (e) { alert(e.message, "NOIR Captions"); return; }
+            app.beginUndoGroup("NOIR Captions: перекласть фразу");
+            try {
+                var rr = N.reflowGroups(sel.comp, sel.layers, S.style.layout);
+                setStatus(rr.groups ? "Переложено фраз: " + rr.groups + ", слов: " + rr.moved + (rr.skipped ? "; пропущено чужих слоёв: " + rr.skipped : "")
+                    : "Нет слоёв NOIR с известной фразой — перекладывать нечего (слои созданы старой версией или не панелью).");
+            } catch (e2) {
+                alert("Ошибка: " + e2.toString() + (e2.line ? " (строка " + e2.line + ")" : ""), "NOIR Captions");
+            } finally {
+                app.endUndoGroup();
+            }
+        };
         btnMakeAccent.onClick = function () { applyToLayers("accent", true, false, "NOIR Captions: сделать акцентом"); };
         btnMakeBase.onClick = function () { applyToLayers("base", true, false, "NOIR Captions: сделать обычным"); };
         btnApply.onClick = function () {
@@ -1162,6 +1339,78 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             if (!f.exists) f.create();
             f.execute();
             setStatus("Положите звуки в подпапки (например whoosh, pop, hit) и нажмите «Обновить список».");
+        };
+
+        // ----- Функции -----
+        rbToolCounter.onClick = function () { pgCounter.visible = true; pgStrike.visible = false; pgMask.visible = false; };
+        rbToolStrike.onClick = function () { pgCounter.visible = false; pgStrike.visible = true; pgMask.visible = false; };
+        rbToolMask.onClick = function () { pgCounter.visible = false; pgStrike.visible = false; pgMask.visible = true; };
+        btnStrikeColor.onClick = function () {
+            var c = $.colorPicker(rgbToHex(S.tools.strike.color));
+            if (c < 0) return;
+            S.tools.strike.color = hexToRgb(c);
+            paintSwatch(swatchStrike, S.tools.strike.color);
+            saveSettings(S);
+        };
+        function activeComp() {
+            var comp = app.project.activeItem;
+            if (!(comp instanceof CompItem)) throw new Error("Откройте композицию.");
+            return comp;
+        }
+        function toolAction(undoName, fn) {
+            readUI();
+            if (!TOOLS) { alert("Модуль функций не загружен (нет файла ae/noir/tools.jsx).", "NOIR Captions"); return; }
+            app.beginUndoGroup(undoName);
+            try { fn(); }
+            catch (e) { alert(e.message || e.toString(), "NOIR Captions"); }
+            finally { app.endUndoGroup(); }
+        }
+        btnCounter.onClick = function () {
+            toolAction("NOIR Captions: счётчик", function () {
+                var comp = activeComp(), o = {}, k;
+                for (k in S.tools.counter) o[k] = S.tools.counter[k];
+                o.start = comp.time;
+                var r = N.createCounter(comp, o, S.style, S.style.anim), msg = "Счётчик создан: " + r.start.toFixed(2) + "…" + r.end.toFixed(2) + " с";
+                if (S.tools.counter.sound) {
+                    if (!SFX) msg += "\nЗвук не добавлен: нет модуля SFX.";
+                    else {
+                        var pick = N.pickSfx(loadLib(), { mode: "cat", value: "counter" }, "", "in", {});
+                        if (pick && pick.cat === "counter") {
+                            var sr = N.placeSfx(comp, [{ t: r.start, file: pick.file, cat: "counter", db: S.sfx.db }]);
+                            msg += sr.placed ? "\nЗвук счётчика добавлен." : "\n" + sr.warnings.join("\n");
+                        } else msg += "\nЗвук не добавлен: в библиотеке SFX нет категории «counter».";
+                    }
+                }
+                setStatus(msg + (r.warnings.length ? "\n" + r.warnings.join("\n") : ""));
+            });
+        };
+        btnStrike.onClick = function () {
+            toolAction("NOIR Captions: зачёркивание", function () {
+                var sel = selectedTextLayers();
+                var r = N.strikeLayers(sel.comp, sel.layers, S.tools.strike, S.style.anim);
+                setStatus("Зачёркнуто слоёв: " + r.made.length + (r.skipped ? ", пропущено пустых: " + r.skipped : ""));
+            });
+        };
+        btnStrikeRemove.onClick = function () {
+            toolAction("NOIR Captions: убрать зачёркивания", function () { setStatus("Убрано зачёркиваний: " + N.removeByTag(activeComp(), N.STRIKE_TAG)); });
+        };
+        btnMask.onClick = function () {
+            toolAction("NOIR Captions: маска по тексту", function () {
+                var comp = activeComp(), sel = comp.selectedLayers, texts = [], source = null, i;
+                for (i = 0; i < sel.length; i++) {
+                    if (sel[i] instanceof TextLayer) texts.push(sel[i]);
+                    else if (!source) source = sel[i];
+                }
+                if (!texts.length) throw new Error("Выделите в таймлайне текстовые слои (и для режима «видео внутри букв» ещё один видео/фото слой).");
+                var o = {};
+                for (var k in S.tools.mask) o[k] = S.tools.mask[k];
+                o.color = S.style.base.color;
+                var r = N.maskTextLayers(comp, texts, source, o);
+                setStatus("Масок создано: " + r.made.length + (r.warnings.length ? "\n" + r.warnings.join("\n") : ""));
+            });
+        };
+        btnMaskRemove.onClick = function () {
+            toolAction("NOIR Captions: убрать маски", function () { setStatus("Убрано масок: " + N.removeMasks(activeComp())); });
         };
 
         btnGenerate.onClick = function () {

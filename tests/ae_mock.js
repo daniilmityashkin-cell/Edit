@@ -37,6 +37,20 @@ class TextDocument {
   resetCharStyle() {} resetParagraphStyle() {}
 }
 
+// Группа/свойство AE с автосозданием вложенных свойств (для текстовых аниматоров): ведёт себя и как Prop.
+class PG extends Prop {
+  constructor(mn) { super(PropertyValueType.OneD, 0); this.matchName = mn; this.name = mn; this.kids = []; }
+  addProperty(mn) { const g = new PG(mn); g.parent = this; this.kids.push(g); return g; }
+  property(k) {
+    if (typeof k === "number") return this.kids[k - 1];
+    let g = this.kids.find(x => x.matchName === k);
+    if (!g) g = this.addProperty(k);
+    return g;
+  }
+  get numProperties() { return this.kids.length; }
+  remove() { this.parent.kids.splice(this.parent.kids.indexOf(this), 1); }
+}
+
 class Effect {
   constructor(matchName) {
     this.matchName = matchName; this.name = matchName; this.props = {};
@@ -57,7 +71,8 @@ class Layer {
   constructor(comp, name) {
     this.comp = comp; this.name = name; this.comment = ""; this.locked = false; this.label = 0;
     this.blendingMode = 1; this.startTime = 0; this._in = 0; this._out = comp.duration; this.stretch = 100;
-    this.timeRemapEnabled = false; this.hasAudio = false;
+    this.timeRemapEnabled = false; this.hasAudio = false; this.enabled = true;
+    this.trackMatteLayer = null; this.trackMatteType = 0;
     this.transform = {
       "Position": new Prop(PropertyValueType.ThreeD_SPATIAL, [0, 0, 0]),
       "Scale": new Prop(PropertyValueType.ThreeD, [100, 100, 100]),
@@ -74,6 +89,8 @@ class Layer {
   property(n) {
     if (n === "Transform") return { property: k => this.transform[k] };
     if (this.src && n === "Source Text") return this.src;
+    if (n === "ADBE Root Vectors Group") { this.vectors = this.vectors || new PG("ADBE Root Vectors Group"); return this.vectors; }
+    if (n === "ADBE Text Properties") { this.textProps = this.textProps || new PG("ADBE Text Properties"); return this.textProps; }
     if (n === "ADBE Audio Group") { this.audioLevels = this.audioLevels || new Prop(PropertyValueType.TwoD, [0, 0]); return { property: () => this.audioLevels }; }
     if (n === "ADBE Effect Parade") {
       const self = this; self.effects = self.effects || [];
@@ -87,6 +104,15 @@ class Layer {
     throw new Error("no property " + n);
   }
   remove() { this.comp._l.splice(this.comp._l.indexOf(this), 1); }
+  setTrackMatte(matte, type) { this.trackMatteLayer = matte; this.trackMatteType = type; }
+  _move(other, d) { this.comp._l.splice(this.comp._l.indexOf(this), 1); this.comp._l.splice(this.comp._l.indexOf(other) + d, 0, this); }
+  moveBefore(other) { this._move(other, 0); }
+  moveAfter(other) { this._move(other, 1); }
+  duplicate() {
+    const c = Object.create(Object.getPrototypeOf(this)); Object.assign(c, this);
+    c.transform = {}; for (const k in this.transform) { const q = new Prop(this.transform[k].propertyValueType, this.transform[k].value); q.keys = this.transform[k].keys.map(x => ({ t: x.t, v: x.v })); c.transform[k] = q; }
+    this.comp._l.splice(this.comp._l.indexOf(this), 0, c); return c;
+  }
   moveToEnd() { this.comp._l.splice(this.comp._l.indexOf(this), 1); this.comp._l.push(this); }
 }
 class AVLayer extends Layer {}
@@ -122,6 +148,8 @@ class CompItem {
     this.time = 0;
     this.layers = {
       addText(t) { const l = new TextLayer(self, t, self._fonts || []); self._l.unshift(l); return l; },
+      addShape() { const l = new AVLayer(self, "Shape Layer"); self._l.unshift(l); return l; },
+      addSolid(color, name, w, h, pa, dur) { const l = new AVLayer(self, name); l.solidColor = color; l.solidSize = [w, h]; self._l.unshift(l); return l; },
       add(item) { const l = new AVLayer(self, item.name); l.source = item; l.hasAudio = true; self._l.unshift(l); return l; },
     };
   }
@@ -198,7 +226,7 @@ function install(opts = {}) {
   const g = global;
   Object.assign(g, {
     BlendingMode: { NORMAL: 1, DIFFERENCE: 2, EXCLUSION: 3, OVERLAY: 4, SOFT_LIGHT: 5, SCREEN: 6, ADD: 7, MULTIPLY: 8 },
-    FolderItem, ImportOptions,
+    FolderItem, ImportOptions, TrackMatteType: { NO_TRACK_MATTE: 0, ALPHA: 1, ALPHA_INVERTED: 2 },
     PropertyValueType, ParagraphJustification, KeyframeEase, CompItem, AVLayer, TextLayer, FootageItem,
     File, Folder, Panel, Window,
     alert: (m) => { log.alerts.push(String(m)); if (opts.verbose) console.log("ALERT:", m); },

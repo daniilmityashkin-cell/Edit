@@ -32,7 +32,13 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         { id: "whipR", label: "Whip справа (быстрый вылет)", abbr: "Whip ←", op: 0, dx: 4, blur: 1.4 },
         { id: "rotate", label: "Поворот + scale", abbr: "Rotate", op: 0, rot: -14, sc: 85 },
         { id: "grow", label: "Grow (вырастает с overshoot)", abbr: "Grow", op: 0, sc: 30, over: 108 },
-        { id: "blurPop", label: "Blur Pop", abbr: "Blur Pop", op: 0, sc: 75, over: 104, blur: 1 }
+        { id: "blurPop", label: "Blur Pop", abbr: "Blur Pop", op: 0, sc: 75, over: 104, blur: 1 },
+        // letters: анимация по буквам (текстовый аниматор с диапазоном, а не ключи слоя)
+        { id: "letFade", label: "По буквам: fade", abbr: "Букв Fade", letters: "fade" },
+        { id: "letRise", label: "По буквам: снизу", abbr: "Букв ↑", letters: "rise" },
+        { id: "letPop", label: "По буквам: pop", abbr: "Букв Pop", letters: "pop" },
+        { id: "letBlur", label: "По буквам: blur", abbr: "Букв Blur", letters: "blur" },
+        { id: "type", label: "Печатная машинка", abbr: "Печать", letters: "type" }
     ];
     N.ANIM_OUT = [
         { id: "none", label: "Нет — жёсткая смена", abbr: "Нет" },
@@ -48,7 +54,10 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         { id: "whipL", label: "Whip влево", abbr: "← Whip", op: 0, dx: -4, blur: 1.4 },
         { id: "whipR", label: "Whip вправо", abbr: "Whip →", op: 0, dx: 4, blur: 1.4 },
         { id: "rotate", label: "Поворот + scale", abbr: "Rotate", op: 0, rot: 14, sc: 85 },
-        { id: "slamOut", label: "Slam (схлопывается с размытием)", abbr: "Slam", op: 0, sc: 40, blur: 1 }
+        { id: "slamOut", label: "Slam (схлопывается с размытием)", abbr: "Slam", op: 0, sc: 40, blur: 1 },
+        { id: "letFade", label: "По буквам: fade", abbr: "Букв Fade", letters: "fade" },
+        { id: "letRise", label: "По буквам: вверх", abbr: "Букв ↑", letters: "rise" },
+        { id: "letType", label: "Стирание по буквам", abbr: "Стереть", letters: "type" }
     ];
 
     // Режимы наложения слоя. «Инверсия» = Difference: белый текст инвертирует кадр под буквами.
@@ -123,6 +132,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         var pos = tr.property("Position"), sc = tr.property("Scale"), op = tr.property("Opacity");
         var rot = tr.property("Rotation");
         opts = N.withDefaults(opts);
+        clearLetterAnimators(layer);
         pos.setValue(base);
         op.setValue(opts.opacity);
 
@@ -133,6 +143,9 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             var k = budget / (inDur + outDur);
             inDur *= k; outDur *= k;
         }
+        // анимация по буквам идёт аниматором текста; ключи слоя для этой стороны не нужны
+        if (animIn.letters && inDur > 0) { N.applyLetters(layer, animIn.letters, t0, inDur, true, opts); inDur = 0; }
+        if (animOut.letters && outDur > 0) { N.applyLetters(layer, animOut.letters, t3 - outDur, outDur, false, opts); outDur = 0; }
         if (!inDur && !outDur) return;
 
         var from = stateValues(animIn, base, opts);
@@ -162,6 +175,46 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         keys(pos, from.pos, base, to.pos, null);
         keys(blurProp, from.blur, 0, to.blur, null);
         keys(rot, from.rot, 0, to.rot, null);
+    };
+
+    function clearLetterAnimators(layer) {
+        try {
+            var an = layer.property("ADBE Text Properties").property("ADBE Text Animators");
+            for (var i = an.numProperties; i >= 1; i--) {
+                if (String(an.property(i).name).indexOf("NOIR Letters") === 0) an.property(i).remove();
+            }
+        } catch (e) {}
+    }
+
+    // Анимация по буквам: текстовый аниматор (прозрачность 0 + смещение/масштаб/размытие) и диапазон-селектор.
+    // Вход: начало диапазона 0→100% — буквы проявляются слева направо; выход: конец диапазона 0→100% — исчезают слева направо.
+    // kind: fade | rise | pop | blur | type. Возвращает false, если AE не дал создать аниматор (имена свойств проверены не во всех версиях).
+    N.applyLetters = function (layer, kind, tStart, dur, isIn, opts) {
+        try {
+            var an = layer.property("ADBE Text Properties").property("ADBE Text Animators").addProperty("ADBE Text Animator");
+            an.name = "NOIR Letters " + (isIn ? "In" : "Out");
+            var props = an.property("ADBE Text Animator Properties");
+            props.addProperty("ADBE Text Opacity").setValue(0);
+            if (kind === "rise") props.addProperty("ADBE Text Position 3D").setValue([0, (isIn ? 1 : -1) * (opts.distance || 40), 0]);
+            if (kind === "pop") props.addProperty("ADBE Text Scale 3D").setValue([35, 35, 100]);
+            if (kind === "blur") props.addProperty("ADBE Text Blur").setValue([opts.blur || 20, opts.blur || 20]);
+            var sel = an.property("ADBE Text Selectors").addProperty("ADBE Text Selector");
+            var start = sel.property("ADBE Text Percent Start"), end = sel.property("ADBE Text Percent End");
+            if (kind === "type") {          // «печатная машинка»: резкие границы, без плавного перехода между буквами
+                try { sel.property("ADBE Text Range Advanced").property("ADBE Text Selector Smoothness").setValue(0); } catch (e1) {}
+            }
+            if (isIn) {
+                start.setValueAtTime(tStart, 0);
+                start.setValueAtTime(tStart + dur, 100);
+                easeAll(start, opts.easeInfluence || 70);
+            } else {
+                start.setValue(0);
+                end.setValueAtTime(tStart, 0);
+                end.setValueAtTime(tStart + dur, 100);
+                easeAll(end, opts.easeInfluence || 70);
+            }
+            return true;
+        } catch (e) { return false; }
     };
 
     // opacity — прозрачность слоя в покое (из стиля), по умолчанию 100.
@@ -319,11 +372,11 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
 
         var items = [];
         if (layout.reveal === "group" && !hasAccent) {
-            items.push({ text: g.text, accent: false, start: g.compStart });
+            items.push({ text: g.text, accent: false, start: g.compStart, order: 0 });
         } else {
             for (i = 0; i < g.words.length; i++) items.push({
                 text: g.words[i].text, accent: !!g.words[i].accent, invert: !!g.words[i].invert, ord: g.words[i].ord,
-                start: layout.reveal === "group" ? g.compStart : g.words[i].compStart
+                start: layout.reveal === "group" ? g.compStart : g.words[i].compStart, order: i
             });
         }
 
@@ -353,53 +406,19 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             }
         }
 
-        // 2. ужать строки, которые шире безопасной зоны
-        for (i = 0; i < lines.length; i++) {
-            var line = lines[i], maxSize = 0, total = 0;
-            for (j = 0; j < line.length; j++) maxSize = Math.max(maxSize, line[j].size);
-            line.space = maxSize * layout.wordSpace;
-            for (j = 0; j < line.length; j++) total += line[j].rect.width;
-            total += line.space * (line.length - 1);
-            if (total > safeW && total > 0) {
-                var f = safeW / total;
-                total = 0;
-                for (j = 0; j < line.length; j++) {
-                    line[j].size = Math.max(6, line[j].size * f);
-                    var p = line[j].layer.property("Source Text"), d = p.value;
-                    d.fontSize = line[j].size;
-                    p.setValue(d);
-                    line[j].rect = line[j].layer.sourceRectAtTime(Math.max(0, line[j].start), false);
-                    total += line[j].rect.width;
-                }
-                line.space *= f;
-                total += line.space * (line.length - 1);
-            }
-            line.width = total;
-            line.ascent = 0; line.descent = 0;
-            for (j = 0; j < line.length; j++) {
-                line.ascent = Math.max(line.ascent, -line[j].rect.top);
-                line.descent = Math.max(line.descent, line[j].rect.top + line[j].rect.height);
-            }
-        }
+        // 2–3. раскладка: ужать широкие строки и расставить блок вокруг (posX, posY)
+        for (i = 0; i < lines.length; i++) for (j = 0; j < lines[i].length; j++) lines[i][j].t = Math.max(0, lines[i][j].start);
+        layoutLines(lines, layout, safeW, layout.lineGap * style.base.size * ctx.scale,
+            comp.width * layout.posX / 100, comp.height * layout.posY / 100);
 
-        // 3. разложить блок строк вокруг (posX, posY)
-        var gap = layout.lineGap * style.base.size * ctx.scale, blockH = 0;
-        for (i = 0; i < lines.length; i++) blockH += lines[i].ascent + lines[i].descent;
-        blockH += gap * (lines.length - 1);
-        var cx = comp.width * layout.posX / 100;
-        var y = comp.height * layout.posY / 100 - blockH / 2;
-
+        var gid = ctx.run + "-" + (ctx.gseq++);
         for (i = 0; i < lines.length; i++) {
             var ln = lines[i];
-            var baseline = y + ln.ascent;
-            var x = cx - ln.width / 2;
             for (j = 0; j < ln.length; j++) {
-                var w = ln[j], r = w.rect, L = w.layer;
+                var w = ln[j], r = w.rect, L = w.layer, pos = w.pos;
                 L.property("Transform").property("Anchor Point")
                     .setValue([r.left + r.width / 2, r.top + r.height / 2]);
-                var pos = [x + r.width / 2, baseline + r.top + r.height / 2];
-                L.comment = N.LAYER_TAG + "|" + pos[0] + "|" + pos[1];
-                x += r.width + ln.space;
+                setBaseComment(L, pos, gid, w.order);
 
                 var tIn = Math.max(0, Math.min(w.start, tOut - ctx.minDur));
                 L.startTime = 0;
@@ -419,16 +438,125 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
                 ctx.created++;
                 ctx.made.push({ tIn: tIn, tOut: tOut, accent: !!w.accent });
             }
-            y += ln.ascent + ln.descent + gap;
         }
     }
+
+    // Раскладка строк: ужимает строки шире безопасной зоны (меняя размер шрифта у слоёв) и считает позиции слов
+    // блоком вокруг центра (cx, cy). У слов: layer, rect, size, t (время замера) → добавляется pos.
+    function layoutLines(lines, layout, safeW, gapPx, cx, cy) {
+        var i, j;
+        for (i = 0; i < lines.length; i++) {
+            var line = lines[i], maxSize = 0, total = 0;
+            for (j = 0; j < line.length; j++) maxSize = Math.max(maxSize, line[j].size);
+            line.space = maxSize * layout.wordSpace;
+            for (j = 0; j < line.length; j++) total += line[j].rect.width;
+            total += line.space * (line.length - 1);
+            if (total > safeW && total > 0) {
+                var f = safeW / total;
+                total = 0;
+                for (j = 0; j < line.length; j++) {
+                    line[j].size = Math.max(6, line[j].size * f);
+                    var p = line[j].layer.property("Source Text"), d = p.value;
+                    d.fontSize = line[j].size;
+                    p.setValue(d);
+                    line[j].rect = line[j].layer.sourceRectAtTime(line[j].t, false);
+                    total += line[j].rect.width;
+                }
+                line.space *= f;
+                total += line.space * (line.length - 1);
+            }
+            line.width = total;
+            line.ascent = 0; line.descent = 0;
+            for (j = 0; j < line.length; j++) {
+                line.ascent = Math.max(line.ascent, -line[j].rect.top);
+                line.descent = Math.max(line.descent, line[j].rect.top + line[j].rect.height);
+            }
+        }
+        var blockH = 0;
+        for (i = 0; i < lines.length; i++) blockH += lines[i].ascent + lines[i].descent;
+        blockH += gapPx * (lines.length - 1);
+        var y = cy - blockH / 2;
+        for (i = 0; i < lines.length; i++) {
+            var ln = lines[i], baseline = y + ln.ascent, x = cx - ln.width / 2;
+            for (j = 0; j < ln.length; j++) {
+                var w = ln[j], r = w.rect;
+                w.pos = [x + r.width / 2, baseline + r.top + r.height / 2];
+                x += r.width + ln.space;
+            }
+            y += ln.ascent + ln.descent + gapPx;
+        }
+    }
+
+    // Метка слоя: noir-captions:generated|x|y|группа|номер — позиция «в покое» и принадлежность фразе (для автоперекладки).
+    function setBaseComment(layer, pos, gid, idx) {
+        layer.comment = N.LAYER_TAG + "|" + pos[0] + "|" + pos[1] + "|" + gid + "|" + idx;
+    }
+    N.groupInfo = function (layer) {
+        var c = String(layer.comment || "");
+        if (c.indexOf(N.LAYER_TAG + "|") !== 0) return null;
+        var p = c.split("|");
+        if (p.length < 5) return null;
+        return { gid: p[3], idx: parseInt(p[4], 10) };
+    };
+
+    // Автоперекладка фразы: слова одной фразы (по метке группы) снова раскладываются по правилам раскладки
+    // (перенос по символам, акцент отдельной строкой, интервалы) вокруг её текущего центра. Анимация сохраняется:
+    // ключи позиции сдвигаются на ту же величину. Акцент определяется по метке слоя (цвет метки 11).
+    N.reflowGroups = function (comp, layers, layout) {
+        var scale = comp.width / N.REF_WIDTH, gids = [], seen = {}, i, j, k, res = { groups: 0, moved: 0, skipped: 0 };
+        for (i = 0; i < layers.length; i++) {
+            var gi = N.groupInfo(layers[i]);
+            if (!gi) { res.skipped++; continue; }
+            if (!seen[gi.gid]) { seen[gi.gid] = true; gids.push(gi.gid); }
+        }
+        for (k = 0; k < gids.length; k++) {
+            var members = [];
+            for (i = 1; i <= comp.numLayers; i++) {
+                var l = comp.layer(i), inf = N.groupInfo(l);
+                if (inf && inf.gid === gids[k]) members.push({ layer: l, order: inf.idx });
+            }
+            members.sort(function (a, b) { return a.order - b.order; });
+            var items = [], minL = 1e9, maxR = -1e9, minT = 1e9, maxB = -1e9;
+            for (j = 0; j < members.length; j++) {
+                var ly = members[j].layer, doc = ly.property("Source Text").value, t = Math.max(0, ly.inPoint);
+                var rect = ly.sourceRectAtTime(t, false), b0 = N.baseOf(ly);
+                items.push({ layer: ly, text: doc.text, accent: ly.label === 11, size: doc.fontSize, rect: rect, t: t, order: members[j].order, base: b0 });
+                minL = Math.min(minL, b0[0] - rect.width / 2); maxR = Math.max(maxR, b0[0] + rect.width / 2);
+                minT = Math.min(minT, b0[1] - rect.height / 2); maxB = Math.max(maxB, b0[1] + rect.height / 2);
+            }
+            if (!items.length) continue;
+            var firstBase = items[0].size;
+            for (j = 0; j < items.length; j++) if (!items[j].accent) { firstBase = items[j].size; break; }
+            var lines = N.splitLines(items, layout);
+            layoutLines(lines, layout, comp.width * layout.safeWidth, layout.lineGap * firstBase,
+                (minL + maxR) / 2, (minT + maxB) / 2);
+            for (j = 0; j < items.length; j++) {
+                var it = items[j], tr = it.layer.property("Transform"), posProp = tr.property("Position");
+                var dx = it.pos[0] - it.base[0], dy = it.pos[1] - it.base[1];
+                tr.property("Anchor Point").setValue([it.rect.left + it.rect.width / 2, it.rect.top + it.rect.height / 2]);
+                if (posProp.numKeys > 0) {
+                    for (var q = 1; q <= posProp.numKeys; q++) {
+                        var v = posProp.keyValue(q);
+                        posProp.setValueAtKey(q, [v[0] + dx, v[1] + dy, v[2]]);
+                    }
+                } else {
+                    posProp.setValue(it.pos);
+                }
+                var inf2 = N.groupInfo(it.layer);
+                setBaseComment(it.layer, it.pos, inf2.gid, inf2.idx);
+                res.moved++;
+            }
+            res.groups++;
+        }
+        return res;
+    };
 
     // ---------- правка готовых слоёв (выделенных пользователем) ----------
 
     // Базовая позиция слоя (куда он «встаёт» после анимации входа).
     N.baseOf = function (layer) {
         var c = String(layer.comment || "");
-        if (c.indexOf(N.LAYER_TAG + "|") === 0) {
+        if (c.indexOf(N.LAYER_TAG + "|") === 0 || c.indexOf("noir-captions:counter|") === 0) {
             var p = c.split("|"), x = parseFloat(p[1]), y = parseFloat(p[2]);
             if (!isNaN(x) && !isNaN(y)) return [x, y];
         }
@@ -581,7 +709,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
     // groups: из N.groupWords + N.timeGroups; у групп и слов есть compStart/compOut.
     // style: { layout, base, accent }, anim: { animIn, animOut, inDur, outDur, distance, blur, easeInfluence }
     N.generate = function (comp, groups, style, anim, replace) {
-        var ctx = { warnings: [], fontCache: {}, created: 0, made: [], scale: comp.width / N.REF_WIDTH,
+        var ctx = { warnings: [], fontCache: {}, created: 0, made: [], run: (new Date().getTime() % 1000000).toString(36), gseq: 0, scale: comp.width / N.REF_WIDTH,
             minDur: Math.max(comp.frameDuration, 0.04) };
         var removed = replace ? N.removeGenerated(comp) : 0;
         var skipped = 0, ordinal = 0, gi, wi;
@@ -597,5 +725,13 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         }
         if (skipped) ctx.warnings.push("Пропущено групп вне композиции или короче кадра: " + skipped);
         return { created: ctx.created, removed: removed, warnings: ctx.warnings, made: ctx.made };
+    };
+    // Для других модулей (tools.jsx): те же помощники, что у генератора слоёв.
+    N.gen = {
+        applyTextStyle: applyTextStyle, fitAndAnchor: fitAndAnchor, applyEffects: applyEffects, applyBlend: applyBlend,
+        addBlur: addBlur, styleOpacity: styleOpacity, clearEffect: clearEffect
+    };
+    N.newCtx = function (comp) {
+        return { warnings: [], fontCache: {}, scale: comp.width / N.REF_WIDTH, minDur: Math.max(comp.frameDuration, 0.04) };
     };
 })(NOIR);

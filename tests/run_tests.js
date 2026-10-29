@@ -12,7 +12,7 @@ const mock = require("./ae_mock");
 const ROOT = path.resolve(__dirname, "..");
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), "noir-test-"));
 const env = mock.install({ temp: TMP, fonts: ["TimesNewRomanPSMT", "Inter-Bold"] });
-for (const m of ["core.jsx", "generator.jsx", "recognizer.jsx", "sfx.jsx", "panel.jsx"])
+for (const m of ["core.jsx", "generator.jsx", "recognizer.jsx", "sfx.jsx", "tools.jsx", "panel.jsx"])
   (0, eval)(fs.readFileSync(path.join(ROOT, "ae/noir", m), "utf8"));
 const N = global.NOIR;
 
@@ -271,7 +271,7 @@ const GOPTS = { maxWords: 1, maxChars: 99, pauseBreak: 0.35, punctBreak: true, s
   const NOANIM = { animIn: "none", inDur: 0, animOut: "none", outDur: 0, distance: 0, blur: 0, easeInfluence: 80 };
   await test("слой помнит базовую позицию; теги работают с isGenerated", () => {
     const c = mkComp(); gen(c); const l = subs(c)[0];
-    assert.ok(/^noir-captions:generated\|[\d.]+\|[\d.]+$/.test(l.comment));
+    assert.ok(/^noir-captions:generated\|[\d.]+\|[\d.]+\|[\w]+-\d+\|\d+$/.test(l.comment));
     const b = N.baseOf(l); assert.ok(Math.abs(b[0] - l.transform.Position.value[0]) < 1e-6 || l.transform.Position.keys.length);
   });
   await test("сделать акцентом: стиль, имя, метка и свечение — только у выделенного слоя", () => {
@@ -397,6 +397,169 @@ const GOPTS = { maxWords: 1, maxChars: 99, pauseBreak: 0.35, punctBreak: true, s
     assert.strictEqual(col("это"), JSON.stringify(st.base.color));
     const c2 = mkComp(); N.generate(c2, prep(N.applyEdits(sample(), "*а* *б* *в* *г* *д*\nб", []).slice(0, 5), st.layout), st, st.anim, true);
     const cols = subs(c2).map(l => JSON.stringify(l.src.value.fillColor)); assert.strictEqual(new Set(cols).size, 4, "палитра должна повторяться по кругу");
+  });
+  const phrase = (c, id, text) => { const st = styleOf(id || "kinetic-stack"); st.layout.autoAccent = false; st.layout.lineChars = 40; st.layout.maxChars = 99; const d = { segments: [{ words: text.split(" ").map((t, i) => ({ text: t.replace(/\*/g, ""), start: i * 0.3, end: i * 0.3 + 0.25 })) }] };
+    N.generate(c, prep(N.applyEdits(d, text, []), Object.assign({}, st.layout, { maxWords: 9, punctBreak: false, pauseBreak: 9 })), st, st.anim, true); return st; };
+  const byText = (c, t) => subs(c).find(l => l.src.value.text === t);
+  await test("автоперекладка: слово стало акцентом (метка 11) — уходит на свою строку, фраза остаётся вокруг прежнего центра, группа и анимация сохраняются", () => {
+    const c = mkComp(), st = phrase(c, "kinetic-stack", "если до этого квартира"); const ls = subs(c);
+    const g0 = N.groupInfo(ls[0]).gid; assert.ok(ls.every(l => N.groupInfo(l).gid === g0), "одна фраза — одна группа");
+    const center = () => { const b = subs(c).map(l => ({ p: N.baseOf(l), r: l.sourceRectAtTime() })); return [(Math.min(...b.map(x => x.p[0] - x.r.width / 2)) + Math.max(...b.map(x => x.p[0] + x.r.width / 2))) / 2, (Math.min(...b.map(x => x.p[1] - x.r.height / 2)) + Math.max(...b.map(x => x.p[1] + x.r.height / 2))) / 2]; };
+    const c0 = center(), yBefore = N.baseOf(byText(c, "квартира"))[1], keysBefore = byText(c, "квартира").transform.Position.keys.map(k => k.v.slice());
+    byText(c, "квартира").label = 11;
+    const r = N.reflowGroups(c, [byText(c, "квартира")], st.layout);
+    assert.strictEqual(r.groups, 1); assert.strictEqual(r.moved, 4);
+    assert.ok(N.baseOf(byText(c, "квартира"))[1] !== yBefore, "акцент должен уйти на свою строку");
+    const ys = new Set(["если", "до", "этого"].map(t => Math.round(N.baseOf(byText(c, t))[1]))); assert.strictEqual(ys.size, 1, "обычные слова на одной строке");
+    const c1 = center(); near(c1[0], c0[0], 1); near(c1[1], c0[1], 1);
+    assert.ok(subs(c).every(l => N.groupInfo(l).gid === g0), "группа сохранилась");
+    const kq = byText(c, "квартира").transform.Position.keys; assert.ok(kq.length >= 2 && Math.abs(kq[kq.length - 1].v[1] - N.baseOf(byText(c, "квартира"))[1]) < 1e-6, "ключи позиции сдвинуты вместе с базой");
+    assert.notDeepStrictEqual(kq.map(k => k.v), keysBefore);
+  });
+  await test("автоперекладка: акцент снят — слова снова в строку; без метки группы слой пропускается; в сумме слои не теряются", () => {
+    const c = mkComp(), st = phrase(c, "kinetic-stack", "если до этого квартира"); byText(c, "квартира").label = 11; N.reflowGroups(c, subs(c), st.layout);
+    const y1 = new Set(subs(c).map(l => Math.round(N.baseOf(l)[1]))).size; assert.ok(y1 >= 2, "строк: " + y1);
+    byText(c, "квартира").label = 9; N.reflowGroups(c, subs(c), st.layout);
+    assert.ok(new Set(subs(c).map(l => Math.round(N.baseOf(l)[1]))).size < y1, "после снятия акцента строк меньше");
+    const user = new mock.TextLayer(c, "свой", c._fonts); c._l.push(user); const n = c.numLayers;
+    const r = N.reflowGroups(c, [user], st.layout); assert.strictEqual(r.groups, 0); assert.strictEqual(r.skipped, 1); assert.strictEqual(c.numLayers, n);
+  });
+  const animators = (l) => l.textProps ? l.textProps.property("ADBE Text Animators").kids : [];
+  const selOf = (an) => an.property("ADBE Text Selectors").kids[0];
+  const ANI = (inn, out, o) => Object.assign({ animIn: inn, animOut: out, inDur: 0.4, outDur: 0.3, distance: 60, blur: 20, easeInfluence: 80 }, o || {});
+  await test("по буквам (вход): аниматор с прозрачностью 0 и диапазоном 0→100% за inDur, слева направо; ключи слоя не создаются", () => {
+    for (const [id, extra] of [["letFade", null], ["letRise", "ADBE Text Position 3D"], ["letPop", "ADBE Text Scale 3D"], ["letBlur", "ADBE Text Blur"], ["type", null]]) {
+      const c = mkComp(), st = styleOf("noir-red"); st.anim = ANI(id, "none"); N.generate(c, prep(N.flattenWords(sample()), st.layout), st, st.anim, true);
+      const l = subs(c)[0], an = animators(l); assert.strictEqual(an.length, 1, id); assert.strictEqual(an[0].name, "NOIR Letters In");
+      assert.strictEqual(an[0].property("ADBE Text Animator Properties").property("ADBE Text Opacity").value, 0);
+      if (extra) assert.ok(an[0].property("ADBE Text Animator Properties").kids.some(k => k.matchName === extra), id + " без " + extra);
+      const start = selOf(an[0]).property("ADBE Text Percent Start").keys; assert.deepStrictEqual(start.map(k => k.v), [0, 100]);
+      near(start[0].t, l.inPoint); assert.ok(start[1].t <= l.outPoint + 1e-9 && start[1].t > start[0].t);
+      assert.ok(Object.values(l.transform).every(p => p.keys.length === 0), id + ": ключи слоя быть не должны");
+    }
+  });
+  await test("по буквам (выход): конец диапазона 0→100% и заканчивается к outPoint; вход обычный + выход по буквам вместе", () => {
+    const c = mkComp(), st = styleOf("noir-red"); st.anim = ANI("pop", "letFade"); N.generate(c, prep(N.flattenWords(sample()), st.layout), st, st.anim, true);
+    const l = subs(c)[0], an = animators(l); assert.strictEqual(an.length, 1); assert.strictEqual(an[0].name, "NOIR Letters Out");
+    const end = selOf(an[0]).property("ADBE Text Percent End").keys; assert.deepStrictEqual(end.map(k => k.v), [0, 100]); near(end[1].t, l.outPoint);
+    assert.ok(l.transform.Scale.keys.length >= 2, "вход Pop остался ключами слоя"); assert.ok(l.transform.Scale.keys.every(k => k.t <= end[0].t + 1e-9), "вход не должен залезать на выход");
+    const c2 = mkComp(); const st2 = styleOf("noir-red"); st2.anim = ANI("letRise", "letType"); N.generate(c2, prep(N.flattenWords(sample()), st2.layout), st2, st2.anim, true);
+    assert.deepStrictEqual(animators(subs(c2)[0]).map(a => a.name), ["NOIR Letters In", "NOIR Letters Out"]);
+  });
+  await test("по буквам: у короткого слова длительность ужимается; смена анимации убирает старые аниматоры; без анимации аниматоров нет", () => {
+    const c = mkComp(), st = styleOf("noir-red"); const d = { segments: [{ words: [{ text: "и", start: 1, end: 1.1 }] }] };
+    st.anim = ANI("letFade", "letFade", { inDur: 0.5, outDur: 0.5 }); N.generate(c, prep(N.flattenWords(d), st.layout), st, st.anim, true);
+    const l = subs(c)[0], life = l.outPoint - l.inPoint; const k = animators(l).map(a => selOf(a)); const s0 = k[0].property("ADBE Text Percent Start").keys, e0 = k[1].property("ADBE Text Percent End").keys;
+    assert.ok(s0[1].t - s0[0].t + (e0[1].t - e0[0].t) <= life * 0.8 + 1e-9, "вход+выход должны укладываться в 80% жизни слоя");
+    N.restyleLayers(c, [l], { style: null, safeWidth: 0.9, anim: ANI("pop", "fade") }); assert.strictEqual(animators(l).length, 0, "старые аниматоры должны сниматься");
+    N.restyleLayers(c, [l], { style: null, safeWidth: 0.9, anim: ANI("letPop", "none") }); assert.strictEqual(animators(l).length, 1);
+    N.restyleLayers(c, [l], { style: null, safeWidth: 0.9, anim: ANI("none", "none") }); assert.strictEqual(animators(l).length, 0);
+  });
+  await test("по буквам: если AE не создал аниматор — слой остаётся рабочим (без исключения)", () => {
+    const c = mkComp(), st = styleOf("noir-red"); st.anim = ANI("letFade", "none"); const orig = mock.TextLayer.prototype.property;
+    mock.TextLayer.prototype.property = function (n) { if (n === "ADBE Text Properties") throw new Error("нет такого свойства"); return orig.call(this, n); };
+    try { const r = N.generate(c, prep(N.flattenWords(sample()), st.layout), st, st.anim, true); assert.strictEqual(r.created, 5); } finally { mock.TextLayer.prototype.property = orig; }
+  });
+  // ---------- функции: счётчик, зачёркивание, маска ----------
+  const CO = (o) => Object.assign({ from: 0, to: 100, duration: 2, step: 0, interval: 0, decimals: 0, thousands: "none", pad: 0, prefix: "", suffix: "", ease: "linear",
+    side: "accent", size: 0, posX: 50, posY: 50, hold: 1, start: 1 }, o || {});
+  const evalCo = (o, time, inPoint) => new Function("time", "inPoint", "return eval(" + JSON.stringify(N.counterExpression(o)) + ")")(time, inPoint === undefined ? 0 : inPoint);
+  await test("счётчик: выражение — линейный ход от/до, время от начала слоя, конец ровно на «до», после конца держит значение", () => {
+    const o = CO({});
+    assert.strictEqual(evalCo(o, 0), "0"); assert.strictEqual(evalCo(o, 1), "50"); assert.strictEqual(evalCo(o, 2), "100"); assert.strictEqual(evalCo(o, 9), "100");
+    assert.strictEqual(evalCo(o, 4, 3), "50", "время считается от inPoint"); assert.strictEqual(evalCo(o, 1, 3), "0", "до начала — «от»");
+    assert.strictEqual(evalCo(CO({ from: 100, to: 0 }), 1), "50", "счёт вниз");
+  });
+  await test("счётчик: интервал обновления, шаг, плавность, десятичные, разделители тысяч, дополнение нулями, префикс/суффикс", () => {
+    assert.strictEqual(evalCo(CO({ interval: 0.5 }), 0.7), "25", "обновляется раз в 0.5 с");
+    assert.strictEqual(evalCo(CO({ interval: 0.5 }), 1.99), "75"); assert.strictEqual(evalCo(CO({ interval: 0.5 }), 2), "100");
+    assert.strictEqual(evalCo(CO({ step: 10 }), 0.53), "30", "шаг 10: 26.5 → 30");
+    assert.strictEqual(evalCo(CO({ step: 10 }), 3), "100", "в конце ровно «до», даже если не кратно шагу"); assert.strictEqual(evalCo(CO({ to: 95, step: 10 }), 5), "95");
+    assert.strictEqual(evalCo(CO({ ease: "out" }), 1), "75"); assert.strictEqual(evalCo(CO({ ease: "in" }), 1), "25"); assert.strictEqual(evalCo(CO({ ease: "inout" }), 0.5), "13");
+    assert.strictEqual(evalCo(CO({ to: 1, decimals: 2 }), 1), "0.50");
+    assert.strictEqual(evalCo(CO({ to: 1234567, thousands: "space" }), 9), "1 234 567"); assert.strictEqual(evalCo(CO({ to: 1234567, thousands: "comma" }), 9), "1,234,567");
+    assert.strictEqual(evalCo(CO({ to: 1234.5, decimals: 1, thousands: "dot" }), 9), "1.234,5", "точка-разделитель → десятичная запятая");
+    assert.strictEqual(evalCo(CO({ to: 7, pad: 3 }), 9), "007"); assert.strictEqual(evalCo(CO({ to: 96, prefix: "$", suffix: " K" }), 9), "$96 K");
+    assert.strictEqual(evalCo(CO({ from: -10, to: -5 }), 9), "-5"); assert.strictEqual(evalCo(CO({ suffix: "\"%'" }), 9), "100\"%'", "кавычки в суффиксе не ломают выражение");
+  });
+  await test("счётчик: formatCounter совпадает с выражением; выражение не содержит запрещённого", () => {
+    for (const o of [CO({ to: 1234567.891, decimals: 2, thousands: "space", prefix: "~" }), CO({ to: 5, pad: 4, suffix: "x" }), CO({ from: 20, to: -3000, thousands: "comma" })])
+      assert.strictEqual(evalCo(o, 99), N.formatCounter(o.to, o));
+  });
+  const ANIN = (o) => Object.assign({ animIn: "none", animOut: "none", inDur: 0.3, outDur: 0.3, distance: 40, blur: 10, easeInfluence: 80 }, o || {});
+  await test("createCounter: слой с выражением, таймингом (старт…старт+длительность+удержание), центр и анимация из параметров", () => {
+    const c = mkComp(), st = styleOf("kinetic-stack"); st.layout.safeWidth = 0.9;
+    const r = N.createCounter(c, CO({ to: 96, suffix: " K", posX: 50, posY: 40, start: 2, duration: 3, hold: 1 }), st, ANIN({ animIn: "pop", animOut: "fade" }));
+    const l = r.layer; assert.ok(l instanceof mock.TextLayer); assert.strictEqual(subs(c).length, 0, "счётчик не считается субтитром");
+    assert.ok(l.comment.indexOf(N.COUNTER_TAG + "|") === 0); near(l.inPoint, 2); near(l.outPoint, 6);
+    assert.ok(/time - inPoint/.test(l.src.expression)); assert.ok(l.src.value.text.length >= 2, "размер считается по самой длинной записи");
+    const b = N.baseOf(l); near(b[0], c.width / 2); near(b[1], c.height * 0.4);
+    assert.ok(l.transform.Scale.keys.length >= 2 && l.transform.Opacity.keys.length >= 2, "вход Pop и выход Fade записаны ключами");
+    assert.ok(l.transform.Opacity.keys.every(k => k.t >= 2 - 1e-9 && k.t <= 6 + 1e-9), "ключи в пределах слоя");
+  });
+  await test("createCounter: настройки не мутируются; обычная сторона; старт вне композиции — понятная ошибка", () => {
+    const c = mkComp(), st = styleOf("kinetic-stack"), snap = JSON.stringify(st), an = ANIN({ animIn: "rise" }), asnap = JSON.stringify(an);
+    N.createCounter(c, CO({ side: "base", size: 300 }), st, an); assert.strictEqual(JSON.stringify(st), snap); assert.strictEqual(JSON.stringify(an), asnap);
+    assert.strictEqual(c._l[0].src.value.fontSize, 300 * c.width / N.REF_WIDTH);
+    assert.throws(() => N.createCounter(c, CO({ start: 99 }), st, ANIN()), /за пределами композиции/);
+    const pal = styleOf("mix-colors"); N.createCounter(c, CO({}), pal, ANIN());
+  });
+  const mkTexts = (c) => { gen(c, "kinetic-stack"); return subs(c).slice(0, 3); };
+  const SO = (o) => Object.assign({ color: [1, 0.2, 0.1], thickness: 8, offsetY: 0, tilt: 0, padding: 10, duration: 0.3, delay: 0.1, dir: "ltr" }, o || {});
+  await test("зачёркивание: фигура-полоса на каждый текстовый слой, над ним по порядку, живёт со словом; вытирание масштабом по X от привязки", () => {
+    const c = mkComp(), t = mkTexts(c);
+    const r = N.strikeLayers(c, t, SO(), ANIN({ animOut: "fade" })); assert.strictEqual(r.made.length, 3); assert.strictEqual(r.skipped, 0);
+    for (let i = 0; i < 3; i++) {
+      const s = r.made[i], tx = t[i]; assert.ok(s.comment.indexOf(N.STRIKE_TAG) === 0); assert.ok(c._l.indexOf(s) < c._l.indexOf(tx), "полоса выше текста");
+      near(s.inPoint, tx.inPoint + 0.1); near(s.outPoint, tx.outPoint);
+      const sc = s.transform.Scale.keys; assert.deepStrictEqual(sc.map(k => k.v[0]), [0, 100]); assert.ok(sc[1].t - sc[0].t > 0 && sc[1].t - sc[0].t <= 0.3 + 1e-9 && sc[1].t <= tx.outPoint + 1e-9);
+      const rect = tx.sourceRectAtTime(), w = rect.width * 1.1; near(s.transform["Anchor Point"].value[0], 0);
+      const rs = s.vectors.property("ADBE Vector Group").property("ADBE Vectors Group").property("ADBE Vector Shape - Rect").property("ADBE Vector Rect Size").value; near(rs[0], w); near(rs[1], 8 * c.width / N.REF_WIDTH);
+      near(s.transform.Position.value[1], N.baseOf(tx)[1]); near(s.transform.Position.value[0], N.baseOf(tx)[0] - w / 2, 1e-6);
+      assert.ok(s.transform.Opacity.keys.length === 2, "уход вместе со словом");
+    }
+  });
+  await test("зачёркивание: направление, наклон, смещение, без выхода; пустой слой пропускается; удаление по тегу не трогает остальное", () => {
+    const c = mkComp(), t = mkTexts(c), n0 = c.numLayers;
+    const rt = N.strikeLayers(c, [t[0]], SO({ dir: "rtl" }), ANIN()).made[0], w = t[0].sourceRectAtTime().width * 1.1;
+    near(rt.transform["Anchor Point"].value[0], w); near(rt.transform.Position.value[0], N.baseOf(t[0])[0] + w / 2); assert.strictEqual(rt.transform.Opacity.keys.length, 0);
+    const ce = N.strikeLayers(c, [t[1]], SO({ dir: "center" }), ANIN()).made[0]; near(ce.transform["Anchor Point"].value[0], w1(t[1])); near(ce.transform.Position.value[0], N.baseOf(t[1])[0]);
+    function w1(l) { return l.sourceRectAtTime().width * 1.1 / 2; }
+    const tilt = N.strikeLayers(c, [t[2]], SO({ tilt: -8, offsetY: 10 }), ANIN()).made[0]; assert.strictEqual(tilt.transform.Rotation.value, -8);
+    const rad = -8 * Math.PI / 180, vx = w1(t[2]), cy = N.baseOf(t[2])[1] + 0.1 * t[2].sourceRectAtTime().height;
+    near(tilt.transform.Position.value[0], N.baseOf(t[2])[0] - vx * Math.cos(rad)); near(tilt.transform.Position.value[1], cy - vx * Math.sin(rad));
+    const empty = new mock.TextLayer(c, "", c._fonts); empty.sourceRectAtTime = () => ({ left: 0, top: 0, width: 0, height: 0 }); c._l.push(empty);
+    assert.strictEqual(N.strikeLayers(c, [empty], SO(), ANIN()).skipped, 1);
+    assert.strictEqual(N.removeByTag(c, N.STRIKE_TAG), 3); assert.strictEqual(c.numLayers, n0 + 1);
+  });
+  await test("зачёркивание: очень короткое слово — вытирание укладывается в жизнь слоя", () => {
+    const c = mkComp(), t = mkTexts(c)[0]; t.inPoint = 1; t.outPoint = 1.1;
+    const s = N.strikeLayers(c, [t], SO({ duration: 5, delay: 5 }), ANIN()).made[0]; assert.ok(s.inPoint >= 1 && s.inPoint < s.outPoint && s.outPoint <= 1.1 + 1e-9);
+    assert.ok(s.transform.Scale.keys.every(k => k.t <= s.outPoint + 1e-9));
+  });
+  const MO = (o) => Object.assign({ mode: "video", invert: false, restart: false, hideSource: true, color: [0, 0, 0], opacity: 100 }, o || {});
+  const mkVideo = (c) => { const v = new mock.AVLayer(c, "clip.mp4"); v.inPoint = 0; v.outPoint = 30; c._l.push(v); return v; };
+  await test("маска: видео внутри букв — копия видео под текстом, Alpha Matte, текст скрыт, оригинал скрыт, время по тексту", () => {
+    const c = mkComp(), t = mkTexts(c), v = mkVideo(c); const n0 = c.numLayers;
+    const r = N.maskTextLayers(c, t, v, MO()); assert.strictEqual(r.made.length, 3); assert.strictEqual(c.numLayers, n0 + 3);
+    for (let i = 0; i < 3; i++) {
+      const m = r.made[i]; assert.strictEqual(m.trackMatteLayer, t[i]); assert.strictEqual(m.trackMatteType, TrackMatteType.ALPHA);
+      assert.strictEqual(c._l.indexOf(m), c._l.indexOf(t[i]) + 1, "прямо под текстом"); near(m.inPoint, t[i].inPoint); near(m.outPoint, t[i].outPoint);
+      assert.ok(m.comment.indexOf(N.MASK_TAG) === 0 && m !== v); assert.strictEqual(t[i].enabled, false);
+    }
+    assert.strictEqual(v.enabled, false); assert.strictEqual(subs(c).length, 5, "субтитры не задеты");
+  });
+  await test("маска: инверсия матта, перезапуск клипа с начала слова, оригинал остаётся видимым; без видео — понятная ошибка", () => {
+    const c = mkComp(), t = mkTexts(c), v = mkVideo(c);
+    const m = N.maskTextLayers(c, [t[0]], v, MO({ invert: true, restart: true, hideSource: false })).made[0];
+    assert.strictEqual(m.trackMatteType, TrackMatteType.ALPHA_INVERTED); near(m.startTime, t[0].inPoint); assert.strictEqual(v.enabled, true);
+    assert.throws(() => N.maskTextLayers(c, [t[1]], null, MO()), /видео\/фото слой/);
+  });
+  await test("маска: вырез (буквы прозрачны) — сплошной слой с обратным матом, без исходного видео; снятие масок возвращает текст", () => {
+    const c = mkComp(), t = mkTexts(c), n0 = c.numLayers;
+    const r = N.maskTextLayers(c, t, null, MO({ mode: "cut", color: [0.1, 0.1, 0.1], opacity: 80 }));
+    assert.strictEqual(r.made[0].trackMatteType, TrackMatteType.ALPHA_INVERTED); assert.strictEqual(r.made[0].transform.Opacity.value, 80); assert.deepStrictEqual(r.made[0].solidColor, [0.1, 0.1, 0.1]);
+    assert.strictEqual(N.removeMasks(c), 3); assert.strictEqual(c.numLayers, n0); assert.ok(t.every(x => x.enabled === true), "текст снова виден");
   });
   await test("все слои сразу + пользовательский слой без тега", () => {
     const c = mkComp(), st = styleOf("kinetic-stack"); gen(c, "kinetic-stack");
@@ -570,9 +733,9 @@ const GOPTS = { maxWords: 1, maxChars: 99, pauseBreak: 0.35, punctBreak: true, s
     const tabBtn = (t) => panel.find(e => e.type === "button" && e.text === t);
     tabBtn("Стиль").onClick(); tabBtn("Раскладка").onClick();
     const stack = panel.find(e => e.type === "group" && e.orientation === "stack");
-    assert.deepStrictEqual(stack.children.map(c => c.visible), [false, false, false, false, true, false, false, false]);
+    assert.deepStrictEqual(stack.children.map(c => c.visible), [false, false, false, false, true, false, false, false, false]);
     tabBtn("Речь").onClick();
-    assert.deepStrictEqual(stack.children.map(c => c.visible), [true, false, false, false, false, false, false, false]);
+    assert.deepStrictEqual(stack.children.map(c => c.visible), [true, false, false, false, false, false, false, false, false]);
     assert.strictEqual(typeof panel.button("Создать субтитры").onDraw, "function");
   });
   await test("без theme.jsx панель строится на обычных вкладках", () => {
@@ -628,6 +791,41 @@ const GOPTS = { maxWords: 1, maxChars: 99, pauseBreak: 0.35, punctBreak: true, s
     assert.strictEqual(env.log.alerts.length, 0, env.log.alerts.join("|"));
     assert.strictEqual(ls[0].src.value.fontSize, size0); assert.strictEqual(JSON.stringify(ls[0].src.value.fillColor), col0);
     ls[0].selected = false;
+  });
+  await test("вкладка «Функции»: счётчик создаётся с текущего времени и по настройкам панели; без композиции — ошибка", () => {
+    global.app.project.activeItem = null; env.log.alerts.length = 0;
+    panel.button("Создать счётчик с текущего времени").onClick(); assert.ok(/Откройте композицию/.test(env.log.alerts[0]));
+    const c = mkComp(); c.time = 2.5; env.log.alerts.length = 0;
+    const to = panel.find(e => e._scrub && e._scrub.name === "Счётчик: до"); to.text = "250"; to.onChange && to.onChange();
+    panel.button("Создать счётчик с текущего времени").onClick();
+    assert.strictEqual(env.log.alerts.length, 0, env.log.alerts.join("|"));
+    const l = c._l.find(x => String(x.comment).indexOf(N.COUNTER_TAG) === 0); assert.ok(l, "нет слоя счётчика"); near(l.inPoint, 2.5); near(l.outPoint, 5.5);
+    assert.ok(/to = 250/.test(l.src.expression), l.src.expression);
+    const S = N.parseJSON(env.settings["NOIR Captions/settings.v2"]); assert.strictEqual(S.tools.counter.to, 250);
+  });
+  await test("вкладка «Функции»: зачёркивание и маска работают с выделением, без выделения — понятная ошибка; убрать — чистит свои слои", () => {
+    const c = mkComp(); gen(c, "kinetic-stack"); const ls = subs(c); env.log.alerts.length = 0;
+    panel.button("Зачеркнуть выделенные слои").onClick(); assert.ok(/Выделите/.test(env.log.alerts[0]));
+    ls[0].selected = ls[1].selected = true; env.log.alerts.length = 0;
+    panel.button("Зачеркнуть выделенные слои").onClick(); assert.strictEqual(env.log.alerts.length, 0, env.log.alerts.join("|"));
+    assert.strictEqual(c._l.filter(x => String(x.comment).indexOf(N.STRIKE_TAG) === 0).length, 2);
+    panel.button("Убрать зачёркивания").onClick(); assert.strictEqual(c._l.filter(x => String(x.comment).indexOf(N.STRIKE_TAG) === 0).length, 0);
+    panel.button("Создать маску по выделенным").onClick(); assert.ok(/видео\/фото слой/.test(env.log.alerts[env.log.alerts.length - 1]), "нужна ошибка про видео");
+    const v = new mock.AVLayer(c, "clip.mp4"); c._l.push(v); v.selected = true; env.log.alerts.length = 0;
+    panel.button("Создать маску по выделенным").onClick(); assert.strictEqual(env.log.alerts.length, 0, env.log.alerts.join("|"));
+    assert.strictEqual(c._l.filter(x => String(x.comment).indexOf(N.MASK_TAG) === 0).length, 2); assert.strictEqual(ls[0].enabled, false);
+    panel.button("Убрать маски").onClick(); assert.strictEqual(c._l.filter(x => String(x.comment).indexOf(N.MASK_TAG) === 0).length, 0); assert.strictEqual(ls[0].enabled, true);
+    c._l.forEach(x => (x.selected = false));
+  });
+  await test("перекладка: кнопка «Перекласть фразу» и автоперекладка при «Сделать акцентом»", () => {
+    const c = mkComp(); phrase(c, "kinetic-stack", "если до этого квартира"); const ls = subs(c); env.log.alerts.length = 0;
+    panel.button("↻ Перекласть фразу выделенных слов").onClick(); assert.ok(/Выделите/.test(env.log.alerts[0]));
+    const y0 = new Set(ls.map(l => Math.round(N.baseOf(l)[1]))).size;
+    const q = byText(c, "квартира"); ls.forEach(l => (l.selected = false)); q.selected = true; env.log.alerts.length = 0;
+    panel.button("★ Сделать акцентом").onClick(); assert.strictEqual(env.log.alerts.length, 0, env.log.alerts.join("|"));
+    assert.ok(new Set(ls.map(l => Math.round(N.baseOf(l)[1]))).size > y0 || y0 > 1, "акцент должен уйти на свою строку (или фраза уже в несколько строк)");
+    panel.button("↻ Перекласть фразу выделенных слов").onClick(); assert.strictEqual(env.log.alerts.length, 0, env.log.alerts.join("|"));
+    q.selected = false;
   });
   await test("сетка вылетов: кнопки есть; без выделения — запоминается; с выделением — сразу на слоях; Вход/Выход переключаются", () => {
     const c = mkComp(); gen(c); const ls = subs(c);
