@@ -15,6 +15,8 @@ class Prop {
   constructor(type, value) { this.propertyValueType = type; this.value = value; this.keys = []; }
   get numKeys() { return this.keys.length; }
   setValue(v) { this.value = v; }
+  removeKey(i) { if (i < 1 || i > this.keys.length) throw new Error("removeKey out of range"); this.keys.splice(i - 1, 1); }
+  valueAtTime(t) { if (!this.keys.length) return this.value; let v = this.keys[0].v; for (const k of this.keys) if (k.t <= t) v = k.v; return v; }
   setValueAtTime(t, v) {
     if (!isFinite(t)) throw new Error("bad key time " + t);
     const i = this.keys.findIndex(k => Math.abs(k.t - t) < 1e-9);
@@ -37,6 +39,7 @@ class Effect {
   constructor(matchName) {
     this.matchName = matchName; this.name = matchName; this.props = {};
   }
+  remove() { const a = this.layer.effects; a.splice(a.indexOf(this), 1); }
   property(mn) {
     if (!this.props[mn]) {
       const p = new Prop(PropertyValueType.OneD, 0);
@@ -70,7 +73,12 @@ class Layer {
     if (this.src && n === "Source Text") return this.src;
     if (n === "ADBE Effect Parade") {
       const self = this; self.effects = self.effects || [];
-      return { canAddProperty: () => true, addProperty: (mn) => { const e = new Effect(mn); self.effects.push(e); return e; } };
+      return {
+        get numProperties() { return self.effects.length; },
+        property: (i) => self.effects[i - 1],
+        canAddProperty: () => true,
+        addProperty: (mn) => { const e = new Effect(mn); e.layer = self; self.effects.push(e); return e; },
+      };
     }
     throw new Error("no property " + n);
   }

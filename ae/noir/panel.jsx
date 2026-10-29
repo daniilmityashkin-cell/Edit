@@ -132,7 +132,8 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         var tView = tabs.add("tab", undefined, "Вид");
         var tLayout = tabs.add("tab", undefined, "Раскладка");
         var tAnim = tabs.add("tab", undefined, "Анимация");
-        var all = [tSpeech, tText, tStyle, tView, tLayout, tAnim];
+        var tLayers = tabs.add("tab", undefined, "Слои");
+        var all = [tSpeech, tText, tStyle, tView, tLayout, tAnim, tLayers];
         for (var ti = 0; ti < all.length; ti++) {
             all[ti].orientation = "column";
             all[ti].alignChildren = ["fill", "top"];
@@ -311,6 +312,29 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             "Размеры заданы для кадра шириной 1080 и масштабируются под композицию. " +
             "У коротких слов вход и выход автоматически укорачиваются.", { multiline: true });
 
+        // ================= Слои: правка выделенных слоёв =================
+        tLayers.add("statictext", undefined,
+            "Выделите в таймлайне текстовые слои. Выделено несколько (или все) — изменится сразу везде.",
+            { multiline: true });
+        var rQuick = tLayers.add("group");
+        var btnMakeAccent = rQuick.add("button", undefined, "★ Сделать акцентом");
+        var btnMakeBase = rQuick.add("button", undefined, "Сделать обычным");
+        var pnlApply = tLayers.add("panel", undefined, "Применить настройки панели к выделенным");
+        pnlApply.alignChildren = ["fill", "top"];
+        pnlApply.margins = [8, 12, 8, 8];
+        var rWhich = row(pnlApply, "Стиль", 60);
+        var rbApplyBase = rWhich.add("radiobutton", undefined, "Обычный");
+        var rbApplyAccent = rWhich.add("radiobutton", undefined, "Акцент");
+        rbApplyBase.value = true;
+        var cbApplyLook = pnlApply.add("checkbox", undefined, "Вид: шрифт, размер, цвет, обводка, эффекты");
+        cbApplyLook.value = true;
+        var cbApplyAnim = pnlApply.add("checkbox", undefined, "Анимацию появления и исчезновения");
+        cbApplyAnim.value = true;
+        var btnApply = pnlApply.add("button", undefined, "Применить к выделенным");
+        tLayers.add("statictext", undefined,
+            "Вид берётся с вкладок «Стиль» и «Вид», анимация — с вкладки «Анимация». Позиция и тайминг слоя не меняются. " +
+            "Регистр букв (КАПС) вернуть назад нельзя.", { multiline: true });
+
         // ================= низ =================
         var cbReplace = win.add("checkbox", undefined, "Заменить ранее созданные субтитры в этой композиции");
         cbReplace.value = S.replace;
@@ -320,8 +344,9 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
 
         // ================= тема =================
         if (TH) {
-            var primary = [btnRecognize, btnGenerate];
-            var ghost = [btnCancel, btnLoad, btnSave, btnReset, btnSavePreset, btnFromLayer, btnColor, btnStrokeColor];
+            var primary = [btnRecognize, btnGenerate, btnMakeAccent];
+            var ghost = [btnCancel, btnLoad, btnSave, btnReset, btnSavePreset, btnFromLayer, btnColor, btnStrokeColor,
+                btnMakeBase, btnApply];
             for (var bi = 0; bi < primary.length; bi++) TH.button(primary[bi], "primary");
             for (var gi = 0; gi < ghost.length; gi++) TH.button(ghost[gi], "ghost");
             btnGenerate.preferredSize.height = 34;
@@ -339,6 +364,9 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         btnSavePreset.helpTip = "Сохранить все текущие настройки (шрифты, вид, раскладка, анимация) как свой пресет";
         btnFromLayer.helpTip = "Выделите текстовый слой в AE — шрифт, размер и цвет возьмутся с него";
         cbAutoAccent.helpTip = "В каждой фразе из нескольких слов автоматически выделяется главное слово (число или самое длинное) — оно получит акцентный стиль";
+        btnMakeAccent.helpTip = "Выделенные текстовые слои получат акцентный стиль (шрифт, размер, цвет, эффекты из настроек «Акцент»)";
+        btnMakeBase.helpTip = "Выделенные текстовые слои получат обычный стиль";
+        btnApply.helpTip = "Применить вид и/или анимацию из панели к выделенным слоям. Выделите все слои — применится ко всем";
         btnGenerate.helpTip = "Создать текстовые слои с субтитрами в открытой композиции";
         cbReplace.helpTip = "Перед созданием удалить слои NOIR из прошлого запуска. Ваши слои не трогаются";
         rbBase.helpTip = rbBase2.helpTip = "Настройки ниже относятся к обычным словам";
@@ -727,6 +755,41 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
                 note: "Аудиослой «" + L.layerName + "» не найден — использовано сохранённое время." };
             return { startTime: layer.startTime, stretch: layer.stretch, note: "" };
         }
+
+        // Выделенные текстовые слои активной композиции (или понятная ошибка).
+        function selectedTextLayers() {
+            var comp = app.project.activeItem;
+            if (!(comp instanceof CompItem)) throw new Error("Откройте композицию.");
+            var sel = comp.selectedLayers, out = [];
+            for (var i = 0; i < sel.length; i++) if (sel[i] instanceof TextLayer) out.push(sel[i]);
+            if (!out.length) throw new Error("Выделите в таймлайне один или несколько текстовых слоёв.");
+            return { comp: comp, layers: out };
+        }
+        // which: "base" | "accent"; look/anim — что применять.
+        function applyToLayers(which, look, anim, undoName) {
+            readUI();
+            var sel;
+            try { sel = selectedTextLayers(); } catch (e) { alert(e.message, "NOIR Captions"); return; }
+            app.beginUndoGroup(undoName);
+            try {
+                var res = N.restyleLayers(sel.comp, sel.layers, {
+                    style: look ? S.style[which] : null, accent: which === "accent",
+                    safeWidth: S.style.layout.safeWidth, anim: anim ? S.style.anim : null
+                });
+                setStatus("Изменено слоёв: " + res.changed + (res.warnings.length ? "\n" + res.warnings.join("\n") : ""));
+            } catch (e2) {
+                alert("Ошибка: " + e2.toString() + (e2.line ? " (строка " + e2.line + ")" : ""), "NOIR Captions");
+            } finally {
+                app.endUndoGroup();
+            }
+        }
+        btnMakeAccent.onClick = function () { applyToLayers("accent", true, false, "NOIR Captions: сделать акцентом"); };
+        btnMakeBase.onClick = function () { applyToLayers("base", true, false, "NOIR Captions: сделать обычным"); };
+        btnApply.onClick = function () {
+            if (!cbApplyLook.value && !cbApplyAnim.value) { alert("Отметьте, что применять: вид и/или анимацию.", "NOIR Captions"); return; }
+            applyToLayers(rbApplyAccent.value ? "accent" : "base", cbApplyLook.value, cbApplyAnim.value,
+                "NOIR Captions: применить к выделенным");
+        };
 
         btnGenerate.onClick = function () {
             readUI();

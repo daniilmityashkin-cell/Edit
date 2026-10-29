@@ -143,7 +143,7 @@ const GOPTS = { maxWords: 1, maxChars: 99, pauseBreak: 0.35, punctBreak: true, s
   const prep = (words, layout) => N.timeGroups(N.groupWords(words, layout), layout.holdGap, 0.08).map(g => {
     g.compStart = g.start; g.compOut = g.outTime; g.words.forEach(w => (w.compStart = w.start)); return g;
   });
-  const subs = (c) => c._l.filter(l => l.comment === N.LAYER_TAG);
+  const subs = (c) => c._l.filter(l => N.isGenerated(l));
   const allKeysInside = (c) => { for (const l of subs(c)) for (const p of Object.values(l.transform).concat((l.effects || []).flatMap(e => Object.values(e.props)))) for (let i = 0; i < p.keys.length; i++) {
     assert.ok(p.keys[i].t >= l.inPoint - 1e-9 && p.keys[i].t <= l.outPoint + 1e-9, "key outside layer " + l.name);
     if (i) assert.ok(p.keys[i].t > p.keys[i - 1].t, "keys not increasing");
@@ -240,6 +240,66 @@ const GOPTS = { maxWords: 1, maxChars: 99, pauseBreak: 0.35, punctBreak: true, s
     assert.strictEqual(r.created, 3); assert.ok(subs(c).every(l => l.outPoint <= 2.5));
   });
 
+  console.log("правка выделенных слоёв");
+  const gen = (c, id) => { const st = styleOf(id || "reels-glow"); st.layout.autoAccent = false; return N.generate(c, prep(N.flattenWords(sample()), st.layout), st, st.anim, true); };
+  await test("слой помнит базовую позицию; теги работают с isGenerated", () => {
+    const c = mkComp(); gen(c); const l = subs(c)[0];
+    assert.ok(/^noir-captions:generated\|[\d.]+\|[\d.]+$/.test(l.comment));
+    const b = N.baseOf(l); assert.ok(Math.abs(b[0] - l.transform.Position.value[0]) < 1e-6 || l.transform.Position.keys.length);
+  });
+  await test("сделать акцентом: стиль, имя, метка и свечение — только у выделенного слоя", () => {
+    const c = mkComp(), st = styleOf("reels-glow"); gen(c);
+    const [a, b] = subs(c); a.selected = true;
+    const posBefore = JSON.stringify(a.transform.Position.value);
+    const r = N.restyleLayers(c, [a], { style: st.accent, accent: true, safeWidth: 0.88, anim: null });
+    assert.strictEqual(r.changed, 1);
+    assert.deepStrictEqual(a.src.value.fillColor, st.accent.color);
+    assert.ok(a.effects.some(e => e.name === "NOIR Glow")); assert.strictEqual(a.label, 11);
+    assert.ok(!(b.effects || []).some(e => e.name === "NOIR Glow"));
+    assert.strictEqual(JSON.stringify(a.transform.Position.value), posBefore, "позиция изменилась");
+  });
+  await test("сделать обычным: свечение снимается, акцентный → обычный стиль", () => {
+    const c = mkComp(), st = styleOf("reels-glow"); gen(c); const a = subs(c)[0];
+    N.restyleLayers(c, [a], { style: st.accent, accent: true, safeWidth: 0.88, anim: null });
+    N.restyleLayers(c, [a], { style: st.base, accent: false, safeWidth: 0.88, anim: null });
+    assert.ok(!a.effects.some(e => e.name === "NOIR Glow")); assert.strictEqual(a.label, 9);
+    assert.deepStrictEqual(a.src.value.fillColor, st.base.color);
+  });
+  await test("анимация к одному слою: ключи заменены, внутри слоя, позиция = база", () => {
+    const c = mkComp(), st = styleOf("reels-glow"); gen(c);
+    const a = subs(c)[0], b = subs(c)[1];
+    const bKeys = JSON.stringify(b.transform.Opacity.keys), base = N.baseOf(a);
+    const anim = { animIn: "blurRise", inDur: 0.3, animOut: "blur", outDur: 0.2, distance: 60, blur: 20, easeInfluence: 80 };
+    N.restyleLayers(c, [a], { style: null, accent: false, safeWidth: 0.88, anim });
+    assert.ok(a.effects.some(e => e.matchName === "ADBE Gaussian Blur 2"));
+    assert.ok(a.transform.Position.keys.length >= 2);
+    for (const p of Object.values(a.transform)) for (const k of p.keys) assert.ok(k.t >= a.inPoint - 1e-9 && k.t <= a.outPoint + 1e-9);
+    const ends = a.transform.Position.keys.map(k => k.v);
+    assert.ok(ends.some(v => Math.abs(v[0] - base[0]) < 1e-6 && Math.abs(v[1] - base[1]) < 1e-6), "нет ключа с базовой позицией");
+    assert.strictEqual(JSON.stringify(b.transform.Opacity.keys), bKeys, "соседний слой изменился");
+  });
+  await test("повторное применение анимации не копит ключи и эффекты; «Нет» убирает всё", () => {
+    const c = mkComp(); gen(c); const a = subs(c)[0];
+    const anim = { animIn: "pop", inDur: 0.2, animOut: "fade", outDur: 0.2, distance: 40, blur: 0, easeInfluence: 80 };
+    N.restyleLayers(c, [a], { style: null, safeWidth: 0.88, anim }); const n1 = a.transform.Scale.keys.length;
+    N.restyleLayers(c, [a], { style: null, safeWidth: 0.88, anim }); assert.strictEqual(a.transform.Scale.keys.length, n1);
+    N.restyleLayers(c, [a], { style: null, safeWidth: 0.88, anim: Object.assign({}, anim, { animIn: "none", animOut: "none" }) });
+    assert.ok(Object.values(a.transform).every(p => p.keys.length === 0));
+    assert.deepStrictEqual(a.transform.Position.value, N.baseOf(a));
+    assert.strictEqual((a.effects || []).filter(e => e.name === "NOIR Blur").length, 0);
+  });
+  await test("все слои сразу + пользовательский слой без тега", () => {
+    const c = mkComp(), st = styleOf("kinetic-stack"); gen(c, "kinetic-stack");
+    const user = new mock.TextLayer(c, "мой текст", c._fonts); user.inPoint = 1; user.outPoint = 3; c._l.push(user);
+    user.transform.Position.value = [300, 700, 0];
+    const all2 = c._l.slice();
+    const r = N.restyleLayers(c, all2, { style: st.accent, accent: true, safeWidth: 0.88, anim: st.anim });
+    assert.strictEqual(r.changed, all2.length);
+    assert.ok(all2.every(l => JSON.stringify(l.src.value.fillColor) === JSON.stringify(st.accent.color)));
+    assert.ok(!N.isGenerated(user), "пользовательский слой получил тег");
+    assert.deepStrictEqual(N.baseOf(user).slice(0, 2), [300, 700]);
+  });
+
   console.log("panel (мок ScriptUI)");
   let panel;
   const findDD = (p, txt) => p.find(e => e.type === "dropdownlist" && e.items.some(i => i.text.indexOf(txt) >= 0));
@@ -254,9 +314,9 @@ const GOPTS = { maxWords: 1, maxChars: 99, pauseBreak: 0.35, punctBreak: true, s
     const tabBtn = (t) => panel.find(e => e.type === "button" && e.text === t);
     tabBtn("Стиль").onClick(); tabBtn("Раскладка").onClick();
     const stack = panel.find(e => e.type === "group" && e.orientation === "stack");
-    assert.deepStrictEqual(stack.children.map(c => c.visible), [false, false, false, false, true, false]);
+    assert.deepStrictEqual(stack.children.map(c => c.visible), [false, false, false, false, true, false, false]);
     tabBtn("Речь").onClick();
-    assert.deepStrictEqual(stack.children.map(c => c.visible), [true, false, false, false, false, false]);
+    assert.deepStrictEqual(stack.children.map(c => c.visible), [true, false, false, false, false, false, false]);
     assert.strictEqual(typeof panel.button("Создать субтитры").onDraw, "function");
   });
   await test("без theme.jsx панель строится на обычных вкладках", () => {
@@ -283,6 +343,24 @@ const GOPTS = { maxWords: 1, maxChars: 99, pauseBreak: 0.35, punctBreak: true, s
     global.prompt = () => "Мой тест";
     panel.button("Сохранить как пресет…").onClick();
     assert.ok(findDD(panel, "★ Мой тест"));
+  });
+  await test("вкладка «Слои»: кнопки работают с выделенными слоями; без выделения — понятная ошибка", () => {
+    const c = mkComp(); const st = styleOf("reels-glow"); gen(c);
+    global.AVLayer = mock.AVLayer;
+    env.log.alerts.length = 0;
+    panel.button("★ Сделать акцентом").onClick();
+    assert.ok(/Выделите/.test(env.log.alerts[0]), "нет ошибки без выделения");
+    const ls = subs(c); ls[0].selected = true; ls[1].selected = true; env.log.alerts.length = 0;
+    const thirdBefore = JSON.stringify(ls[2].src.value.fillColor);
+    panel.button("★ Сделать акцентом").onClick();
+    assert.strictEqual(env.log.alerts.length, 0, env.log.alerts.join("|"));
+    const S = N.parseJSON(env.settings["NOIR Captions/settings.v2"]);
+    assert.deepStrictEqual(ls[0].src.value.fillColor, S.style.accent.color);
+    assert.strictEqual(JSON.stringify(ls[2].src.value.fillColor), thirdBefore, "невыделенный слой изменился");
+    ls.forEach(l => (l.selected = true));
+    panel.button("Применить к выделенным").onClick();
+    assert.strictEqual(env.log.alerts.length, 0, env.log.alerts.join("|"));
+    ls.forEach(l => (l.selected = false));
   });
   await test("Распознать без выделенного слоя -> понятная ошибка", () => {
     mkComp(); env.log.alerts.length = 0;

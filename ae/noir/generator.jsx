@@ -205,11 +205,13 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
 
     function displayText(text, st) { return st.caps ? text.toUpperCase() : text; }
 
+    N.isGenerated = function (layer) { return String(layer.comment || "").indexOf(N.LAYER_TAG) === 0; };
+
     N.removeGenerated = function (comp) {
         var n = 0;
         for (var i = comp.numLayers; i >= 1; i--) {
             var l = comp.layer(i);
-            if (l.comment === N.LAYER_TAG) {
+            if (N.isGenerated(l)) {
                 if (l.locked) l.locked = false;
                 l.remove();
                 n++;
@@ -316,6 +318,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
                 L.property("Transform").property("Anchor Point")
                     .setValue([r.left + r.width / 2, r.top + r.height / 2]);
                 var pos = [x + r.width / 2, baseline + r.top + r.height / 2];
+                L.comment = N.LAYER_TAG + "|" + pos[0] + "|" + pos[1];
                 x += r.width + ln.space;
 
                 var tIn = Math.max(0, Math.min(w.start, tOut - ctx.minDur));
@@ -337,6 +340,79 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             y += ln.ascent + ln.descent + gap;
         }
     }
+
+    // ---------- правка готовых слоёв (выделенных пользователем) ----------
+
+    // Базовая позиция слоя (куда он «встаёт» после анимации входа).
+    N.baseOf = function (layer) {
+        var c = String(layer.comment || "");
+        if (c.indexOf(N.LAYER_TAG + "|") === 0) {
+            var p = c.split("|"), x = parseFloat(p[1]), y = parseFloat(p[2]);
+            if (!isNaN(x) && !isNaN(y)) return [x, y];
+        }
+        var pos = layer.property("Transform").property("Position");
+        var v = pos.numKeys > 0 ? pos.valueAtTime(layer.inPoint + (layer.outPoint - layer.inPoint) / 2, false) : pos.value;
+        return [v[0], v[1]];
+    };
+
+    function clearEffect(layer, name) {
+        var fx = layer.property("ADBE Effect Parade");
+        if (!fx) return;
+        for (var i = fx.numProperties; i >= 1; i--) if (fx.property(i).name === name) fx.property(i).remove();
+    }
+
+    function clearKeys(prop) { while (prop.numKeys > 0) prop.removeKey(1); }
+
+    // spec: { style (вид) | null, accent: bool, safeWidth, anim | null }
+    // ctx: { warnings, fontCache, scale }
+    N.restyleLayer = function (layer, comp, spec, ctx) {
+        var tr = layer.property("Transform");
+        var base = N.baseOf(layer);
+
+        if (spec.style) {
+            var st = spec.style, prop = layer.property("Source Text");
+            var text = st.caps ? prop.value.text.toUpperCase() : prop.value.text; // регистр назад не вернуть
+            applyTextStyle(layer, text, st, st.size * ctx.scale, ctx);
+            var t = layer.inPoint, rect = layer.sourceRectAtTime(t, false), safeW = comp.width * spec.safeWidth;
+            if (rect.width > safeW && rect.width > 0) {
+                var d = prop.value;
+                d.fontSize = Math.max(6, Math.floor(d.fontSize * safeW / rect.width));
+                prop.setValue(d);
+                rect = layer.sourceRectAtTime(t, false);
+            }
+            tr.property("Anchor Point").setValue([rect.left + rect.width / 2, rect.top + rect.height / 2]);
+            clearEffect(layer, "NOIR Shadow");
+            clearEffect(layer, "NOIR Glow");
+            if (st.shadow) addShadow(layer, st.shadow, "NOIR Shadow", ctx.scale);
+            if (st.glow) addShadow(layer, { color: st.glow.color || st.color, opacity: st.glow.opacity,
+                distance: 0, softness: st.glow.softness }, "NOIR Glow", ctx.scale);
+            if (N.isGenerated(layer)) {
+                layer.name = "NOIR · " + text;
+                layer.label = spec.accent ? 11 : 9;
+            }
+        }
+
+        if (spec.anim) {
+            var pos = tr.property("Position"), sc = tr.property("Scale"), op = tr.property("Opacity");
+            clearKeys(pos); clearKeys(sc); clearKeys(op);
+            pos.setValue(base);
+            sc.setValue([100, 100, 100]);
+            op.setValue(100);
+            clearEffect(layer, "NOIR Blur");
+            var a = {};
+            for (var k in spec.anim) a[k] = spec.anim[k];
+            a.distance = spec.anim.distance * ctx.scale;
+            a.blur = spec.anim.blur * ctx.scale;
+            var blurProp = N.animUsesBlur(a) ? addBlur(layer) : null;
+            N.applyAnimation(layer, base, layer.inPoint, layer.outPoint, a, blurProp);
+        }
+    };
+
+    N.restyleLayers = function (comp, layers, spec) {
+        var ctx = { warnings: [], fontCache: {}, scale: comp.width / N.REF_WIDTH };
+        for (var i = 0; i < layers.length; i++) N.restyleLayer(layers[i], comp, spec, ctx);
+        return { changed: layers.length, warnings: ctx.warnings };
+    };
 
     // groups: из N.groupWords + N.timeGroups; у групп и слов есть compStart/compOut.
     // style: { layout, base, accent }, anim: { animIn, animOut, inDur, outDur, distance, blur, easeInfluence }
