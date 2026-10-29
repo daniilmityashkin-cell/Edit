@@ -15,6 +15,8 @@ class Prop {
   constructor(type, value) { this.propertyValueType = type; this.value = value; this.keys = []; }
   get numKeys() { return this.keys.length; }
   setValue(v) { this.value = v; }
+  keyValue(i) { if (i < 1 || i > this.keys.length) throw new Error("keyValue out of range"); return this.keys[i - 1].v; }
+  setValueAtKey(i, v) { if (i < 1 || i > this.keys.length) throw new Error("setValueAtKey out of range"); this.keys[i - 1].v = v; }
   removeKey(i) { if (i < 1 || i > this.keys.length) throw new Error("removeKey out of range"); this.keys.splice(i - 1, 1); }
   valueAtTime(t) { if (!this.keys.length) return this.value; let v = this.keys[0].v; for (const k of this.keys) if (k.t <= t) v = k.v; return v; }
   setValueAtTime(t, v) {
@@ -54,12 +56,13 @@ class Effect {
 class Layer {
   constructor(comp, name) {
     this.comp = comp; this.name = name; this.comment = ""; this.locked = false; this.label = 0;
-    this.startTime = 0; this._in = 0; this._out = comp.duration; this.stretch = 100;
+    this.blendingMode = 1; this.startTime = 0; this._in = 0; this._out = comp.duration; this.stretch = 100;
     this.timeRemapEnabled = false; this.hasAudio = false;
     this.transform = {
       "Position": new Prop(PropertyValueType.ThreeD_SPATIAL, [0, 0, 0]),
       "Scale": new Prop(PropertyValueType.ThreeD, [100, 100, 100]),
       "Opacity": new Prop(PropertyValueType.OneD, 100),
+      "Rotation": new Prop(PropertyValueType.OneD, 0),
       "Anchor Point": new Prop(PropertyValueType.ThreeD_SPATIAL, [0, 0, 0]),
     };
   }
@@ -159,7 +162,7 @@ class UI {
     if (this.type === "dropdownlist" && type === "item") { const it = { text: bounds, index: this.items.length }; this.items.push(it); return it; }
     const el = new UI(type, this, bounds, text);
     if (type === "edittext") el.text = text || "";
-    if (type === "statictext" || type === "button") el.text = text;
+    if (type === "statictext" || type === "button" || type === "radiobutton" || type === "checkbox") el.text = text;
     this.children.push(el); return el;
   }
   removeAll() { this.items = []; this._sel = null; }
@@ -178,6 +181,7 @@ function install(opts = {}) {
   const log = { alerts: [] };
   const g = global;
   Object.assign(g, {
+    BlendingMode: { NORMAL: 1, DIFFERENCE: 2, EXCLUSION: 3, OVERLAY: 4, SOFT_LIGHT: 5, SCREEN: 6, ADD: 7, MULTIPLY: 8 },
     PropertyValueType, ParagraphJustification, KeyframeEase, CompItem, AVLayer, TextLayer, FootageItem,
     File, Folder, Panel, Window,
     alert: (m) => { log.alerts.push(String(m)); if (opts.verbose) console.log("ALERT:", m); },

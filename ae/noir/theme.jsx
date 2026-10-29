@@ -85,6 +85,22 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         } catch (e) {}
     };
 
+    // Кнопка-«плитка» сетки вылетов: активная подсвечивается акцентом (btn._on).
+    T.chip = function (btn) {
+        try {
+            btn.onDraw = function () {
+                var g = this.graphics, w = this.size.width, h = this.size.height;
+                var on = !!this._on, hot = !!this._hot;
+                fillRound(g, 0, 0, w, h, 5, brush(g, on ? C.accent : (hot ? C.lineHi : C.line)));
+                fillRound(g, 1, 1, w - 2, h - 2, 4, brush(g, on ? [0.17, 0.09, 0.06] : (hot ? C.cardHi : C.card)));
+                drawLabel(this, g, w, h, on ? C.accentHi : C.text, on);
+            };
+            btn.addEventListener("mouseover", function () { this._hot = true; redraw(this); });
+            btn.addEventListener("mouseout", function () { this._hot = false; redraw(this); });
+        } catch (e) {}
+    };
+    T.setChip = function (btn, on) { btn._on = !!on; redraw(btn); };
+
     // Замена tabbedpanel: полоса текстовых вкладок + стопка групп.
     // Возвращает объект с add("tab", undefined, label), как у tabbedpanel.
     T.makeTabs = function (parent) {

@@ -12,34 +12,66 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
     N.LAYER_TAG = "noir-captions:generated";
     N.REF_WIDTH = 1080; // размеры в стилях заданы для кадра шириной 1080
 
-    // Анимации описаны состоянием «вне кадра»: op — прозрачность,
-    // sc — масштаб %, dx/dy — смещение в долях параметра distance,
-    // blur — размытие в долях параметра blur, over — перелёт масштаба.
+    // Анимации описаны состоянием «вне кадра»: op — прозрачность (0 = невидим),
+    // sc — масштаб %, dx/dy — смещение в долях параметра distance, rot — поворот в градусах,
+    // blur — размытие в долях параметра blur, over — перелёт масштаба. short — подпись на кнопке.
     N.ANIM_IN = [
-        { id: "none", label: "Нет — жёсткая смена" },
-        { id: "fade", label: "Fade", op: 0 },
-        { id: "blur", label: "Blur + fade", op: 0, blur: 1 },
-        { id: "blurRise", label: "Снизу + blur", op: 0, dy: 1, blur: 1 },
-        { id: "pop", label: "Pop (scale + overshoot)", op: 0, sc: 70, over: 108 },
-        { id: "punch", label: "Punch (удар 125 → 100)", sc: 125 },
-        { id: "rise", label: "Снизу вверх", op: 0, dy: 1 },
-        { id: "drop", label: "Сверху вниз", op: 0, dy: -1 },
-        { id: "left", label: "Слева", op: 0, dx: -1 },
-        { id: "right", label: "Справа", op: 0, dx: 1 },
-        { id: "zoom", label: "Zoom из крупного", op: 0, sc: 150 }
+        { id: "none", label: "Нет — жёсткая смена", short: "Нет" },
+        { id: "fade", label: "Fade", short: "Fade", op: 0 },
+        { id: "blur", label: "Blur + fade", short: "Blur", op: 0, blur: 1 },
+        { id: "blurRise", label: "Снизу + blur", short: "Blur ↑", op: 0, dy: 1, blur: 1 },
+        { id: "rise", label: "Снизу вверх", short: "Вверх ↑", op: 0, dy: 1 },
+        { id: "drop", label: "Сверху вниз", short: "Вниз ↓", op: 0, dy: -1 },
+        { id: "left", label: "Слева", short: "Слева →", op: 0, dx: -1 },
+        { id: "right", label: "Справа", short: "Справа ←", op: 0, dx: 1 },
+        { id: "pop", label: "Pop (scale + overshoot)", short: "Pop", op: 0, sc: 70, over: 108 },
+        { id: "punch", label: "Punch (удар 125 → 100)", short: "Punch", sc: 125 },
+        { id: "zoom", label: "Zoom из крупного", short: "Zoom", op: 0, sc: 150 },
+        { id: "slam", label: "Slam (падает с размытием)", short: "Slam", op: 0, sc: 260, blur: 1 },
+        { id: "whipL", label: "Whip слева (быстрый вылет)", short: "Whip →", op: 0, dx: -4, blur: 1.4 },
+        { id: "whipR", label: "Whip справа (быстрый вылет)", short: "Whip ←", op: 0, dx: 4, blur: 1.4 },
+        { id: "rotate", label: "Поворот + scale", short: "Rotate", op: 0, rot: -14, sc: 85 },
+        { id: "grow", label: "Grow (вырастает с overshoot)", short: "Grow", op: 0, sc: 30, over: 108 },
+        { id: "blurPop", label: "Blur Pop", short: "Blur Pop", op: 0, sc: 75, over: 104, blur: 1 }
     ];
     N.ANIM_OUT = [
-        { id: "none", label: "Нет — жёсткая смена" },
-        { id: "fade", label: "Fade", op: 0 },
-        { id: "blur", label: "Blur + fade", op: 0, blur: 1 },
-        { id: "blurUp", label: "Вверх + blur", op: 0, dy: -1, blur: 1 },
-        { id: "shrink", label: "Уменьшение", op: 0, sc: 70 },
-        { id: "up", label: "Уход вверх", op: 0, dy: -1 },
-        { id: "down", label: "Уход вниз", op: 0, dy: 1 },
-        { id: "left", label: "Уход влево", op: 0, dx: -1 },
-        { id: "right", label: "Уход вправо", op: 0, dx: 1 },
-        { id: "zoom", label: "Zoom в камеру", op: 0, sc: 150 }
+        { id: "none", label: "Нет — жёсткая смена", short: "Нет" },
+        { id: "fade", label: "Fade", short: "Fade", op: 0 },
+        { id: "blur", label: "Blur + fade", short: "Blur", op: 0, blur: 1 },
+        { id: "blurUp", label: "Вверх + blur", short: "Blur ↑", op: 0, dy: -1, blur: 1 },
+        { id: "shrink", label: "Уменьшение", short: "Shrink", op: 0, sc: 70 },
+        { id: "up", label: "Уход вверх", short: "Вверх ↑", op: 0, dy: -1 },
+        { id: "down", label: "Уход вниз", short: "Вниз ↓", op: 0, dy: 1 },
+        { id: "left", label: "Уход влево", short: "← Влево", op: 0, dx: -1 },
+        { id: "right", label: "Уход вправо", short: "Вправо →", op: 0, dx: 1 },
+        { id: "zoom", label: "Zoom в камеру", short: "Zoom", op: 0, sc: 150 },
+        { id: "whipL", label: "Whip влево", short: "← Whip", op: 0, dx: -4, blur: 1.4 },
+        { id: "whipR", label: "Whip вправо", short: "Whip →", op: 0, dx: 4, blur: 1.4 },
+        { id: "rotate", label: "Поворот + scale", short: "Rotate", op: 0, rot: 14, sc: 85 },
+        { id: "slamOut", label: "Slam (схлопывается с размытием)", short: "Slam", op: 0, sc: 40, blur: 1 }
     ];
+
+    // Режимы наложения слоя. «Инверсия» = Difference: белый текст инвертирует кадр под буквами.
+    N.BLEND_MODES = [
+        { id: "normal", label: "Обычный", key: "NORMAL" },
+        { id: "difference", label: "Инверсия (Difference)", key: "DIFFERENCE" },
+        { id: "exclusion", label: "Exclusion (мягкая инверсия)", key: "EXCLUSION" },
+        { id: "overlay", label: "Overlay", key: "OVERLAY" },
+        { id: "softLight", label: "Soft Light", key: "SOFT_LIGHT" },
+        { id: "screen", label: "Screen", key: "SCREEN" },
+        { id: "add", label: "Add", key: "ADD" },
+        { id: "multiply", label: "Multiply", key: "MULTIPLY" }
+    ];
+
+    function applyBlend(layer, st) {
+        var id = st.blend || "normal";
+        for (var i = 0; i < N.BLEND_MODES.length; i++) {
+            if (N.BLEND_MODES[i].id === id) {
+                try { layer.blendingMode = BlendingMode[N.BLEND_MODES[i].key]; } catch (e) {}
+            }
+        }
+    }
+    function styleOpacity(st) { return st.opacity === undefined ? 100 : st.opacity; }
 
     N.findAnim = function (list, id) {
         for (var i = 0; i < list.length; i++) if (list[i].id === id) return list[i];
@@ -70,8 +102,9 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
 
     function stateValues(anim, base, opts) {
         return {
-            op: anim.op === undefined ? 100 : anim.op,
+            op: anim.op === undefined ? opts.opacity : anim.op * opts.opacity / 100,
             sc: anim.sc === undefined ? 100 : anim.sc,
+            rot: anim.rot || 0,
             pos: [base[0] + (anim.dx || 0) * opts.distance, base[1] + (anim.dy || 0) * opts.distance],
             blur: (anim.blur || 0) * (opts.blur || 0)
         };
@@ -88,7 +121,10 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         var animOut = N.findAnim(N.ANIM_OUT, opts.animOut);
         var tr = layer.property("Transform");
         var pos = tr.property("Position"), sc = tr.property("Scale"), op = tr.property("Opacity");
+        var rot = tr.property("Rotation");
+        opts = N.withDefaults(opts);
         pos.setValue(base);
+        op.setValue(opts.opacity);
 
         var inDur = animIn.id === "none" ? 0 : opts.inDur;
         var outDur = animOut.id === "none" ? 0 : opts.outDur;
@@ -120,11 +156,20 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             easeAll(prop, opts.easeInfluence);
         }
 
-        keys(op, from.op, 100, to.op, null);
+        keys(op, from.op, opts.opacity, to.op, null);
         keys(sc, [from.sc, from.sc, 100], [100, 100, 100], [to.sc, to.sc, 100],
             animIn.over ? [animIn.over, animIn.over, 100] : null);
         keys(pos, from.pos, base, to.pos, null);
         keys(blurProp, from.blur, 0, to.blur, null);
+        keys(rot, from.rot, 0, to.rot, null);
+    };
+
+    // opacity — прозрачность слоя в покое (из стиля), по умолчанию 100.
+    N.withDefaults = function (opts) {
+        var o = {};
+        for (var k in opts) o[k] = opts[k];
+        if (o.opacity === undefined) o.opacity = 100;
+        return o;
     };
 
     // ---------- эффекты (по matchName — не зависят от языка AE) ----------
@@ -268,6 +313,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
                 layer.comment = N.LAYER_TAG;
                 layer.label = it.accent ? 11 : 9;
                 applyTextStyle(layer, it.display, st, it.size, ctx);
+                applyBlend(layer, st);
                 it.layer = layer;
                 it.rect = layer.sourceRectAtTime(Math.max(0, it.start), false);
             }
@@ -334,6 +380,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
                 for (var k in anim) a[k] = anim[k];
                 a.distance = anim.distance * ctx.scale;
                 a.blur = anim.blur * ctx.scale;
+                a.opacity = styleOpacity(w.st);
                 N.applyAnimation(L, pos, tIn, tOut, a, blurProp);
                 ctx.created++;
             }
@@ -396,6 +443,17 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         prop.setValue(doc);
         if (geometry) fitAndAnchor(layer, comp, safeWidth);
         if (parts.fx) applyEffects(layer, st, ctx);
+        if (parts.blend) { applyBlend(layer, st); setStaticOpacity(layer, styleOpacity(st)); }
+    }
+
+    // Прозрачность слоя без анимации — просто значение; с ключами — масштабируем их.
+    function setStaticOpacity(layer, value) {
+        var op = layer.property("Transform").property("Opacity");
+        if (op.numKeys === 0) { op.setValue(value); return; }
+        var top = 0, k;
+        for (k = 1; k <= op.numKeys; k++) if (op.keyValue(k) > top) top = op.keyValue(k);
+        if (top <= 0) return;
+        for (k = 1; k <= op.numKeys; k++) op.setValueAtKey(k, op.keyValue(k) * value / top);
     }
 
     // Подгоняет ширину под безопасную зону и ставит якорь в центр текста.
@@ -435,6 +493,8 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             applyTextStyle(layer, text, st, st.size * ctx.scale, ctx);
             fitAndAnchor(layer, comp, spec.safeWidth);
             applyEffects(layer, st, ctx);
+            applyBlend(layer, st);
+            setStaticOpacity(layer, styleOpacity(st));
             if (N.isGenerated(layer)) {
                 layer.name = "NOIR · " + text;
                 layer.label = spec.accent ? 11 : 9;
@@ -443,18 +503,40 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
 
         if (spec.anim) {
             var pos = tr.property("Position"), sc = tr.property("Scale"), op = tr.property("Opacity");
-            clearKeys(pos); clearKeys(sc); clearKeys(op);
+            var rot = tr.property("Rotation");
+            var restOpacity = 0, ki;                      // прозрачность слоя «в покое» = максимум по ключам
+            if (op.numKeys === 0) restOpacity = op.value;
+            else for (ki = 1; ki <= op.numKeys; ki++) if (op.keyValue(ki) > restOpacity) restOpacity = op.keyValue(ki);
+            if (restOpacity <= 0) restOpacity = 100;
+            clearKeys(pos); clearKeys(sc); clearKeys(op); clearKeys(rot);
             pos.setValue(base);
             sc.setValue([100, 100, 100]);
-            op.setValue(100);
+            op.setValue(restOpacity);
+            rot.setValue(0);
             clearEffect(layer, "NOIR Blur");
             var a = {};
             for (var k in spec.anim) a[k] = spec.anim[k];
             a.distance = spec.anim.distance * ctx.scale;
             a.blur = spec.anim.blur * ctx.scale;
+            a.opacity = restOpacity;
             var blurProp = N.animUsesBlur(a) ? addBlur(layer) : null;
             N.applyAnimation(layer, base, layer.inPoint, layer.outPoint, a, blurProp);
         }
+    };
+
+    // Инверсия одним кликом: если у всех слоёв уже Difference — вернуть Normal; иначе белый цвет + Difference.
+    N.toggleInvert = function (layers) {
+        var allOn = true, i;
+        for (i = 0; i < layers.length; i++) if (layers[i].blendingMode !== BlendingMode.DIFFERENCE) allOn = false;
+        for (i = 0; i < layers.length; i++) {
+            var l = layers[i];
+            if (allOn) { l.blendingMode = BlendingMode.NORMAL; continue; }
+            var prop = l.property("Source Text"), d = prop.value;
+            d.fillColor = [1, 1, 1]; d.applyFill = true;
+            prop.setValue(d);
+            l.blendingMode = BlendingMode.DIFFERENCE;
+        }
+        return !allOn;
     };
 
     N.restyleLayers = function (comp, layers, spec) {

@@ -7,7 +7,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
 (function (N) {
     var SECTION = "NOIR Captions";
     var SETTINGS_KEY = "settings.v2";
-    var VERSION = "0.4.1";
+    var VERSION = "0.5.0";
 
     function clone(o) { return N.parseJSON(N.stringify(o)); }
 
@@ -283,6 +283,12 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         var cbGlow = rFx.add("checkbox", undefined, "Свечение");
         rFx.add("statictext", undefined, "размер");
         var etGlow = field(rFx, 30, 4);
+        var rBlend = row(pnlView, "Режим");
+        var ddBlend = dropdown(rBlend, N.BLEND_MODES, "normal");
+        ddBlend.helpTip = "Инверсия: белый текст + режим Difference инвертирует кадр под буквами";
+        rBlend.add("statictext", undefined, "прозр. %");
+        var etOpacity = field(rBlend, 100, 4);
+        etOpacity.helpTip = "Прозрачность текста в покое, % (анимация входа и выхода идёт от 0 до этого значения)";
 
         // ================= Раскладка =================
         var REVEALS = [{ id: "word", label: "Слова появляются по очереди" },
@@ -312,14 +318,50 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         var cbAutoAccent = rAcc.add("checkbox", undefined, "Авто-акценты");
 
         // ================= Анимация =================
-        var rIn = row(tAnim, "Появление");
-        var ddIn = dropdown(rIn, N.ANIM_IN, "none");
-        var etInDur = field(rIn, 0.2, 4);
-        etInDur.helpTip = "Длительность появления, с";
-        var rOut = row(tAnim, "Исчезновение");
-        var ddOut = dropdown(rOut, N.ANIM_OUT, "none");
-        var etOutDur = field(rOut, 0.15, 4);
-        etOutDur.helpTip = "Длительность исчезновения, с";
+        // Сетка вылетов: клик по кнопке — выбрать анимацию; если выделены текстовые слои — она сразу применится к ним.
+        var rMode = row(tAnim, "", 0);
+        var rbAnimIn = rMode.add("radiobutton", undefined, "Вход");
+        rbAnimIn.value = true;
+        var rbAnimOut = rMode.add("radiobutton", undefined, "Выход");
+        rMode.add("statictext", undefined, "длит., с:");
+        var etInDur = field(rMode, 0.2, 4);
+        etInDur.helpTip = "Длительность входа, с";
+        var etOutDur = field(rMode, 0.15, 4);
+        etOutDur.helpTip = "Длительность выхода, с";
+        var galStack = tAnim.add("group");
+        galStack.orientation = "stack";
+        galStack.alignChildren = ["left", "top"];
+        var galIn = galStack.add("group");
+        galIn.orientation = "column";
+        galIn.alignChildren = ["left", "top"];
+        galIn.spacing = 3;
+        var galOut = galStack.add("group");
+        galOut.orientation = "column";
+        galOut.alignChildren = ["left", "top"];
+        galOut.spacing = 3;
+        galOut.visible = false;
+        var chipsIn = [], chipsOut = [];
+        function buildGallery(parent, list, chips, which) {
+            var rowG = null;
+            for (var i = 0; i < list.length; i++) {
+                if (i % 5 === 0) {
+                    rowG = parent.add("group");
+                    rowG.orientation = "row";
+                    rowG.spacing = 3;
+                }
+                var b = rowG.add("button", undefined, list[i].short);
+                b.preferredSize = [72, 24];
+                b._id = list[i].id;
+                b._which = which;
+                b.helpTip = list[i].label;
+                b.onClick = function () { pickAnim(this._which, this._id); };
+                chips.push(b);
+            }
+        }
+        buildGallery(galIn, N.ANIM_IN, chipsIn, "in");
+        buildGallery(galOut, N.ANIM_OUT, chipsOut, "out");
+        var stAnimCur = tAnim.add("statictext", undefined, "");
+        stAnimCur.alignment = ["fill", "top"];
         var rDist = row(tAnim, "Сдвиг, px");
         var etDist = field(rDist, 40, 4);
         rDist.add("statictext", undefined, "Blur, px");
@@ -327,12 +369,15 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         rDist.add("statictext", undefined, "Плавность, %");
         var etEase = field(rDist, 80, 4);
         rDist.helpTip = "Размеры заданы для кадра шириной 1080 и масштабируются под композицию. У коротких слов вход и выход автоматически укорачиваются";
+        var btnAnimApply = tAnim.add("button", undefined, "Применить анимацию к выделенным слоям");
 
         // ================= Слои: правка выделенных слоёв =================
         tLayers.add("statictext", undefined, "Выделите слои в таймлайне. Выделено несколько — изменятся все.");
         var rQuick = tLayers.add("group");
         var btnMakeAccent = rQuick.add("button", undefined, "★ Сделать акцентом");
         var btnMakeBase = rQuick.add("button", undefined, "Сделать обычным");
+        var btnInvert = rQuick.add("button", undefined, "◐ Инверсия");
+        btnInvert.helpTip = "Белый текст в режиме Difference: инвертирует кадр под буквами. Повторный клик — выключить";
         var pnlApply = tLayers.add("panel", undefined, "Применить настройки панели к выделенным");
         pnlApply.alignChildren = ["fill", "top"];
         pnlApply.margins = [6, 12, 6, 6];
@@ -350,6 +395,8 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         var rWhat2 = row(pnlApply, "", 60);
         var cbApplyStroke = rWhat2.add("checkbox", undefined, "Обводка");
         var cbApplyFx = rWhat2.add("checkbox", undefined, "Эффекты");
+        var cbApplyBlend = rWhat2.add("checkbox", undefined, "Режим");
+        cbApplyBlend.helpTip = "Режим наложения и прозрачность — с вкладки «Вид»";
         var cbApplyAnim = rWhat2.add("checkbox", undefined, "Анимация");
         cbApplyFont.helpTip = "Шрифт и начертание — с вкладки «Стиль»";
         cbApplySize.helpTip = "Размер и трекинг — с вкладки «Вид»";
@@ -367,12 +414,14 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         if (TH) {
             var primary = [btnRecognize, btnGenerate, btnMakeAccent];
             var ghost = [btnCancel, btnLoad, btnSave, btnReset, btnSavePreset, btnFromLayer, btnFontToLayers,
-                btnColor, btnStrokeColor, btnMakeBase, btnApply];
+                btnColor, btnStrokeColor, btnMakeBase, btnApply, btnInvert, btnAnimApply];
             for (var bi = 0; bi < primary.length; bi++) TH.button(primary[bi], "primary");
             for (var gi = 0; gi < ghost.length; gi++) TH.button(ghost[gi], "ghost");
             btnGenerate.preferredSize.height = 32;
             btnRecognize.preferredSize.height = 28;
             TH.text(stLine, TH.colors.muted);
+            for (var ci2 = 0; ci2 < chipsIn.length; ci2++) TH.chip(chipsIn[ci2]);
+            for (var co2 = 0; co2 < chipsOut.length; co2++) TH.chip(chipsOut[co2]);
             TH.styleTree(win);
             for (var pi = 0; pi < tabs.pages.length; pi++) TH.background(tabs.pages[pi]);
         }
@@ -477,6 +526,8 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             cbShadow.value = !!t.shadow;
             cbGlow.value = !!t.glow;
             etGlow.text = String(t.glow ? t.glow.softness : 30);
+            selectId(ddBlend, N.BLEND_MODES, t.blend || "normal");
+            etOpacity.text = String(t.opacity === undefined ? 100 : t.opacity);
         }
         function syncUI() {
             var L = S.style.layout, A = S.style.anim;
@@ -495,9 +546,8 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             etPause.text = String(L.pauseBreak);
             cbPunctBreak.value = !!L.punctBreak;
             cbStrip.value = !!L.stripPunct;
-            selectId(ddIn, N.ANIM_IN, A.animIn);
+            refreshChips();
             etInDur.text = String(A.inDur);
-            selectId(ddOut, N.ANIM_OUT, A.animOut);
             etOutDur.text = String(A.outDur);
             etDist.text = String(A.distance);
             etBlur.text = String(A.blur);
@@ -517,6 +567,8 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             t.strokeWidth = num(etStroke.text, 0, 0, 200);
             if (cbShadow.value && !t.shadow) t.shadow = clone(DEFAULT_SHADOW);
             if (!cbShadow.value) t.shadow = null;
+            t.blend = idOf(ddBlend, N.BLEND_MODES);
+            t.opacity = num(etOpacity.text, 100, 0, 100);
             var gs = num(etGlow.text, 30, 1, 500);
             if (cbGlow.value) t.glow = { color: t.glow && t.glow.color ? t.glow.color : t.color, opacity: 85, softness: gs };
             else t.glow = null;
@@ -542,8 +594,6 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             L.pauseBreak = num(etPause.text, 0.35, 0.05, 10);
             L.punctBreak = cbPunctBreak.value;
             L.stripPunct = cbStrip.value;
-            A.animIn = idOf(ddIn, N.ANIM_IN);
-            A.animOut = idOf(ddOut, N.ANIM_OUT);
             A.inDur = num(etInDur.text, 0.2, 0, 5);
             A.outDur = num(etOutDur.text, 0.15, 0, 5);
             A.distance = num(etDist.text, 40, 0, 5000);
@@ -621,11 +671,11 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             };
         }
         var editable = [etSize, etTrack, etStroke, etGlow, etMaxWords, etMaxChars, etLineChars, etPosX, etPosY,
-            etLineGap, etWordSpace, etPause, etInDur, etOutDur, etDist, etBlur, etEase];
+            etLineGap, etWordSpace, etPause, etInDur, etOutDur, etDist, etBlur, etEase, etOpacity];
         for (var ei = 0; ei < editable.length; ei++) editable[ei].onChange = function () { markCustom(); };
         var toggles = [cbCaps, cbShadow, cbGlow, cbAccentLine, cbAutoAccent, cbPunctBreak, cbStrip];
         for (var ci = 0; ci < toggles.length; ci++) toggles[ci].onClick = function () { markCustom(); };
-        ddReveal.onChange = ddIn.onChange = ddOut.onChange = function () { markCustom(); };
+        ddReveal.onChange = ddBlend.onChange = function () { markCustom(); };
 
         btnColor.onClick = function () {
             var c = $.colorPicker(rgbToHex(tgt().color));
@@ -810,12 +860,46 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
                 app.endUndoGroup();
             }
         }
+        function refreshChips() {
+            var A = S.style.anim, i;
+            for (i = 0; i < chipsIn.length; i++) { if (TH) TH.setChip(chipsIn[i], chipsIn[i]._id === A.animIn); }
+            for (i = 0; i < chipsOut.length; i++) { if (TH) TH.setChip(chipsOut[i], chipsOut[i]._id === A.animOut); }
+            stAnimCur.text = "Вход: " + N.findAnim(N.ANIM_IN, A.animIn).short + "   ·   Выход: " +
+                N.findAnim(N.ANIM_OUT, A.animOut).short;
+        }
+        function hasSelectedText() { try { selectedTextLayers(); return true; } catch (e) { return false; } }
+        // Выбор вылета: запоминаем для новых субтитров и, если выделены текстовые слои, сразу применяем к ним.
+        function pickAnim(which, id) {
+            if (which === "in") S.style.anim.animIn = id; else S.style.anim.animOut = id;
+            markCustom();
+            refreshChips();
+            saveSettings(S);
+            if (hasSelectedText()) applyToLayers("base", false, true, "NOIR Captions: вылет выделенным слоям");
+            else setStatus((which === "in" ? "Вход" : "Выход") + " выбран для новых субтитров. Выделите слои — применится к ним.");
+        }
+        rbAnimIn.onClick = function () { galIn.visible = true; galOut.visible = false; };
+        rbAnimOut.onClick = function () { galIn.visible = false; galOut.visible = true; };
+        btnAnimApply.onClick = function () { applyToLayers("base", false, true, "NOIR Captions: анимация выделенным слоям"); };
+        btnInvert.onClick = function () {
+            var sel;
+            try { sel = selectedTextLayers(); } catch (e) { alert(e.message, "NOIR Captions"); return; }
+            app.beginUndoGroup("NOIR Captions: инверсия");
+            try {
+                var on = N.toggleInvert(sel.layers);
+                setStatus((on ? "Инверсия включена" : "Инверсия выключена") + ": слоёв " + sel.layers.length);
+            } catch (e2) {
+                alert("Ошибка: " + e2.toString() + (e2.line ? " (строка " + e2.line + ")" : ""), "NOIR Captions");
+            } finally {
+                app.endUndoGroup();
+            }
+        };
+
         btnMakeAccent.onClick = function () { applyToLayers("accent", true, false, "NOIR Captions: сделать акцентом"); };
         btnMakeBase.onClick = function () { applyToLayers("base", true, false, "NOIR Captions: сделать обычным"); };
         btnApply.onClick = function () {
             var parts = { font: cbApplyFont.value, size: cbApplySize.value, color: cbApplyColor.value,
-                stroke: cbApplyStroke.value, fx: cbApplyFx.value };
-            var any = parts.font || parts.size || parts.color || parts.stroke || parts.fx;
+                stroke: cbApplyStroke.value, fx: cbApplyFx.value, blend: cbApplyBlend.value };
+            var any = parts.font || parts.size || parts.color || parts.stroke || parts.fx || parts.blend;
             if (!any && !cbApplyAnim.value) { alert("Отметьте, что применять: шрифт, размер, цвет, обводку, эффекты и/или анимацию.", "NOIR Captions"); return; }
             applyToLayers(rbApplyAccent.value ? "accent" : "base", any ? parts : false, cbApplyAnim.value,
                 "NOIR Captions: применить к выделенным");

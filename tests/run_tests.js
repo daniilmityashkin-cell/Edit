@@ -242,7 +242,8 @@ const GOPTS = { maxWords: 1, maxChars: 99, pauseBreak: 0.35, punctBreak: true, s
   });
 
   console.log("правка выделенных слоёв");
-  const gen = (c, id) => { const st = styleOf(id || "reels-glow"); st.layout.autoAccent = false; return N.generate(c, prep(N.flattenWords(sample()), st.layout), st, st.anim, true); };
+  const gen = (c, id, anim) => { const st = styleOf(id || "reels-glow"); st.layout.autoAccent = false; return N.generate(c, prep(N.flattenWords(sample()), st.layout), st, anim || st.anim, true); };
+  const NOANIM = { animIn: "none", inDur: 0, animOut: "none", outDur: 0, distance: 0, blur: 0, easeInfluence: 80 };
   await test("слой помнит базовую позицию; теги работают с isGenerated", () => {
     const c = mkComp(); gen(c); const l = subs(c)[0];
     assert.ok(/^noir-captions:generated\|[\d.]+\|[\d.]+$/.test(l.comment));
@@ -317,6 +318,41 @@ const GOPTS = { maxWords: 1, maxChars: 99, pauseBreak: 0.35, punctBreak: true, s
     assert.ok(a.effects.some(e => e.name === "NOIR Glow"));
     N.restyleLayers(c, [a], { style: st.accent, parts: { size: true }, safeWidth: 0.88, anim: null });
     assert.strictEqual(a.src.value.fontSize, st.accent.size);
+  });
+  await test("режим наложения и прозрачность: у новых слоёв Difference и 60%, анимация идёт до 60%", () => {
+    const c = mkComp(), st = styleOf("invert"); st.base.opacity = 60; st.accent.opacity = 60;
+    st.anim = { animIn: "fade", inDur: 0.2, animOut: "fade", outDur: 0.2, distance: 0, blur: 0, easeInfluence: 80 };
+    N.generate(c, prep(N.flattenWords(sample()), st.layout), st, st.anim, true);
+    subs(c).forEach(l => {
+      assert.strictEqual(l.blendingMode, BlendingMode.DIFFERENCE);
+      const vals = l.transform.Opacity.keys.map(k => k.v); assert.ok(Math.max(...vals) === 60 && Math.min(...vals) === 0, JSON.stringify(vals));
+    });
+  });
+  await test("без анимации прозрачность — просто значение слоя", () => {
+    const c = mkComp(), st = styleOf("invert"); st.base.opacity = 40; st.accent.opacity = 40; st.anim = { animIn: "none", animOut: "none", inDur: 0, outDur: 0, distance: 0, blur: 0, easeInfluence: 80 };
+    N.generate(c, prep(N.flattenWords(sample()), st.layout), st, st.anim, true);
+    subs(c).forEach(l => { assert.strictEqual(l.transform.Opacity.value, 40); assert.strictEqual(l.transform.Opacity.keys.length, 0); });
+  });
+  await test("новые вылеты: rotate даёт ключи поворота, whip/slam — blur; Rotation возвращается в 0", () => {
+    const c = mkComp(), st = styleOf("invert"); gen(c, "invert"); const a = subs(c)[0];
+    N.restyleLayers(c, [a], { style: null, safeWidth: 0.88, anim: { animIn: "rotate", inDur: 0.25, animOut: "rotate", outDur: 0.2, distance: 40, blur: 20, easeInfluence: 80 } });
+    const rk = a.transform.Rotation.keys; assert.ok(rk.length >= 3 && rk[0].v === -14 && rk[rk.length - 1].v === 14 && rk.some(k => k.v === 0));
+    N.restyleLayers(c, [a], { style: null, safeWidth: 0.88, anim: { animIn: "slam", inDur: 0.2, animOut: "whipR", outDur: 0.2, distance: 40, blur: 20, easeInfluence: 80 } });
+    assert.strictEqual(a.transform.Rotation.keys.length, 0); assert.ok(a.effects.some(e => e.matchName === "ADBE Gaussian Blur 2"));
+    assert.strictEqual(a.transform.Scale.keys[0].v[0], 260);
+  });
+  await test("анимация выделенного слоя сохраняет его прозрачность (60%)", () => {
+    const c = mkComp(); gen(c, "reels-glow", NOANIM); const a = subs(c)[0]; a.transform.Opacity.value = 60;
+    N.restyleLayers(c, [a], { style: null, safeWidth: 0.88, anim: { animIn: "fade", inDur: 0.2, animOut: "none", outDur: 0, distance: 0, blur: 0, easeInfluence: 80 } });
+    assert.strictEqual(Math.max(...a.transform.Opacity.keys.map(k => k.v)), 60);
+  });
+  await test("только режим наложения: Difference + прозрачность, остальное не меняется; «Инверсия» вкл/выкл", () => {
+    const c = mkComp(), st = styleOf("invert"); gen(c, "reels-glow", NOANIM); const [a, b] = subs(c); const font0 = a.src.value.font, col0 = JSON.stringify(a.src.value.fillColor);
+    N.restyleLayers(c, [a], { style: Object.assign({}, st.base, { opacity: 70 }), parts: { blend: true }, safeWidth: 0.88, anim: null });
+    assert.strictEqual(a.blendingMode, BlendingMode.DIFFERENCE); assert.strictEqual(a.transform.Opacity.value, 70);
+    assert.strictEqual(a.src.value.font, font0); assert.strictEqual(JSON.stringify(a.src.value.fillColor), col0); assert.strictEqual(b.blendingMode, BlendingMode.NORMAL);
+    assert.strictEqual(N.toggleInvert([b]), true); assert.strictEqual(b.blendingMode, BlendingMode.DIFFERENCE); assert.deepStrictEqual(b.src.value.fillColor, [1, 1, 1]);
+    assert.strictEqual(N.toggleInvert([b]), false); assert.strictEqual(b.blendingMode, BlendingMode.NORMAL);
   });
   await test("все слои сразу + пользовательский слой без тега", () => {
     const c = mkComp(), st = styleOf("kinetic-stack"); gen(c, "kinetic-stack");
@@ -407,6 +443,31 @@ const GOPTS = { maxWords: 1, maxChars: 99, pauseBreak: 0.35, punctBreak: true, s
     panel.button("Шрифт → выделенным слоям").onClick();
     assert.strictEqual(env.log.alerts.length, 0, env.log.alerts.join("|"));
     assert.strictEqual(ls[0].src.value.fontSize, size0); assert.strictEqual(JSON.stringify(ls[0].src.value.fillColor), col0);
+    ls[0].selected = false;
+  });
+  await test("сетка вылетов: кнопки есть; без выделения — запоминается; с выделением — сразу на слоях; Вход/Выход переключаются", () => {
+    const c = mkComp(); gen(c); const ls = subs(c);
+    const chip = (t, which) => panel.find(e => e.type === "button" && e.text === t && e._which === which);
+    assert.ok(chip("Slam", "in") && chip("Slam", "out") && chip("Whip →", "in") && chip("Rotate", "in"), "нет кнопок сетки");
+    ls.forEach(l => (l.selected = false)); env.log.alerts.length = 0;
+    chip("Pop", "in").onClick();
+    assert.strictEqual(env.log.alerts.length, 0);
+    assert.strictEqual(N.parseJSON(env.settings["NOIR Captions/settings.v2"]).style.anim.animIn, "pop");
+    ls[0].selected = true; ls[1].selected = true; env.log.alerts.length = 0;
+    chip("Slam", "in").onClick();
+    assert.strictEqual(env.log.alerts.length, 0, env.log.alerts.join("|"));
+    assert.strictEqual(ls[0].transform.Scale.keys[0].v[0], 260); assert.strictEqual(ls[1].transform.Scale.keys[0].v[0], 260);
+    const stack = panel.find(e => e.type === "group" && e.orientation === "stack" && e.children.length === 2 && e.children[0].orientation === "column" && e.children[0].children.some(r => r.children && r.children.some(b => b._which)));
+    const rbOut = panel.find(e => e.type === "radiobutton" && e.text === "Выход"); rbOut.onClick();
+    assert.deepStrictEqual(stack.children.map(g => g.visible), [false, true]);
+    ls.forEach(l => (l.selected = false));
+  });
+  await test("кнопка «◐ Инверсия»: без выделения — ошибка; с выделением включает и выключает", () => {
+    const c = mkComp(); gen(c); const ls = subs(c); env.log.alerts.length = 0;
+    panel.button("◐ Инверсия").onClick(); assert.ok(/Выделите/.test(env.log.alerts[0]));
+    ls[0].selected = true; panel.button("◐ Инверсия").onClick();
+    assert.strictEqual(ls[0].blendingMode, BlendingMode.DIFFERENCE);
+    panel.button("◐ Инверсия").onClick(); assert.strictEqual(ls[0].blendingMode, BlendingMode.NORMAL);
     ls[0].selected = false;
   });
   await test("Распознать без выделенного слоя -> понятная ошибка", () => {
