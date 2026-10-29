@@ -1,4 +1,4 @@
-"""NOIR CAPTIONS — скачивание модели распознавания (с прогрессом, вне After Effects).
+r"""NOIR CAPTIONS — скачивание модели распознавания (с прогрессом, вне After Effects).
 
     .venv\Scripts\python.exe recognition\download_model.py large-v3
 
