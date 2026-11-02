@@ -888,30 +888,30 @@ const GOPTS = { maxWords: 1, maxChars: 99, pauseBreak: 0.35, punctBreak: true, s
   });
   await test("вкладка SFX: настройки и кнопки есть; список звуков заполнен из библиотеки", () => {
     const p = N.buildPanel(new mock.Panel(), ROOT);
-    assert.ok(p.find(e => e.type === "checkbox" && e.text === "Озвучивать при создании субтитров"));
+    assert.ok(!p.find(e => e.type === "checkbox" && e.text === "Озвучивать при создании субтитров"));
     for (const b of ["Озвучить выделенные слои", "Убрать SFX", "В текущее время", "Обновить список", "Папка SFX"]) assert.ok(p.button(b), "нет кнопки " + b);
     const files = p.find(e => e.type === "dropdownlist" && e._items && e._items.some(i => /pop_1/.test(i.label)));
     assert.ok(files && files._items.length >= 25, "список звуков пуст");
     const accent = p.find(e => e._kind === "accent"); assert.strictEqual(accent._items[0].id, "same");
   });
-  await test("SFX при создании субтитров: звуки встают на слова (и на выход), повторное создание не дублирует", async () => {
-    const jf = path.join(TMP, "sfx_sample.json"); fs.writeFileSync(jf, JSON.stringify(Object.assign(sample(), { engine: { model: "small", device: "cpu" } })));
-    const p = N.buildPanel(new mock.Panel(), ROOT); const c = mkComp({ duration: 12 });
-    const origOpen = mock.File.openDialog; mock.File.openDialog = () => mock.File(jf); global.File.openDialog = mock.File.openDialog;
-    p.button("Загрузить результат…").onClick(); mock.File.openDialog = origOpen; global.File.openDialog = origOpen;
-    p.find(e => e.type === "checkbox" && e.text === "Озвучивать при создании субтитров").value = true;
-    const dd = p.find(e => e._kind === "exit"); dd.selection = dd._items.findIndex(i => i.id === "auto");
-    const kb = (id) => p.find(e => e.type === "button" && e._id === id && e._which === "in"); kb("pop").onClick();
-    const ob = p.find(e => e.type === "button" && e._id === "blur" && e._which === "out"); ob.onClick();
-    env.log.alerts.length = 0; p.button("Создать субтитры").onClick();
-    assert.ok(!env.log.alerts.some(a => /Ошибка|SFX|Не удалось/.test(a)), env.log.alerts.join("|")); // предупреждение про шрифт в моке допустимо
-    assert.ok(env.log.alerts.some(a => /звуков: 7/.test(a)), "в сообщении нет числа звуков: " + env.log.alerts.join("|"));
-    const sfx = () => c._l.filter(l => String(l.comment).indexOf(N.SFX_TAG) === 0), txt = () => c._l.filter(l => N.isGenerated(l));
-    const inSfx = sfx().filter(l => /\|pop$/.test(l.comment)), outSfx = sfx().filter(l => /\|blur_out$/.test(l.comment));
-    assert.ok(inSfx.length >= 3, "звуков появления: " + inSfx.length); assert.ok(outSfx.length >= 1, "звуков выхода: " + outSfx.length);
-    const starts = txt().map(l => l.inPoint); inSfx.forEach(l => assert.ok(starts.some(t => Math.abs(t - l.startTime) < 1e-6), "звук не на слове " + l.startTime));
-    const n1 = sfx().length; p.button("Создать субтитры").onClick(); assert.strictEqual(sfx().length, n1, "звуки задублировались");
-    const S = N.parseJSON(env.settings["NOIR Captions/settings.v2"]); assert.strictEqual(S.sfx.enabled, true); assert.strictEqual(S.sfx.exit, "auto");
+  await test("старый флаг автозвука игнорируется; пересборка сохраняет ручные SFX и их тайминги", () => {
+    const jf = path.join(TMP, "sfx_sample.json"); fs.writeFileSync(jf, JSON.stringify(sample()));
+    env.settings["NOIR Captions/settings.v2"] = N.stringify({style: styleOf("reels-glow"), sfx: {enabled: true}});
+    const p = N.buildPanel(new mock.Panel(), ROOT), c = mkComp({duration:12});
+    const orig = global.File.openDialog;
+    global.File.openDialog = () => mock.File(jf);
+    p.button("Загрузить результат…").onClick(); global.File.openDialog = orig;
+    const sounds = () => c._l.filter(l => String(l.comment).indexOf(N.SFX_TAG) === 0);
+    p.button("Создать субтитры").onClick(); assert.strictEqual(sounds().length, 0);
+    assert.strictEqual(N.parseJSON(env.settings["NOIR Captions/settings.v2"]).sfx.enabled, false);
+    subs(c)[0].selected = true;
+    p.button("Озвучить выделенные слои").onClick();
+    assert.strictEqual(sounds().length, 1);
+    const sound = sounds()[0]; sound.startTime += 0.17;
+    const time = sound.startTime;
+    p.button("Создать субтитры").onClick();
+    assert.strictEqual(sounds().length, 1); assert.strictEqual(sounds()[0], sound);
+    assert.strictEqual(sound.startTime, time, "Ручная подгонка звука не должна сбрасываться");
   });
   await test("вкладка SFX: переключатель «Подмешивать базовые» и ★ у своих звуков в списке", () => {
     withUserFiles(["pop/свой_поп.wav"], () => {
