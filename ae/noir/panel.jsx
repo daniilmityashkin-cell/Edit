@@ -7,7 +7,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
 (function (N) {
     var SECTION = "NOIR Captions";
     var SETTINGS_KEY = "settings.v2";
-    var VERSION = "0.7.2";
+    var VERSION = "0.7.3";
 
     function clone(o) { return N.parseJSON(N.stringify(o)); }
 
@@ -165,9 +165,12 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             viewport.bounds = [0, 0, width, height];
             scroll.bounds = [width + 2, 0, width + 18, height];
             content.minimumSize.width = width; content.maximumSize.width = width;
-            content.size.width = width;
+            // ScriptUI has no size object until this manually laid-out group is measured.
+            if (content.size) content.size.width = width;
+            else content.size = [width, 1];
             content.layout.layout(true);
-            var range = N.scrollRange(content.size.height, height, reset ? 0 : scroll.value);
+            var measuredHeight = content.size.height === undefined ? content.size[1] : content.size.height;
+            var range = N.scrollRange(measuredHeight, height, reset ? 0 : scroll.value);
             scroll.maxvalue = range.max; scroll.value = range.value;
             scroll.enabled = range.max > 0; scroll.jumpdelta = Math.max(28, height * 0.8);
             position();

@@ -697,6 +697,13 @@ const GOPTS = { maxWords: 1, maxChars: 99, pauseBreak: 0.35, punctBreak: true, s
     assert.ok(iAdvanced > iGen && iAdvanced < iTabs, "Настройки должны находиться в закреплённой шапке");
     assert.ok(iGen >= 0 && iTabs >= 0 && iGen < iTabs, "gen " + iGen + " tabs " + iTabs);
   });
+  await test("прокрутка: первый layout без content.size не ломает загрузку панели", () => {
+    const area = N.makeScrollArea(new mock.Panel());
+    area.body.size = {width: 340, height: 180};
+    assert.strictEqual(area.content.size, undefined);
+    assert.doesNotThrow(() => area.refresh(true));
+    assert.ok(Number.isFinite(area.scrollbar.maxvalue));
+  });
   await test("прокрутка: нижние элементы достижимы, при расширении смещение ограничивается", () => {
     const area = N.makeScrollArea(new mock.Panel());
     area.body.size = {width: 340, height: 180};
