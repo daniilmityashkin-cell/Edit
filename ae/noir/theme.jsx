@@ -117,6 +117,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
     // Возвращает объект с add("tab", undefined, label), как у tabbedpanel.
     T.makeTabs = function (parent) {
         var bar = parent.add("group");
+        bar._noirTabBar = true;
         bar.orientation = "row";
         bar.alignChildren = ["left", "center"];
         bar.spacing = 2;
@@ -160,6 +161,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         api.select = function (i) {
             for (var k = 0; k < api.pages.length; k++) {
                 api.pages[k].visible = (k === i);
+                api.buttons[k]._noirTabSelected = k === i;
                 redraw(api.buttons[k]);
             }
             api.current = i;

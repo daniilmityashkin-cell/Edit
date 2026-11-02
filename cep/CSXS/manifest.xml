@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ExtensionManifest Version="7.0" ExtensionBundleId="com.noir.captions" ExtensionBundleVersion="0.9.0" ExtensionBundleName="NOIR Captions">
+  <ExtensionList><Extension Id="com.noir.captions.panel" Version="0.9.0"/></ExtensionList>
+  <ExecutionEnvironment>
+    <HostList><Host Name="AEFT" Version="[24.0,99.9]"/></HostList>
+    <LocaleList><Locale Code="All"/></LocaleList>
+    <RequiredRuntimeList><RequiredRuntime Name="CSXS" Version="11.0"/></RequiredRuntimeList>
+  </ExecutionEnvironment>
+  <DispatchInfoList><Extension Id="com.noir.captions.panel"><DispatchInfo>
+    <Resources><MainPath>./index.html</MainPath><ScriptPath>./host/bridge.jsx</ScriptPath></Resources>
+    <Lifecycle><AutoVisible>true</AutoVisible></Lifecycle>
+    <UI><Type>Panel</Type><Menu>NOIR Captions · HTML</Menu><Geometry><Size><Width>420</Width><Height>600</Height></Size><MinSize><Width>280</Width><Height>200</Height></MinSize></Geometry></UI>
+  </DispatchInfo></Extension></DispatchInfoList>
+</ExtensionManifest>

@@ -7,7 +7,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
 (function (N) {
     var SECTION = "NOIR Captions";
     var SETTINGS_KEY = "settings.v2";
-    var VERSION = "0.8.1";
+    var VERSION = "0.9.0";
 
     function clone(o) { return N.parseJSON(N.stringify(o)); }
 
@@ -144,6 +144,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
     };
     N.makeScrollArea = function (parent) {
         var body = parent.add("group");
+        body._noirScrollBody = true;
         body.orientation = "row"; body.alignment = ["fill", "fill"];
         body.minimumSize = [0, 0]; body.preferredSize = [300, 240]; body.margins = 0; body.spacing = 2;
         var viewport = body.add("group");
@@ -240,7 +241,8 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         return api;
     };
 
-    N.buildPanel = function (thisObj, root) {
+    N.buildPanel = function (thisObj, root, options) {
+        options = options || {};
         var firstRun = !app.settings.haveSetting(SECTION, SETTINGS_KEY);
         var S = loadSettings();
         var presets = N.loadPresets(root);
@@ -269,7 +271,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             var stBrand = head.add("statictext", undefined, "NOIR CAPTIONS");
             stBrand._keep = true;
             TH.text(stBrand, TH.colors.text, 12, true);
-            var stVer = head.add("statictext", undefined, "v" + VERSION);
+            var stVer = head.add("statictext", undefined, "v" + VERSION + (options.headless ? " · HTML" : " · ScriptUI"));
             stVer._keep = true;
             TH.text(stVer, TH.colors.muted);
         }
@@ -293,6 +295,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         cbAdvanced.helpTip = "Показать вид, раскладку, анимацию, слои, функции и SFX";
         var scroller = N.makeScrollArea(win);
         var tabs = TH ? TH.makeTabs(scroller.content) : scroller.content.add("tabbedpanel");
+        win._noirTabs = tabs;
         tabs.alignChildren = ["fill", "top"];
         var tSpeech = tabs.add("tab", undefined, "1 · Видео");
         var tText = tabs.add("tab", undefined, "2 · Текст");
@@ -492,8 +495,8 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         var btnGalleryNext = galleryNav.add("button", undefined, "Стили →");
         var stGalleryPage = galleryBox.add("statictext", undefined, "", {multiline:true});
         stGalleryPage.preferredSize = [240,32];
-        var btnGalleryPlay = galleryBox.add("button", undefined, "▶ Анимированные примеры · 3 с");
-        btnGalleryPlay.helpTip = "Показать до четырёх стилей в отдельной композиции AE. Пробел / Num 0 — воспроизведение; исходный монтаж не меняется.";
+        var btnGalleryPlay = galleryBox.add("button", undefined, "Видеопримеры — в HTML-панели");
+        btnGalleryPlay.helpTip = "Откройте Window → Extensions (Legacy) → NOIR Captions · HTML: примеры проигрываются внутри карточек.";
         var rTarget = row(tStyle, "Настраиваю", 95);
         var rbBase = rTarget.add("radiobutton", undefined, "Обычные слова");
         var rbAccent = rTarget.add("radiobutton", undefined, "*Акцент*");
@@ -964,6 +967,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             for (var i = 0; i < galleryCards.length; i++) {
                 var p = items[galleryPage * 4 + i], c = galleryCards[i];
                 c.button.enabled = c.star.enabled = !!p;
+                c.button._cepPreview = p ? {id:p.id,name:p.name,base:p.base,accent:p.accent,anim:p.anim,layout:p.layout} : null;
                 c.button.text = p ? (p.id === S.presetId ? "✓ " : "") + p.name : "Нет стиля";
                 c.star.text = p && N.hasItem(S.favoriteStyles, p.id) ? "★" : "☆";
                 c.sample.text = p ? "Ваши слова оживают" : "";
@@ -974,7 +978,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             }
             btnGalleryPrev.enabled = galleryPage > 0;
             btnGalleryNext.enabled = (galleryPage + 1) * 4 < items.length;
-            btnGalleryPlay.enabled = items.length > 0;
+            btnGalleryPlay.enabled = false;
             stGalleryPage.text = items.length ? "Страница " + (galleryPage + 1) + " / " + Math.ceil(items.length / 4) : "Избранных пока нет. Отключите фильтр и нажмите ☆ у стиля.";
         }
         function choosePreset(p) {
@@ -999,14 +1003,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         btnGalleryPrev.onClick = function () { galleryPage--; refreshGallery(); };
         btnGalleryNext.onClick = function () { galleryPage++; refreshGallery(); };
         btnGalleryPlay.onClick = function () {
-            app.beginUndoGroup("NOIR: анимированная галерея");
-            try {
-                var items = galleryItems(), shown = [];
-                for (var i = galleryPage * 4; i < items.length && shown.length < 4; i++) shown.push(items[i]);
-                N.styleExamples(shown);
-                setStatus("Галерея создана отдельно. Пробел / Num 0 — показать анимацию; Ctrl+Z — убрать галерею.");
-            } catch (e) { alert(e.message || String(e), "NOIR: галерея"); }
-            finally { app.endUndoGroup(); }
+            alert("Видеопримеры теперь показываются по наведению в NOIR Captions · HTML. Создание композиций с примерами отключено.", "NOIR Captions");
         };
         function refreshRecentFonts() {
             ddRecentFonts._lock = true; ddRecentFonts.removeAll();
@@ -1939,6 +1936,22 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         scroller.beforeLayout = function (width) { if (tabs.fit) tabs.fit(width); };
         win.minimumSize = [300, 200];
         win.onResizing = win.onResize = function () { this.layout.resize(); scroller.refresh(false); };
+        var cepControls = {generate:btnGenerate,replace:cbReplace,status:stLine,advanced:cbAdvanced,
+            speechPage:tSpeech,textPage:tText,stylePage:tStyle,viewPage:tView,layoutPage:tLayout,animationPage:tAnim,layersPage:tLayers,toolsPage:tTools,sfxPage:tSfx,
+            language:ddLang,model:ddModel,device:ddDev,prompt:etPrompt,recognize:btnRecognize,cancel:btnCancel,load:btnLoad,progress:progress,
+            editor:etText,save:btnSave,reset:btnReset,phrase:ddPhrase,prevPhrase:btnPrevPhrase,nextPhrase:btnNextPhrase,seek:btnSeekPhrase,updatePhrase:btnUpdatePhrase,
+            wordsPrev:btnWordsBack,wordsNext:btnWordsNext,lineBreak:btnLineBreak,phraseBreak:btnPhraseBreak,editWord:btnEditWord,undoEdit:btnUndoEdit,listen:btnListen,
+            preset:ddPreset,savePreset:btnSavePreset,favorites:cbFavorites,galleryPrev:btnGalleryPrev,galleryNext:btnGalleryNext,galleryPage:stGalleryPage,
+            fontFamily:ddFamily,fontStyle:ddStyle,fontSearch:etFilter,fontPS:etPs,recentFonts:ddRecentFonts,fontTargetBase:rbBase,fontTargetAccent:rbAccent,
+            fontSelected:btnFontToLayers,fontAll:btnFontAll,quickSize:etQuickSize,quickPosition:ddQuickPosition,intensity:ddIntensity,check:btnCheck};
+        for (var cepRole in cepControls) if (cepControls[cepRole]) cepControls[cepRole]._cepRole = cepRole;
+        for (var galleryRole = 0; galleryRole < galleryCards.length; galleryRole++) {
+            galleryCards[galleryRole].button._cepRole = "galleryCard" + galleryRole;
+            galleryCards[galleryRole].star._cepRole = "galleryStar" + galleryRole;
+        }
+        if (tabs.buttons) for (var tabRole = 0; tabRole < tabs.buttons.length; tabRole++) tabs.buttons[tabRole]._cepRole = "tab" + tabRole;
+        for (var wordRole = 0; wordRole < wordButtons.length; wordRole++) wordButtons[wordRole]._cepRole = "word" + wordRole;
+        if (options.headless) return win;
         if (win instanceof Window) { win.center(); win.show(); }
         else { win.layout.layout(true); win.layout.resize(); }
         scroller.initialize();

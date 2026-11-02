@@ -191,6 +191,7 @@ Folder.prototype = FolderC.prototype;
 // ---------- ScriptUI ----------
 class UI {
   constructor(type, parent, a, b) {
+    this.orientation = type === "group" ? "row" : "column";
     this.type = type; this.parent = parent; this.children = []; this.preferredSize = { width: 0, height: 0 };
     this.enabled = true; this.graphics = { newBrush: () => ({}), BrushType: { SOLID_COLOR: 0 } };
     this.layout = { layout() {}, resize() {} };
@@ -201,7 +202,7 @@ class UI {
   }
   add(type, bounds, text, props) {
     if (this.type === "dropdownlist" && type === "item") { const it = { text: bounds, index: this.items.length }; this.items.push(it); return it; }
-    const el = new UI(type, this, bounds, text);
+    const el = new UI(type, this, bounds, text); el.properties = props || {};
     if (type === "edittext") el.text = text || "";
     if (type === "statictext" || type === "button" || type === "radiobutton" || type === "checkbox") el.text = text;
     this.children.push(el); return el;
