@@ -7,7 +7,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
 (function (N) {
     var SECTION = "NOIR Captions";
     var SETTINGS_KEY = "settings.v2";
-    var VERSION = "0.7.4";
+    var VERSION = "0.8.0";
 
     function clone(o) { return N.parseJSON(N.stringify(o)); }
 
@@ -27,6 +27,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
 
     var DEFAULTS = {
         language: "ru", model: "large-v3", device: "auto", prompt: "",
+        recentFonts: [], favoriteStyles: [],
         quick: {size: 100, position: "preset", intensity: "1"},
         replace: true, python: "", presetId: "", style: FALLBACK_STYLE, reflow: true,
         tools: {
@@ -47,6 +48,8 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
                 for (var k in saved) if (DEFAULTS.hasOwnProperty(k)) s[k] = saved[k];
             }
         } catch (e) {}
+        if (!(s.recentFonts instanceof Array)) s.recentFonts = [];
+        if (!(s.favoriteStyles instanceof Array)) s.favoriteStyles = [];
         var quick = clone(DEFAULTS.quick);
         for (var qk in (s.quick || {})) quick[qk] = s.quick[qk];
         s.quick = quick;
@@ -218,7 +221,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         var S = loadSettings();
         var presets = N.loadPresets(root);
         // syncing: идёт программное заполнение контролов — их onChange не считаются правкой
-        var state = { data: null, link: null, target: "base", syncing: false };
+        var state = { data: null, link: null, target: "base", syncing: false, recognizing: false, cleanLines: [] };
 
         // Тема необязательна: если файла нет или он сломан — обычные вкладки и кнопки.
         try { $.evalFile(File(root + "/ae/noir/theme.jsx")); } catch (eTheme) {}
@@ -259,6 +262,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         cbReplace.alignment = ["right", "center"];
         var stLine = win.add("statictext", undefined, "Готов");
         stLine.alignment = ["fill", "top"];
+        stLine.minimumSize = [0, 18]; stLine.preferredSize = [260, 18];
         stLine._keep = true;
 
         var cbAdvanced = win.add("checkbox", undefined, "Дополнительные настройки");
@@ -411,6 +415,11 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         var btnReset = rTextBtns.add("button", undefined, "Сбросить правки");
 
         var ddPhrase = dropdown(row(tText, "Фраза"), [{id: "0", label: "Сначала распознайте речь"}], "0");
+        var rPhraseNav = tText.add("group");
+        var btnPrevPhrase = rPhraseNav.add("button", undefined, "← Предыдущая фраза");
+        var btnNextPhrase = rPhraseNav.add("button", undefined, "Следующая фраза →");
+        var btnSeekPhrase = tText.add("button", undefined, "К началу фразы в композиции");
+        var btnUpdatePhrase = tText.add("button", undefined, "Обновить выбранную фразу");
         var wordButtons = [], rWord;
         for (var wi = 0; wi < 12; wi++) {
             if (wi % 4 === 0) rWord = tText.add("group");
@@ -439,6 +448,28 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         var stPresetDesc = tStyle.add("statictext", undefined, "");
         stPresetDesc.alignment = ["fill", "top"];
 
+        var galleryBox = tStyle.add("panel", undefined, "Галерея стилей");
+        galleryBox.orientation = "column"; galleryBox.alignChildren = ["fill", "top"];
+        var cbFavorites = galleryBox.add("checkbox", undefined, "Только избранные");
+        var galleryCards = [], galleryPage = 0;
+        for (var cardIndex = 0; cardIndex < 4; cardIndex++) {
+            var card = galleryBox.add("group"); card.orientation = "column"; card.alignChildren = ["fill", "top"];
+            var cardRow = card.add("group");
+            var choose = cardRow.add("button", undefined, "—"); choose._gallerySlot = cardIndex;
+            choose.alignment = ["fill", "center"];
+            choose.minimumSize = [0,24]; choose.preferredSize = [210,26];
+            var star = cardRow.add("button", undefined, "☆"); star._gallerySlot = cardIndex; star.preferredSize = [32,24];
+            var sampleLabel = card.add("statictext", undefined, "Ваши слова оживают");
+            sampleLabel.preferredSize.height = 30;
+            galleryCards.push({button: choose, star: star, sample: sampleLabel});
+        }
+        var galleryNav = galleryBox.add("group");
+        var btnGalleryPrev = galleryNav.add("button", undefined, "← Стили");
+        var btnGalleryNext = galleryNav.add("button", undefined, "Стили →");
+        var stGalleryPage = galleryBox.add("statictext", undefined, "", {multiline:true});
+        stGalleryPage.preferredSize = [240,32];
+        var btnGalleryPlay = galleryBox.add("button", undefined, "▶ Анимированные примеры · 3 с");
+        btnGalleryPlay.helpTip = "Показать до четырёх стилей в отдельной композиции AE. Пробел / Num 0 — воспроизведение; исходный монтаж не меняется.";
         var rTarget = row(tStyle, "Настраиваю", 95);
         var rbBase = rTarget.add("radiobutton", undefined, "Обычные слова");
         var rbAccent = rTarget.add("radiobutton", undefined, "*Акцент*");
@@ -466,6 +497,8 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             etPs = row(pnlText, "PostScript").add("edittext", undefined, "");
             etPs.alignment = ["fill", "center"];
         }
+        var ddRecentFonts = pnlText.add("dropdownlist", undefined, []);
+        ddRecentFonts.helpTip = "Последние восемь выбранных шрифтов. Выбор меняет шрифт в настройках; применение к слоям — отдельными кнопками.";
         var rFromTo = pnlText.add("group");
         rFromTo.orientation = "row";
         var btnFromLayer = rFromTo.add("button", undefined, "Взять со слоя");
@@ -480,6 +513,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         var ddIntensity = dropdown(row(tStyle, "Анимация"), [
             {id: "1", label: "Из пресета"}, {id: "0.5", label: "Спокойная"},
             {id: "1.5", label: "Выразительная"}], S.quick.intensity);
+        var btnCheck = tStyle.add("button", undefined, "Проверить перед созданием");
         var btnPreview = tStyle.add("button", undefined, "Превью фразы на видео");
         btnPreview.helpTip = "Создаёт отдельную композицию с текущим видео и выбранной фразой (до 5 секунд). Исходная композиция сохраняется. Воспроизведение: пробел / Num 0.";
         // ---- вкладка «Вид»: размер, цвет, обводка, эффекты ----
@@ -883,10 +917,84 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         }
         function setStatus(text, pct) {
             stStatus.text = text;
-            stLine.text = String(text).split("\n")[0];
+            stLine.helpTip = text;
+            var phase = state.recognizing ? "Распознавание" : (state.data ? (textDirty() ? "Текст изменён — обновите фразу" : "Можно редактировать") : "Выберите видео или загрузите результат");
+            stLine.text = phase + " · " + String(text).split("\n")[0];
             if (pct !== undefined && pct !== null) progress.value = Math.round(pct * 100);
         }
         function tgt() { return S.style[state.target]; }
+
+        function textDirty() {
+            if (!state.data) return false;
+            return etText.text.replace(/\r\n?/g, "\n").split("\n").join("\n") !== state.cleanLines.join("\n");
+        }
+        function galleryItems() {
+            var out = [];
+            for (var i = 0; i < presets.length; i++) if (!cbFavorites.value || N.hasItem(S.favoriteStyles, presets[i].id)) out.push(presets[i]);
+            return out;
+        }
+        function galleryStyle(slot) { return galleryItems()[galleryPage * 4 + slot]; }
+        function refreshGallery() {
+            var items = galleryItems();
+            galleryPage = Math.max(0, Math.min(galleryPage, Math.max(0, Math.ceil(items.length / 4) - 1)));
+            for (var i = 0; i < galleryCards.length; i++) {
+                var p = items[galleryPage * 4 + i], c = galleryCards[i];
+                c.button.enabled = c.star.enabled = !!p;
+                c.button.text = p ? (p.id === S.presetId ? "✓ " : "") + p.name : "Нет стиля";
+                c.star.text = p && N.hasItem(S.favoriteStyles, p.id) ? "★" : "☆";
+                c.sample.text = p ? "Ваши слова оживают" : "";
+                if (p) try {
+                    c.sample.graphics.font = ScriptUI.newFont(p.base.fonts[0], "REGULAR", 18);
+                    c.sample.graphics.foregroundColor = c.sample.graphics.newPen(c.sample.graphics.PenType.SOLID_COLOR, p.base.color, 1);
+                } catch (fontPreview) {}
+            }
+            btnGalleryPrev.enabled = galleryPage > 0;
+            btnGalleryNext.enabled = (galleryPage + 1) * 4 < items.length;
+            btnGalleryPlay.enabled = items.length > 0;
+            stGalleryPage.text = items.length ? "Страница " + (galleryPage + 1) + " / " + Math.ceil(items.length / 4) : "Избранных пока нет. Отключите фильтр и нажмите ☆ у стиля.";
+        }
+        function choosePreset(p) {
+            if (!p) return;
+            S.style = {layout: clone(p.layout), base: clone(p.base), accent: clone(p.accent), anim: clone(p.anim)};
+            S.presetId = p.id;
+            etQuickSize.text = "100"; ddQuickPosition.selection = 0; ddIntensity.selection = 0;
+            saveQuick(); fillPresets(); syncUI(); saveSettings(S); refreshGallery();
+        }
+        for (var gc = 0; gc < galleryCards.length; gc++) {
+            galleryCards[gc].button.onClick = function () { choosePreset(galleryStyle(this._gallerySlot)); };
+            galleryCards[gc].star.onClick = function () {
+                var p = galleryStyle(this._gallerySlot); if (!p) return;
+                if (N.hasItem(S.favoriteStyles, p.id)) {
+                    var kept = []; for (var i = 0; i < S.favoriteStyles.length; i++) if (S.favoriteStyles[i] !== p.id) kept.push(S.favoriteStyles[i]);
+                    S.favoriteStyles = kept;
+                } else S.favoriteStyles.push(p.id);
+                saveSettings(S); refreshGallery();
+            };
+        }
+        cbFavorites.onClick = function () { galleryPage = 0; refreshGallery(); };
+        btnGalleryPrev.onClick = function () { galleryPage--; refreshGallery(); };
+        btnGalleryNext.onClick = function () { galleryPage++; refreshGallery(); };
+        btnGalleryPlay.onClick = function () {
+            app.beginUndoGroup("NOIR: анимированная галерея");
+            try {
+                var items = galleryItems(), shown = [];
+                for (var i = galleryPage * 4; i < items.length && shown.length < 4; i++) shown.push(items[i]);
+                N.styleExamples(shown);
+                setStatus("Галерея создана отдельно. Пробел / Num 0 — показать анимацию; Ctrl+Z — убрать галерею.");
+            } catch (e) { alert(e.message || String(e), "NOIR: галерея"); }
+            finally { app.endUndoGroup(); }
+        };
+        function refreshRecentFonts() {
+            ddRecentFonts._lock = true; ddRecentFonts.removeAll();
+            ddRecentFonts.add("item", "Недавние шрифты…");
+            for (var i = 0; i < S.recentFonts.length; i++) ddRecentFonts.add("item", S.recentFonts[i]);
+            ddRecentFonts.selection = 0; ddRecentFonts._lock = false;
+        }
+        ddRecentFonts.onChange = function () {
+            if (ddRecentFonts._lock || !ddRecentFonts.selection || !ddRecentFonts.selection.index) return;
+            var font = S.recentFonts[ddRecentFonts.selection.index - 1];
+            setFont(font); syncTextUI(); saveSettings(S);
+        };
 
         function fillPresets() {
             ddPreset.removeAll();
@@ -899,6 +1007,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             ddPreset._lock = true;
             ddPreset.selection = sel;
             ddPreset._lock = false;
+            refreshGallery();
         }
 
         function fillFamilies() {
@@ -938,6 +1047,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             for (var i = 0; i < t.fonts.length; i++) if (t.fonts[i] !== ps) rest.push(t.fonts[i]);
             t.fonts = [ps].concat(rest); // остальные — запасные, если шрифта нет на другом ПК
             stFont.text = ps;
+            S.recentFonts = N.recentItem(S.recentFonts, ps, 8); refreshRecentFonts();
             markCustom();
         }
 
@@ -1092,12 +1202,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             if (ddPreset._lock || !ddPreset.selection) return;
             var i = ddPreset.selection.index;
             if (i === 0) { S.presetId = ""; syncUI(); saveSettings(S); return; }
-            var p = presets[i - 1];
-            S.style = { layout: clone(p.layout), base: clone(p.base), accent: clone(p.accent), anim: clone(p.anim) };
-            etQuickSize.text = "100"; ddQuickPosition.selection = 0; ddIntensity.selection = 0; saveQuick();
-            S.presetId = p.id;
-            syncUI();
-            saveSettings(S);
+            choosePreset(presets[i - 1]);
         };
 
         btnSavePreset.onClick = function () {
@@ -1193,6 +1298,20 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             for (var i = 0; i < words.length; i++) if (words[i].seg === si) out.push(words[i]);
             return out;
         }
+        function seekPhrase() {
+            try {
+                var comp = activeComp(), words = phraseWords();
+                if (!words.length) throw new Error("Выбранная фраза пуста.");
+                if (state.link && state.link.compId !== comp.id) throw new Error("Откройте исходную композицию для перехода к фразе.");
+                var map = resolveLink(comp), time = N.sourceToComp(words[0].start, map.startTime, map.stretch);
+                comp.time = Math.max(0, Math.min(comp.duration - comp.frameDuration, time));
+                if (comp.openInViewer) comp.openInViewer();
+                setStatus("Фраза " + (phraseIndex() + 1) + " · " + time.toFixed(2) + " с" + (map.note ? " · " + map.note : ""));
+            } catch (e) { alert(e.message, "NOIR: переход к фразе"); }
+        }
+        btnPrevPhrase.onClick = function () { if (state.data && phraseIndex() > 0) { ddPhrase.selection = phraseIndex() - 1; seekPhrase(); } };
+        btnNextPhrase.onClick = function () { if (state.data && phraseIndex() + 1 < state.data.segments.length) { ddPhrase.selection = phraseIndex() + 1; seekPhrase(); } };
+        btnSeekPhrase.onClick = seekPhrase;
         function refreshWords() {
             var words;
             try { words = phraseWords(); } catch (e) { setStatus(e.message); return; }
@@ -1202,6 +1321,9 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
                 b.enabled = !!w; b.text = w ? (w.accent ? "★ " : "") + (w.conf !== undefined && w.conf < 0.65 ? "? " : "") + w.text : "—";
                 b.helpTip = w ? (w.conf !== undefined && w.conf < 0.65 ? "Низкая уверенность распознавания — проверьте слово. " : "") + "Клик — включить/выключить акцент; затем можно поставить перенос перед этим словом." : "";
             }
+            btnPrevPhrase.enabled = !!state.data && phraseIndex() > 0;
+            btnNextPhrase.enabled = !!state.data && phraseIndex() + 1 < state.data.segments.length;
+            btnSeekPhrase.enabled = btnUpdatePhrase.enabled = !!state.data && words.length > 0;
             btnWordsBack.enabled = wordPage > 0;
             btnWordsNext.enabled = wordPage + 12 < words.length;
         }
@@ -1228,7 +1350,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             } catch (e) { alert(e.message, "NOIR Captions"); }
         }
         ddPhrase.onChange = function () { if (!editingWords) { wordPage = 0; selectedWord = 0; refreshWords(); } };
-        etText.onChange = refreshWords;
+        etText.onChange = etText.onChanging = function () { refreshWords(); setStatus("Проверьте текст и обновите нужные фразы."); };
         for (var bi = 0; bi < wordButtons.length; bi++) wordButtons[bi].onClick = function () { editWord("accent", wordPage + this._slot); };
         btnWordsBack.onClick = function () { wordPage = Math.max(0, wordPage - 12); refreshWords(); };
         btnWordsNext.onClick = function () { wordPage += 12; refreshWords(); };
@@ -1245,11 +1367,11 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
                 editHistory.push(etText.text); if (editHistory.length > 30) editHistory.shift();
                 w.text = answer;
                 var lines = etText.text.replace(/\r\n?/g, "\n").split("\n");
-                lines[phraseIndex()] = N.editorWords(ws); etText.text = lines.join("\n"); refreshWords();
+                lines[phraseIndex()] = N.editorWords(ws); etText.text = lines.join("\n"); refreshWords(); setStatus("Слово исправлено; тайминг сохранён.");
             } catch (e) { alert(e.message, "NOIR Captions"); }
         };
         btnUndoEdit.onClick = function () {
-            if (editHistory.length) { etText.text = editHistory.pop(); refreshWords(); }
+            if (editHistory.length) { etText.text = editHistory.pop(); refreshWords(); setStatus("Правка отменена."); }
             else setStatus("Нет правок кнопками для отмены. В поле текста используйте Ctrl+Z.");
         };
         btnListen.onClick = function () {
@@ -1281,6 +1403,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
 
         function setData(data, link) {
             editHistory = [];
+            state.cleanLines = N.toEditorText(data).split("\n");
             state.data = data;
             state.link = link;
             etText.text = N.toEditorText(data);
@@ -1292,7 +1415,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             for (var w = 0; w < (data.warnings || []).length; w++)
                 if (data.warnings[w].code === "gpu_failed") warn = "\nGPU не сработала — распознано на CPU.";
             var eng = data.engine ? data.engine.model + " / " + data.engine.device : "";
-            setStatus("Готово: слов — " + n + ", язык " + data.language + (eng ? ", " + eng : "") + "." + warn +
+            setStatus("Слов — " + n + ", язык " + data.language + (eng ? ", " + eng : "") + "." + warn +
                 (n ? "\nПроверьте текст на вкладке «Текст»." : "\nРечь не найдена."), 1);
         }
 
@@ -1318,20 +1441,23 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
                     onStatus: function (st) {
                         var msg = st.message || st.state;
                         if (st.device) msg += " · " + (st.device === "cuda" ? "GPU" : "CPU");
-                        setStatus(msg, st.progress);
+                        state.recognizing = true; setStatus(msg, st.progress);
                     },
                     onDone: function (data, s) {
+                        state.recognizing = false;
                         btnRecognize.enabled = true;
                         btnCancel.enabled = false;
                         setData(data, s.link);
                     },
                     onError: function (msg) {
+                        state.recognizing = false;
                         btnRecognize.enabled = true;
                         btnCancel.enabled = false;
                         setStatus("Ошибка", 0);
                         alert(msg, "NOIR Captions — ошибка распознавания");
                     }
                 });
+                state.recognizing = true;
                 btnRecognize.enabled = false;
                 btnCancel.enabled = true;
                 progress.value = 0;
@@ -1341,7 +1467,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         };
 
         btnCancel.onClick = function () {
-            N.cancelRecognition();
+            N.cancelRecognition(); state.recognizing = false;
             btnRecognize.enabled = true;
             btnCancel.enabled = false;
             setStatus("Отменено", 0);
@@ -1375,6 +1501,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
                     accent: words[i].accent || undefined, invert: words[i].invert || undefined,
                     lineBefore: words[i].lineBefore || undefined, breakBefore: words[i].breakBefore || undefined
                 });
+                out.noirSourceKey = N.sourceKey(state.data, state.link);
                 out.link = state.link;
                 N.writeText(f, N.stringify(out));
                 setStatus("Сохранено: " + f.fsName);
@@ -1662,7 +1789,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             toolAction("NOIR Captions: убрать маски", function () { setStatus("Убрано масок: " + N.removeMasks(activeComp())); });
         };
 
-        function generateCaptions(preview) {
+        function generateCaptions(preview, phraseOnly, checkOnly) {
             readUI();
             if (!state.data) { alert("Сначала распознайте речь или откройте JSON.", "NOIR Captions"); return; }
             var comp = app.project.activeItem;
@@ -1672,7 +1799,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             catch (e) { alert(e.message, "NOIR Captions"); return; }
 
             var outputStyle = renderStyle();
-            if (preview) {
+            if (preview || phraseOnly) {
                 var subset = [], si = phraseIndex();
                 for (var pw = 0; pw < words.length; pw++) if (words[pw].seg === si) subset.push(words[pw]);
                 words = subset;
@@ -1689,12 +1816,29 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             if (map.note) warnings.push(map.note);
             for (var i = 0; i < groups.length; i++) {
                 var g = groups[i];
+                g.sourceKey = N.sourceKey(state.data, state.link);
                 g.compStart = N.sourceToComp(g.start, map.startTime, map.stretch);
                 g.compOut = N.sourceToComp(g.outTime, map.startTime, map.stretch);
                 for (var j = 0; j < g.words.length; j++)
                     g.words[j].compStart = N.sourceToComp(g.words[j].start, map.startTime, map.stretch);
             }
 
+            var issues = N.checkCaptions(groups, outputStyle, comp), messages = [], codes = {};
+            for (var ci = 0; ci < issues.length; ci++) {
+                var issue = issues[ci], key = issue.code + ":" + (issue.segment === undefined ? issue.message : issue.segment);
+                if (!codes[key]) { codes[key] = true; messages.push(issue.message); }
+            }
+            if (checkOnly) { alert(messages.length ? "Проверка перед созданием:\n\n" + messages.join("\n") : "Проблем по предварительной проверке не найдено. Геометрию и анимацию проверьте в превью.", "NOIR: проверка"); return; }
+            if (!preview && messages.length && !confirm("Перед созданием:\n\n" + messages.slice(0, 10).join("\n") +
+                (messages.length > 10 ? "\nЕщё замечаний: " + (messages.length - 10) : "") + "\n\nПродолжить?", true, "NOIR: проверка")) return;
+            if (phraseOnly) {
+                var canUpdate = false, sourceKey = N.sourceKey(state.data, state.link);
+                for (var pi = 1; pi <= comp.numLayers; pi++) {
+                    var existing = N.groupInfo(comp.layer(pi));
+                    if (existing && existing.sourceKey === sourceKey) canUpdate = true;
+                }
+                if (!canUpdate) { alert("Сначала создайте все субтитры новой версией панели — она добавит метки фраз. Затем можно обновлять одну фразу.", "NOIR Captions"); return; }
+            }
             var previewComp = null;
             if (preview && (!groups.length || groups[0].compStart >= comp.duration || groups[groups.length - 1].compOut <= 0)) {
                 alert("Выбранная фраза находится вне композиции.", "NOIR Captions"); return;
@@ -1715,8 +1859,17 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
                     groups = clipped;
                     comp.workAreaStart = begin; comp.workAreaDuration = Math.max(0.01, finish - begin); comp.time = begin;
                 }
-                var res = N.generate(comp, groups, outputStyle, outputStyle.anim, preview ? true : S.replace);
+                // Generate a phrase successfully before removing its old layers.
+                var oldPhrase = [];
+                if (phraseOnly) for (var oi = 1; oi <= comp.numLayers; oi++) {
+                    var layer = comp.layer(oi), inf = N.groupInfo(layer);
+                    if (inf && inf.sourceKey === N.sourceKey(state.data, state.link) && inf.segment === phraseIndex()) oldPhrase.push(layer);
+                }
+                var res = N.generate(comp, groups, outputStyle, outputStyle.anim, preview ? true : (phraseOnly ? false : S.replace));
+                if (phraseOnly) for (var ri = 0; ri < oldPhrase.length; ri++) oldPhrase[ri].remove();
                 if (preview) { comp.openInViewer(); setStatus("Превью создано отдельно. Пробел / Num 0 — воспроизведение. Ctrl+Z — убрать превью."); return; }
+                if (phraseOnly) state.cleanLines[phraseIndex()] = etText.text.replace(/\r\n?/g, "\n").split("\n")[phraseIndex()];
+                else state.cleanLines = etText.text.replace(/\r\n?/g, "\n").split("\n");
                 warnings = warnings.concat(res.warnings);
                 var msg = "Создано слоёв: " + res.created + (res.removed ? ", заменено старых: " + res.removed : "");
                 setStatus(msg);
@@ -1732,6 +1885,8 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
 
         btnGenerate.onClick = function () { generateCaptions(false); };
         btnPreview.onClick = function () { generateCaptions(true); };
+        btnUpdatePhrase.onClick = function () { generateCaptions(false, true); };
+        btnCheck.onClick = function () { generateCaptions(false, false, true); };
 
         // Первый запуск: стиль из первого встроенного пресета.
         if (firstRun && presets.length) {
@@ -1743,6 +1898,9 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         }
         fillPresets();
         syncUI();
+        refreshRecentFonts();
+        refreshWords();
+        setStatus("Готов к работе.");
 
         // подсказка про перетаскивание — у всех бегунков, даже если у поля уже есть своя подсказка
         for (var hi = 0; hi < scrubs.length; hi++) {

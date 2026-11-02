@@ -272,7 +272,7 @@ const GOPTS = { maxWords: 1, maxChars: 99, pauseBreak: 0.35, punctBreak: true, s
   const NOANIM = { animIn: "none", inDur: 0, animOut: "none", outDur: 0, distance: 0, blur: 0, easeInfluence: 80 };
   await test("слой помнит базовую позицию; теги работают с isGenerated", () => {
     const c = mkComp(); gen(c); const l = subs(c)[0];
-    assert.ok(/^noir-captions:generated\|[\d.]+\|[\d.]+\|[\w]+-\d+\|\d+$/.test(l.comment));
+    assert.ok(/^noir-captions:generated\|[\d.]+\|[\d.]+\|[\w]+-\d+\|\d+(?:\|.*)?$/.test(l.comment));
     const b = N.baseOf(l); assert.ok(Math.abs(b[0] - l.transform.Position.value[0]) < 1e-6 || l.transform.Position.keys.length);
   });
   await test("сделать акцентом: стиль, имя, метка и свечение — только у выделенного слоя", () => {
@@ -1027,6 +1027,111 @@ const GOPTS = { maxWords: 1, maxChars: 99, pauseBreak: 0.35, punctBreak: true, s
     N.generate(c, prep(N.flattenWords(sample()), st.layout), st, st.anim, true);
     const keys = subs(c)[0].transform.Scale.keys;
     assert.ok(keys.some(k => Math.abs(k.v[0] - 85) < .001));
+  });
+
+  console.log("галерея и проверка перед созданием");
+  await test("недавние шрифты: порядок, уникальность, лимит", () => {
+    assert.deepStrictEqual(N.recentItem(["A","B","C"], "B", 3), ["B","A","C"]);
+    assert.deepStrictEqual(N.recentItem(["A","B","C"], "D", 3), ["D","A","B"]);
+  });
+  await test("избранные стили сохраняются, фильтр и выбор не меняют файлы пресетов", () => {
+    const p = N.buildPanel(new mock.Panel(), ROOT);
+    const star = p.find(e => e.type === "button" && e._gallerySlot === 0 && /[☆★]/.test(e.text));
+    star.onClick();
+    const saved = N.parseJSON(env.settings["NOIR Captions/settings.v2"]);
+    assert.ok(saved.favoriteStyles.length > 0);
+    const p2 = N.buildPanel(new mock.Panel(), ROOT);
+    const filter = p2.find(e => e.type === "checkbox" && e.text === "Только избранные");
+    filter.value = true; filter.onClick();
+    const cards = [];
+    (function walk(el) { if (el._gallerySlot !== undefined && el.type === "button" && !/[☆★]/.test(el.text)) cards.push(el); (el.children || []).forEach(walk); })(p2);
+    assert.strictEqual(cards.filter(c => c.enabled).length, saved.favoriteStyles.length);
+    cards[0].onClick();
+    assert.ok(saved.favoriteStyles.includes(N.parseJSON(env.settings["NOIR Captions/settings.v2"]).presetId));
+  });
+  await test("последний шрифт доступен после повторного открытия панели", () => {
+    const c = mkComp(); const layer = c.layers.addText("Источник"); layer.selected = true;
+    const doc = layer.property("Source Text").value; doc.font = "Inter-Bold"; layer.property("Source Text").setValue(doc);
+    const p = N.buildPanel(new mock.Panel(), ROOT); p.button("Взять со слоя").onClick();
+    const p2 = N.buildPanel(new mock.Panel(), ROOT);
+    const dd = p2.find(e => e.type === "dropdownlist" && e.items.length && e.items[0].text === "Недавние шрифты…");
+    assert.strictEqual(dd.items[1].text, "Inter-Bold"); dd.selection = 1;
+    assert.strictEqual(N.parseJSON(env.settings["NOIR Captions/settings.v2"]).style.base.fonts[0], "Inter-Bold");
+  });
+  await test("переходы между фразами учитывают сдвиг и stretch, не меняют текст", () => {
+    const c = mkComp({duration:20}), p = editorPanel();
+    const editor = p.find(e => e.type === "edittext" && /Привет/.test(e.text)); const original = editor.text;
+    p.button("Следующая фраза →").onClick(); assert.strictEqual(c.time, 3);
+    p.button("← Предыдущая фраза").onClick(); assert.strictEqual(c.time, 1);
+    assert.strictEqual(editor.text, original);
+    assert.strictEqual(p.button("← Предыдущая фраза").enabled, false);
+  });
+  await test("переход к фразе использует текущее положение аудиослоя", () => {
+    const c = mkComp({id:22,duration:20});
+    const audio = new mock.AVLayer(c, "voice"); audio.startTime = 4; audio.stretch = 200; c._l.push(audio);
+    const data = sample(); data.link = {compId:22,layerIndex:1,layerName:"voice",startTime:2,stretch:150};
+    const file = path.join(TMP,"linked.json"); fs.writeFileSync(file, JSON.stringify(data));
+    const p = N.buildPanel(new mock.Panel(), ROOT), oldOpen = global.File.openDialog;
+    global.File.openDialog = () => mock.File(file); p.button("Загрузить результат…").onClick(); global.File.openDialog = oldOpen;
+    p.button("Следующая фраза →").onClick(); assert.strictEqual(c.time, 10);
+    p.button("← Предыдущая фраза").onClick(); assert.strictEqual(c.time, 6);
+  });
+  await test("статус распознавания переходит в готовность редактировать", () => {
+    mkComp(); const p = N.buildPanel(new mock.Panel(), ROOT);
+    const oldSource = N.getAudioSource, oldCached = N.modelCached, oldStart = N.startRecognition;
+    let callbacks;
+    N.getAudioSource = () => ({file:mock.File("voice.mp4"),link:null}); N.modelCached = () => true;
+    N.startRecognition = (src, opts, cb) => { callbacks = cb; cb.onStatus({state:"transcribing",message:"Распознавание речи",progress:.2}); };
+    try {
+      p.button("Распознать речь").onClick();
+      assert.ok(p.find(e => e.type === "statictext" && e.text.indexOf("Распознавание ·") === 0));
+      callbacks.onDone(sample(), {link:null});
+      assert.ok(p.find(e => e.type === "statictext" && e.text.indexOf("Можно редактировать ·") === 0));
+    } finally { N.getAudioSource=oldSource; N.modelCached=oldCached; N.startRecognition=oldStart; }
+  });
+  await test("проверка распознаёт отсутствующий шрифт, слишком длинную фразу и опасное положение", () => {
+    const c = mkComp(), st = styleOf("reels-glow"); st.base.fonts = ["MissingFont"];
+    st.layout.posX = 2; st.layout.posY = 1;
+    const words = N.flattenWords(sample()); const groups = prep(words, st.layout);
+    groups[0].text = "Много текста ".repeat(20); groups[0].end = groups[0].start + .1;
+    const issues = N.checkCaptions(groups, st, c);
+    for (const code of ["font", "long", "safe_area"]) assert.ok(issues.some(i => i.code === code), code);
+    assert.strictEqual(c.numLayers, 0, "Проверка не должна создавать слои");
+  });
+  await test("отмена проверки останавливает создание до удаления исходных слоёв", () => {
+    const c = mkComp(), p = editorPanel(); gen(c); const old = c._l.slice();
+    const before = global.confirm; let asked = false;
+    global.confirm = () => { asked = true; return false; };
+    p.button("Создать субтитры").onClick(); global.confirm = before;
+    assert.ok(asked); assert.deepStrictEqual(c._l, old);
+  });
+  await test("редактор показывает изменение текста и обновляет только выбранную фразу", () => {
+    const c = mkComp({duration:12}), p = editorPanel();
+    p.button("Создать субтитры").onClick();
+    const second = subs(c).filter(l => N.groupInfo(l).segment === 1);
+    assert.ok(second.length > 0);
+    const editor = p.find(e => e.type === "edittext" && /Привет/.test(e.text));
+    editor.text = editor.text.replace("Привет", "Здравствуйте"); editor.onChanging();
+    const dirty = p.find(e => e.type === "statictext" && e.text.indexOf("Текст изменён — обновите фразу") === 0);
+    assert.ok(dirty);
+    p.button("Обновить выбранную фразу").onClick();
+    assert.ok(second.every(l => c._l.includes(l)), "Другую фразу нельзя пересоздавать");
+    assert.ok(subs(c).some(l => /Здравствуйте|ЗДРАВСТВУЙТЕ/.test(l.property("Source Text").value.text)));
+    assert.ok(p.find(e => e.type === "statictext" && e.text.indexOf("Можно редактировать") === 0));
+  });
+  await test("галерея создаёт трёхсекундные настоящие анимации в отдельной композиции", () => {
+    const original = mkComp(); const oldAdd = app.project.items.addComp; let demo;
+    app.project.items.addComp = (name,width,height,ratio,duration,fps) => {
+      demo = new mock.CompItem({name,width,height,duration,frameRate:fps});
+      demo.openInViewer = () => { demo.opened = true; }; demo.remove = () => { demo.removed = true; }; return demo;
+    };
+    try {
+      const shown = [presets["expert-clean"], presets["reels-punch"]];
+      N.styleExamples(shown);
+      assert.strictEqual(original.numLayers, 0); assert.strictEqual(demo.duration, 3); assert.ok(demo.opened);
+      assert.ok(subs(demo).some(l => l.transform.Opacity.numKeys > 0 || l.transform.Scale.numKeys > 0));
+      allKeysInside(demo);
+    } finally { app.project.items.addComp = oldAdd; }
   });
 
   const PY = process.env.NOIR_PYTHON, MEDIA = process.env.NOIR_MEDIA;

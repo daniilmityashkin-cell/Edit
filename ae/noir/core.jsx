@@ -225,4 +225,21 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
     N.compToSource = function (t, layerStartTime, stretch) {
         return (t - layerStartTime) * 100 / stretch;
     };
+    N.recentItem = function (items, value, limit) {
+        var out = [value];
+        for (var i = 0; i < items.length && out.length < limit; i++) if (items[i] !== value) out.push(items[i]);
+        return out;
+    };
+    N.hasItem = function (items, value) {
+        for (var i = 0; i < items.length; i++) if (items[i] === value) return true;
+        return false;
+    };
+    N.sourceKey = function (data, link) {
+        if (data.noirSourceKey && /^s[0-9a-f]+$/.test(data.noirSourceKey)) return data.noirSourceKey;
+        var text = data.source && data.source.file ? data.source.file : N.stringify(data.segments);
+        text += "|" + (link ? link.compId + ":" + link.layerName : "json");
+        var hash = 0;
+        for (var i = 0; i < text.length; i++) hash = ((hash << 5) - hash + text.charCodeAt(i)) | 0;
+        return "s" + (hash >>> 0).toString(16);
+    };
 })(NOIR);

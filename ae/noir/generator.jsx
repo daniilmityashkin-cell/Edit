@@ -426,7 +426,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
                 var w = ln[j], r = w.rect, L = w.layer, pos = w.pos;
                 L.property("Transform").property("Anchor Point")
                     .setValue([r.left + r.width / 2, r.top + r.height / 2]);
-                setBaseComment(L, pos, gid, w.order, w.lineBefore);
+                setBaseComment(L, pos, gid, w.order, w.lineBefore, g.seg, g.sourceKey);
 
                 var tIn = Math.max(0, Math.min(w.start, tOut - ctx.minDur));
                 L.startTime = 0;
@@ -496,15 +496,15 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
     }
 
     // Метка слоя: noir-captions:generated|x|y|группа|номер — позиция «в покое» и принадлежность фразе (для автоперекладки).
-    function setBaseComment(layer, pos, gid, idx, lineBefore) {
-        layer.comment = N.LAYER_TAG + "|" + pos[0] + "|" + pos[1] + "|" + gid + "|" + idx + (lineBefore ? "|line" : "");
+    function setBaseComment(layer, pos, gid, idx, lineBefore, segment, sourceKey) {
+        layer.comment = N.LAYER_TAG + "|" + pos[0] + "|" + pos[1] + "|" + gid + "|" + idx + "|" + (lineBefore ? "line" : "") + "|" + (segment === undefined ? "" : segment) + "|" + (sourceKey || "");
     }
     N.groupInfo = function (layer) {
         var c = String(layer.comment || "");
         if (c.indexOf(N.LAYER_TAG + "|") !== 0) return null;
         var p = c.split("|");
         if (p.length < 5) return null;
-        return { gid: p[3], idx: parseInt(p[4], 10), lineBefore: p[5] === "line" };
+        return { gid: p[3], idx: parseInt(p[4], 10), lineBefore: p[5] === "line", segment: p[6] === "" || p[6] === undefined ? null : parseInt(p[6], 10), sourceKey: p[7] || "" };
     };
 
     // Автоперекладка фразы: слова одной фразы (по метке группы) снова раскладываются по правилам раскладки
@@ -551,7 +551,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
                     posProp.setValue(it.pos);
                 }
                 var inf2 = N.groupInfo(it.layer);
-                setBaseComment(it.layer, it.pos, inf2.gid, inf2.idx, inf2.lineBefore);
+                setBaseComment(it.layer, it.pos, inf2.gid, inf2.idx, inf2.lineBefore, inf2.segment === null ? undefined : inf2.segment, inf2.sourceKey);
                 res.moved++;
             }
             res.groups++;
@@ -757,5 +757,69 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
     };
     N.newCtx = function (comp) {
         return { warnings: [], fontCache: {}, scale: comp.width / N.REF_WIDTH, minDur: Math.max(comp.frameDuration, 0.04) };
+    };
+    // Non-destructive preflight. Safe-area estimate covers text at rest, not animated overshoot or effects.
+    N.checkCaptions = function (groups, style, comp) {
+        var issues = [], sides = ["base"], i, j, hasAccent = false, L = style.layout;
+        for (i = 0; i < groups.length; i++) for (j = 0; j < groups[i].words.length; j++) if (groups[i].words[j].accent) hasAccent = true;
+        if (hasAccent) sides.push("accent");
+        for (i = 0; i < sides.length; i++) {
+            var fonts = style[sides[i]].fonts || [], primary = fonts[0], installed = primary ? N.fontInstalled(primary) : false;
+            if (installed === false) issues.push({code: "font", message: fontMissingMessage(fonts, pickFont(fonts))});
+            else if (installed === null) issues.push({code: "font_unknown", message: "AE не позволяет проверить шрифт: " + primary + "."});
+        }
+        if (!groups.length) issues.push({code: "empty", message: "Нет слов для создания субтитров."});
+        var width = comp.width, height = comp.height, scale = width / N.REF_WIDTH;
+        for (i = 0; i < groups.length; i++) {
+            var g = groups[i], duration = g.end - g.start, label = "Фраза " + (g.seg + 1) + ": ";
+            if (g.words.length > 12 || g.text.length > 80 || (duration > 0 && g.text.length / duration > 25))
+                issues.push({code: "long", segment: g.seg, message: label + "много текста для чтения — разделите фразу или увеличьте время."});
+            var lines = N.splitLines(g.words, L), blockHeight = 0;
+            for (j = 0; j < lines.length; j++) {
+                var maxSize = 0;
+                for (var k = 0; k < lines[j].length; k++) {
+                    var word = lines[j][k], size = style[word.accent ? "accent" : "base"].size * scale;
+                    maxSize = Math.max(maxSize, size);
+                    if (word.text.length > 24) issues.push({code: "word", segment: g.seg, message: label + "длинное слово «" + word.text + "» может сильно уменьшиться."});
+                }
+                blockHeight += maxSize * 1.2;
+            }
+            blockHeight += Math.max(0, lines.length - 1) * L.lineGap * style.base.size * scale;
+            var halfWidth = width * L.safeWidth / 2, x = width * L.posX / 100, y = height * L.posY / 100;
+            if (x - halfWidth < width * .05 - 1 || x + halfWidth > width * .95 + 1 ||
+                y - blockHeight / 2 < height * .05 || y + blockHeight / 2 > height * .95)
+                issues.push({code: "safe_area", segment: g.seg, message: label + "возможен выход из безопасной области (отступ 5%). Проверьте превью."});
+            if (g.compOut <= 0 || g.compStart >= comp.duration)
+                issues.push({code: "outside", segment: g.seg, message: label + "находится вне композиции."});
+        }
+        return issues;
+    };
+    N.styleExamples = function (presets) {
+        if (!presets.length) throw new Error("Нет стилей для примера.");
+        var comp = null;
+        try {
+            comp = app.project.items.addComp("NOIR · Галерея стилей", 1080, 1920, 1, 3, 30);
+            comp.bgColor = [0.035, 0.035, 0.035];
+            for (var i = 0; i < presets.length && i < 4; i++) {
+                var preset = presets[i], style = N.parseJSON(N.stringify(preset));
+                var factor = Math.min(1, 70 / Math.max(style.base.size, style.accent.size));
+                style.base.size *= factor; style.accent.size *= factor;
+                style.layout.safeWidth = .42; style.layout.posX = i % 2 ? 75 : 25;
+                style.layout.posY = i < 2 ? 25 : 75;
+                var words = [{text:"Ваши",start:.3,end:.85}, {text:"слова",start:.85,end:1.45,accent:true}, {text:"оживают",start:1.45,end:2.4}];
+                var group = {text:"Ваши слова оживают",seg:i,start:.3,end:2.4,compStart:.3,compOut:2.7,words:words};
+                for (var j = 0; j < words.length; j++) words[j].compStart = words[j].start;
+                N.generate(comp, [group], style, style.anim, false);
+                var title = comp.layers.addText(preset.name), prop = title.property("Source Text"), doc = prop.value;
+                doc.fontSize = 26; doc.fillColor = [1,1,1]; doc.applyFill = true;
+                doc.justification = ParagraphJustification.CENTER_JUSTIFY; prop.setValue(doc);
+                var rect = title.sourceRectAtTime(0, false);
+                if (rect.width > 440) { doc.fontSize *= 440 / rect.width; prop.setValue(doc); rect = title.sourceRectAtTime(0, false); }
+                title.property("Transform").property("Anchor Point").setValue([rect.left + rect.width / 2, rect.top + rect.height / 2]);
+                title.property("Transform").property("Position").setValue([1080 * style.layout.posX / 100, i < 2 ? 96 : 1056]);
+            }
+            comp.workAreaStart = 0; comp.workAreaDuration = 3; comp.time = .8;
+            comp.openInViewer(); return comp;
+        } catch (e) { if (comp) comp.remove(); throw e; }
     };
 })(NOIR);
