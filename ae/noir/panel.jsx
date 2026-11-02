@@ -7,7 +7,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
 (function (N) {
     var SECTION = "NOIR Captions";
     var SETTINGS_KEY = "settings.v2";
-    var VERSION = "0.8.0";
+    var VERSION = "0.8.1";
 
     function clone(o) { return N.parseJSON(N.stringify(o)); }
 
@@ -173,6 +173,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         }
         api.initialize = function () {
             // Wait until ALL tabs and controls exist; early layout freezes an empty group at one pixel.
+            api.bindWheel();
             content.layout.layout(true);
             api.initialized = true;
             api.refresh(true);
@@ -194,6 +195,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             scroll.bounds = [width + 2, 0, width + 18, height];
             content.minimumSize = [width, 0]; content.maximumSize = [width, 100000];
             content.preferredSize = [width, -1];
+            if (api.beforeLayout) api.beforeLayout(width);
             content.layout.layout(true);
             var measuredHeight = naturalHeight();
             // Explicit bounds are essential for children of a manual ScriptUI viewport.
@@ -204,15 +206,37 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             position();
         };
         scroll.onChanging = scroll.onChange = position;
-        try { body.addEventListener("mousewheel", function (event) {
-            // Leave native text editing and dropdown scrolling to ScriptUI.
+        var lastWheel = null;
+        function wheel(event) {
+            if (event === lastWheel || event._noirWheelHandled || event.target === scroll) return;
+            // Only a focused MULTILINE editor retains its own wheel scrolling.
             var target = event.target;
-            if (target && (target.type === "edittext" || target.type === "dropdownlist")) return;
-            var delta = event.wheelDelta !== undefined ? -event.wheelDelta / 120 : (event.detail || 0);
+            if (target && target.type === "edittext" && target.active && target.properties && target.properties.multiline) return;
+            var delta = 0;
+            if (event.wheelDelta) delta = Math.abs(event.wheelDelta) >= 120 ? -event.wheelDelta / 120 : -event.wheelDelta;
+            else if (event.deltaY) delta = event.deltaMode === 1 ? event.deltaY : event.deltaY / 40;
+            else if (event.detail) delta = event.detail;
+            if (!delta || !scroll.maxvalue) return;
+            lastWheel = event;
+            try { event._noirWheelHandled = true; } catch (nativeEvent) {}
+            delta = Math.max(-3, Math.min(3, delta));
             scroll.value = N.scrollRange(scroll.maxvalue, 0, (scroll.value || 0) + delta * 36).value;
             position();
             if (event.preventDefault) event.preventDefault();
-        }); } catch (wheelUnsupported) { /* The visible scrollbar also works without wheel events. */ }
+            if (event.stopPropagation) event.stopPropagation();
+        }
+        api.bindWheel = function () {
+            function bind(control) {
+                if (!control._noirWheelBound) {
+                    // Some native ScriptUI controls do not bubble; bind both ancestors and targets.
+                    try { control.addEventListener("mousewheel", wheel, true); } catch (unsupportedMousewheel) {}
+                    try { control.addEventListener("wheel", wheel, true); } catch (unsupportedWheel) {}
+                    control._noirWheelBound = true;
+                }
+                if (control.children) for (var i = 0; i < control.children.length; i++) bind(control.children[i]);
+            }
+            bind(parent);
+        };
         return api;
     };
 
@@ -1912,6 +1936,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             var selectTab = tabs.select;
             tabs.select = function (index) { selectTab(index); scroller.refresh(true); };
         } else tabs.onChange = function () { scroller.refresh(true); };
+        scroller.beforeLayout = function (width) { if (tabs.fit) tabs.fit(width); };
         win.minimumSize = [300, 200];
         win.onResizing = win.onResize = function () { this.layout.resize(); scroller.refresh(false); };
         if (win instanceof Window) { win.center(); win.show(); }

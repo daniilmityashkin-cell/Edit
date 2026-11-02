@@ -117,7 +117,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
     // Возвращает объект с add("tab", undefined, label), как у tabbedpanel.
     T.makeTabs = function (parent) {
         var bar = parent.add("group");
-        bar.orientation = "column";
+        bar.orientation = "row";
         bar.alignChildren = ["left", "center"];
         bar.spacing = 2;
         bar.margins = [0, 0, 0, 0];
@@ -126,15 +126,37 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         stack.alignChildren = ["fill", "top"];
         stack.alignment = ["fill", "fill"];
 
-        var rows = [];
-        var api = { buttons: [], pages: [], current: 0 };
-        api.setAdvanced = function (enabled) {
-            for (var ri = 1; ri < rows.length; ri++) {
-                rows[ri].visible = !!enabled;
-                rows[ri].maximumSize.height = enabled ? 28 : 0;
-                rows[ri].minimumSize.height = enabled ? 24 : 0;
+        var advanced = false, lastWidth = 100000, overflow = null;
+        var api = { buttons: [], pages: [], current: 0, bar: bar };
+        api.fit = function (width) {
+            lastWidth = Math.max(1, width);
+            if (!overflow) {
+                overflow = bar.add("dropdownlist", undefined, []);
+                overflow.helpTip = "Вкладки, которые не поместились справа";
+                overflow.onChange = function () {
+                    if (!this._lock && this.selection && this.selection.index > 0) api.select(this._indices[this.selection.index - 1]);
+                };
             }
+            var count = advanced ? api.buttons.length : Math.min(3, api.buttons.length), total = 0, i;
+            for (i = 0; i < count; i++) total += api.buttons[i]._tabWidth + 2;
+            var needsOverflow = total > lastWidth, available = lastWidth - (needsOverflow ? 104 : 0), used = 0;
+            overflow._lock = true; overflow.removeAll(); overflow.add("item", "Ещё…"); overflow._indices = [];
+            for (i = 0; i < api.buttons.length; i++) {
+                var button = api.buttons[i], shown = i < count && used + button._tabWidth <= available;
+                button.visible = shown;
+                button.minimumSize = shown ? [button._tabWidth,24] : [0,0];
+                button.maximumSize = shown ? [button._tabWidth,24] : [0,0];
+                button.preferredSize = shown ? [button._tabWidth,24] : [0,0];
+                if (shown) used += button._tabWidth + 2;
+                else if (i < count) { overflow.add("item", button.text); overflow._indices.push(i); }
+            }
+            overflow.visible = overflow._indices.length > 0;
+            overflow.minimumSize = overflow.visible ? [100,24] : [0,0];
+            overflow.maximumSize = overflow.visible ? [100,24] : [0,0];
+            overflow.preferredSize = overflow.visible ? [100,24] : [0,0];
+            overflow.selection = 0; overflow._lock = false;
         };
+        api.setAdvanced = function (enabled) { advanced = !!enabled; api.fit(lastWidth); };
         api.select = function (i) {
             for (var k = 0; k < api.pages.length; k++) {
                 api.pages[k].visible = (k === i);
@@ -147,13 +169,9 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             var page = stack.add("group");
             page.orientation = "column";
             page.visible = (idx === 0);
-            if (idx % 3 === 0) {
-                var row = bar.add("group"); row.minimumSize = [0, 0]; row.maximumSize = [100000, 28]; row.orientation = "row";
-                row.spacing = 2; row.margins = 0; row.alignChildren = ["left", "center"];
-                rows.push(row);
-            }
-            var b = rows[rows.length - 1].add("button", undefined, label);
-            b.preferredSize = [Math.max(48, label.length * 7 + 16), 24];
+            var b = bar.add("button", undefined, label);
+            b._tabWidth = Math.max(48, label.length * 7 + 16);
+            b.preferredSize = [b._tabWidth, 24];
             try {
                 b.onDraw = function () {
                     var g = this.graphics, w = this.size.width, h = this.size.height;

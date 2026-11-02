@@ -719,7 +719,38 @@ const GOPTS = { maxWords: 1, maxChars: 99, pauseBreak: 0.35, punctBreak: true, s
     area.body.fire("mousewheel", {wheelDelta: -120});
     assert.strictEqual(area.content.location[1], -36);
     area.body.fire("mousewheel", {wheelDelta: -120, target: {type: "edittext"}});
-    assert.strictEqual(area.content.location[1], -36, "Колесо внутри редактора должно оставаться редактору");
+    assert.strictEqual(area.content.location[1], -72, "Однострочное поле не должно поглощать прокрутку панели");
+    area.body.fire("mousewheel", {wheelDelta: -120, target: {type:"edittext",active:true,properties:{multiline:true}}});
+    assert.strictEqual(area.content.location[1], -72, "Активный многострочный редактор прокручивается сам");
+  });
+  await test("колесо над дочерними контролами и заголовком прокручивает панель без двойного шага", () => {
+    const host = new mock.Panel(), header = host.add("statictext", undefined, "Заголовок");
+    const area = N.makeScrollArea(host), input = area.content.add("edittext", undefined, "Поиск");
+    const button = area.content.add("button", undefined, "Действие");
+    const dropdown = area.content.add("dropdownlist", undefined, ["A","B"]);
+    area.body.size = {width:340,height:180}; area.content.size={width:320,height:700}; area.content.location=[0,0]; area.initialize();
+    input.fire("mousewheel", {detail:1,target:input}); assert.strictEqual(area.scrollbar.value,36);
+    button.fire("wheel", {deltaY:40,target:button}); assert.strictEqual(area.scrollbar.value,72);
+    dropdown.fire("mousewheel", {wheelDelta:-120,target:dropdown}); assert.strictEqual(area.scrollbar.value,108);
+    header.fire("mousewheel", {wheelDelta:120,target:header}); assert.strictEqual(area.scrollbar.value,72);
+    const shared={wheelDelta:-120,target:button,preventDefault(){this.prevented=true;}};
+    host._ev.mousewheel[0](shared); button._ev.mousewheel[0](shared);
+    assert.strictEqual(area.scrollbar.value,108); assert.ok(shared.prevented);
+    assert.strictEqual(dropdown.selection,null,"Колесо не должно менять выбранное значение списка");
+  });
+  await test("дополнительные вкладки справа в одной строке; узкая панель получает меню Ещё", () => {
+    const api = N.theme.makeTabs(new mock.Panel());
+    for (const name of ["1 · Видео","2 · Текст","3 · Стиль","Вид","Раскладка","Анимация","Слои","Функции","SFX"]) api.add("tab",undefined,name);
+    api.setAdvanced(true); api.fit(900);
+    assert.strictEqual(api.bar.orientation,"row");
+    assert.ok(api.buttons.every(b => b.parent === api.bar && b.visible));
+    api.fit(310);
+    const extra = api.bar.find(e => e.type === "dropdownlist");
+    assert.ok(extra.visible && extra._indices.length > 0);
+    const index = extra._indices[0]; extra.selection=1; assert.strictEqual(api.current,index);
+    api.setAdvanced(false); api.fit(900);
+    assert.ok(api.buttons.slice(3).every(b => !b.visible));
+    assert.strictEqual(extra.visible,false);
   });
   await test("бегунки: у всех числовых полей есть spec и подсказка; текстовое поле осталось текстовым", () => {
     const p = N.buildPanel(new mock.Panel(), ROOT), sc = [];
