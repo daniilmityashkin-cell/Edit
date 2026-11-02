@@ -7,7 +7,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
 (function (N) {
     var SECTION = "NOIR Captions";
     var SETTINGS_KEY = "settings.v2";
-    var VERSION = "0.7.0";
+    var VERSION = "0.7.1";
 
     function clone(o) { return N.parseJSON(N.stringify(o)); }
 
@@ -133,6 +133,57 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         return fams.length ? fams : null;
     }
 
+    // Native ScriptUI groups do not scroll. Keep their viewport independent of content height.
+    N.scrollRange = function (contentHeight, viewportHeight, value) {
+        var max = Math.max(0, contentHeight - Math.max(0, viewportHeight));
+        return {max: max, value: Math.max(0, Math.min(max, value || 0))};
+    };
+    N.makeScrollArea = function (parent) {
+        var body = parent.add("group");
+        body.orientation = "row"; body.alignment = ["fill", "fill"];
+        body.minimumSize = [0, 0]; body.preferredSize = [300, 240]; body.margins = 0; body.spacing = 2;
+        var viewport = body.add("group");
+        viewport.minimumSize = [0, 0]; viewport.margins = 0;
+        var content = viewport.add("group");
+        content.orientation = "column"; content.alignChildren = ["fill", "top"];
+        content.spacing = 4; content.margins = 0;
+        content.minimumSize = [0, 0]; content.maximumSize = [100000, 100000];
+        var scroll = body.add("scrollbar", undefined, 0, 0, 0);
+        scroll.stepdelta = 28; scroll.jumpdelta = 140;
+        // Only content uses auto-layout; the clipping viewport and scrollbar use explicit bounds.
+        viewport.layout = {layout: function () {}, resize: function () {}};
+        body.layout = {layout: function () {}, resize: function () {}};
+        function position() {
+            if (!content.location) return;
+            content.location = [0, -Math.round(scroll.value || 0)];
+        }
+        var api = {body: body, viewport: viewport, content: content, scrollbar: scroll};
+        api.refresh = function (reset) {
+            if (!body.size || !body.size.width || !body.size.height) return;
+            var width = Math.max(1, body.size.width - 18), height = Math.max(1, body.size.height);
+            viewport.bounds = [0, 0, width, height];
+            scroll.bounds = [width + 2, 0, width + 18, height];
+            content.minimumSize.width = width; content.maximumSize.width = width;
+            content.size.width = width;
+            content.layout.layout(true);
+            var range = N.scrollRange(content.size.height, height, reset ? 0 : scroll.value);
+            scroll.maxvalue = range.max; scroll.value = range.value;
+            scroll.enabled = range.max > 0; scroll.jumpdelta = Math.max(28, height * 0.8);
+            position();
+        };
+        scroll.onChanging = scroll.onChange = position;
+        try { body.addEventListener("mousewheel", function (event) {
+            // Leave native text editing and dropdown scrolling to ScriptUI.
+            var target = event.target;
+            if (target && (target.type === "edittext" || target.type === "dropdownlist")) return;
+            var delta = event.wheelDelta !== undefined ? -event.wheelDelta / 120 : (event.detail || 0);
+            scroll.value = N.scrollRange(scroll.maxvalue, 0, (scroll.value || 0) + delta * 36).value;
+            position();
+            if (event.preventDefault) event.preventDefault();
+        }); } catch (wheelUnsupported) { /* The visible scrollbar also works without wheel events. */ }
+        return api;
+    };
+
     N.buildPanel = function (thisObj, root) {
         var firstRun = !app.settings.haveSetting(SECTION, SETTINGS_KEY);
         var S = loadSettings();
@@ -181,7 +232,10 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         stLine.alignment = ["fill", "top"];
         stLine._keep = true;
 
-        var tabs = TH ? TH.makeTabs(win) : win.add("tabbedpanel");
+        var cbAdvanced = win.add("checkbox", undefined, "Дополнительные настройки");
+        cbAdvanced.helpTip = "Показать вид, раскладку, анимацию, слои, функции и SFX";
+        var scroller = N.makeScrollArea(win);
+        var tabs = TH ? TH.makeTabs(scroller.content) : scroller.content.add("tabbedpanel");
         tabs.alignChildren = ["fill", "top"];
         var tSpeech = tabs.add("tab", undefined, "1 · Видео");
         var tText = tabs.add("tab", undefined, "2 · Текст");
@@ -200,15 +254,16 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             all[ti].margins = [2, 4, 2, 2];
         }
 
-        var cbAdvanced = win.add("checkbox", undefined, "Дополнительные настройки");
         function showAdvanced() {
             if (tabs.buttons) {
+                if (tabs.setAdvanced) tabs.setAdvanced(cbAdvanced.value);
                 for (var ai = 3; ai < tabs.buttons.length; ai++) tabs.buttons[ai].visible = !!cbAdvanced.value;
                 if (!cbAdvanced.value && tabs.current > 2) tabs.select(0);
             } else {
                 for (var ai = 3; ai < all.length; ai++) all[ai].enabled = !!cbAdvanced.value;
             }
             win.layout.layout(true);
+            scroller.refresh(true);
         }
         cbAdvanced.onClick = showAdvanced;
         showAdvanced();
@@ -320,8 +375,8 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         // ================= Текст =================
         tText.add("statictext", undefined, "Правьте текст или нажимайте слова ниже. ↵ — перенос, | — новая фраза");
         var etText = tText.add("edittext", undefined, "", { multiline: true, scrolling: true, wantReturn: true });
-        etText.preferredSize = [260, 120];
-        etText.alignment = ["fill", "fill"];
+        etText.preferredSize = [260, 90];
+        etText.alignment = ["fill", "top"];
         var rTextBtns = tText.add("group");
         var btnSave = rTextBtns.add("button", undefined, "Сохранить результат…");
         var btnReset = rTextBtns.add("button", undefined, "Сбросить правки");
@@ -744,7 +799,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         refillSfx();
 
         // ================= низ =================
-        if (!TH) win.add("statictext", undefined, "NOIR CAPTIONS " + VERSION);
+        if (!TH) scroller.content.add("statictext", undefined, "NOIR CAPTIONS " + VERSION);
 
         // ================= тема =================
         if (TH) {
@@ -1683,9 +1738,15 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             if (ht.indexOf("Shift") < 0) scrubs[hi].helpTip = ht + (ht ? ". " : "") + "Зажмите левую кнопку и двигайте мышь. Shift — точнее, Ctrl — быстрее. Клик — ввести число.";
         }
 
-        win.onResizing = win.onResize = function () { this.layout.resize(); };
+        if (tabs.select) {
+            var selectTab = tabs.select;
+            tabs.select = function (index) { selectTab(index); scroller.refresh(true); };
+        } else tabs.onChange = function () { scroller.refresh(true); };
+        win.minimumSize = [300, 200];
+        win.onResizing = win.onResize = function () { this.layout.resize(); scroller.refresh(false); };
         if (win instanceof Window) { win.center(); win.show(); }
         else { win.layout.layout(true); win.layout.resize(); }
+        scroller.refresh(true);
         return win;
     };
 })(NOIR);

@@ -692,8 +692,27 @@ const GOPTS = { maxWords: 1, maxChars: 99, pauseBreak: 0.35, punctBreak: true, s
   await test("кнопка «Создать субтитры» закреплена над вкладками (видна при любой высоте окна)", () => {
     const kids = panel.children;
     const iGen = kids.findIndex(k => k.children && k.children.some(c => c.type === "button" && c.text === "Создать субтитры"));
-    const iTabs = kids.findIndex(k => k.type === "group" && k.orientation === "stack");
+    const iTabs = kids.findIndex(k => k.find && k.find(c => c.type === "scrollbar"));
+    const iAdvanced = kids.findIndex(k => k.type === "checkbox" && k.text === "Дополнительные настройки");
+    assert.ok(iAdvanced > iGen && iAdvanced < iTabs, "Настройки должны находиться в закреплённой шапке");
     assert.ok(iGen >= 0 && iTabs >= 0 && iGen < iTabs, "gen " + iGen + " tabs " + iTabs);
+  });
+  await test("прокрутка: нижние элементы достижимы, при расширении смещение ограничивается", () => {
+    const area = N.makeScrollArea(new mock.Panel());
+    area.body.size = {width: 340, height: 180};
+    area.content.size = {width: 320, height: 700}; area.content.location = [0, 0];
+    area.refresh(true);
+    assert.strictEqual(area.scrollbar.maxvalue, 520);
+    area.scrollbar.value = 520; area.scrollbar.onChanging();
+    assert.deepStrictEqual(area.content.location, [0, -520]);
+    assert.strictEqual(area.content.size.height + area.content.location[1], 180);
+    area.body.size.height = 800; area.refresh(false);
+    assert.strictEqual(area.scrollbar.value, 0); assert.strictEqual(area.scrollbar.enabled, false);
+    area.body.size.height = 180; area.refresh(true);
+    area.body.fire("mousewheel", {wheelDelta: -120});
+    assert.strictEqual(area.content.location[1], -36);
+    area.body.fire("mousewheel", {wheelDelta: -120, target: {type: "edittext"}});
+    assert.strictEqual(area.content.location[1], -36, "Колесо внутри редактора должно оставаться редактору");
   });
   await test("бегунки: у всех числовых полей есть spec и подсказка; текстовое поле осталось текстовым", () => {
     const p = N.buildPanel(new mock.Panel(), ROOT), sc = [];

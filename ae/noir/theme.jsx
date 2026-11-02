@@ -117,7 +117,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
     // Возвращает объект с add("tab", undefined, label), как у tabbedpanel.
     T.makeTabs = function (parent) {
         var bar = parent.add("group");
-        bar.orientation = "row";
+        bar.orientation = "column";
         bar.alignChildren = ["left", "center"];
         bar.spacing = 2;
         bar.margins = [0, 0, 0, 0];
@@ -126,7 +126,15 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         stack.alignChildren = ["fill", "top"];
         stack.alignment = ["fill", "fill"];
 
+        var rows = [];
         var api = { buttons: [], pages: [], current: 0 };
+        api.setAdvanced = function (enabled) {
+            for (var ri = 1; ri < rows.length; ri++) {
+                rows[ri].visible = !!enabled;
+                rows[ri].maximumSize.height = enabled ? 28 : 0;
+                rows[ri].minimumSize.height = enabled ? 24 : 0;
+            }
+        };
         api.select = function (i) {
             for (var k = 0; k < api.pages.length; k++) {
                 api.pages[k].visible = (k === i);
@@ -139,7 +147,12 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             var page = stack.add("group");
             page.orientation = "column";
             page.visible = (idx === 0);
-            var b = bar.add("button", undefined, label);
+            if (idx % 3 === 0) {
+                var row = bar.add("group"); row.minimumSize = [0, 0]; row.maximumSize = [100000, 28]; row.orientation = "row";
+                row.spacing = 2; row.margins = 0; row.alignChildren = ["left", "center"];
+                rows.push(row);
+            }
+            var b = rows[rows.length - 1].add("button", undefined, label);
             b.preferredSize = [Math.max(48, label.length * 7 + 16), 24];
             try {
                 b.onDraw = function () {
