@@ -62,6 +62,35 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         file.close();
     };
 
+    N.previewAudio = function (root, override, source, start, end) {
+        if (!isWin) throw new Error("Прослушивание из панели поддерживается на Windows.");
+        if (N.audioPreview) throw new Error("Дождитесь подготовки предыдущей фразы.");
+        var py = File(N.pythonPath(root, override));
+        if (!py.exists || !File(source).exists) throw new Error("Не найден Python или исходный аудиофайл.");
+        var dir = Folder(Folder.temp.fsName + "/NOIR_Captions"); if (!dir.exists) dir.create();
+        var base = dir.fsName + "/audio_" + new Date().getTime();
+        var job = File(base + ".json"), status = File(base + "_status.json"), vbs = File(base + ".vbs");
+        N.writeText(job, N.stringify({input: source, output: base + ".wav", start: start, end: end, status: status.fsName}));
+        var command = '"' + py.fsName + '" "' + root + '/recognition/preview_audio.py" "' + job.fsName + '"';
+        N.writeText(vbs, 'CreateObject("WScript.Shell").Run "' + command.replace(/"/g, '""') + '", 0, False\r\n');
+        if (!vbs.execute()) throw new Error("Не удалось запустить прослушивание.");
+        N.audioPreview = {status: status, started: new Date().getTime()};
+        N.audioPreview.task = app.scheduleTask("NOIR.pollAudioPreview()", 500, true);
+    };
+    N.pollAudioPreview = function () {
+        var job = N.audioPreview; if (!job) return;
+        try {
+            var text = readText(job.status);
+            if (text === null && new Date().getTime() - job.started < 60000) return;
+            var result = text === null ? {state: "error", message: "Подготовка аудио заняла больше минуты."} : N.parseJSON(text);
+            app.cancelTask(job.task); N.audioPreview = null;
+            if (result.state === "error") alert(result.message, "NOIR: прослушивание");
+        } catch (e) {
+            app.cancelTask(job.task); N.audioPreview = null;
+            alert(e.message, "NOIR: прослушивание");
+        }
+    };
+
     // Выделенный слой -> что распознавать. Бросает понятную ошибку.
     N.getAudioSource = function () {
         var comp = app.project.activeItem;

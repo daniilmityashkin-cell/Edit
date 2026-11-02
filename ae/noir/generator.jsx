@@ -110,12 +110,13 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
     }
 
     function stateValues(anim, base, opts) {
+        var intensity = opts.intensity === undefined ? 1 : opts.intensity;
         return {
             op: anim.op === undefined ? opts.opacity : anim.op * opts.opacity / 100,
-            sc: anim.sc === undefined ? 100 : anim.sc,
-            rot: anim.rot || 0,
-            pos: [base[0] + (anim.dx || 0) * opts.distance, base[1] + (anim.dy || 0) * opts.distance],
-            blur: (anim.blur || 0) * (opts.blur || 0)
+            sc: anim.sc === undefined ? 100 : 100 + (anim.sc - 100) * intensity,
+            rot: (anim.rot || 0) * intensity,
+            pos: [base[0] + (anim.dx || 0) * opts.distance * intensity, base[1] + (anim.dy || 0) * opts.distance * intensity],
+            blur: (anim.blur || 0) * (opts.blur || 0) * intensity
         };
     }
 
@@ -171,7 +172,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
 
         keys(op, from.op, opts.opacity, to.op, null);
         keys(sc, [from.sc, from.sc, 100], [100, 100, 100], [to.sc, to.sc, 100],
-            animIn.over ? [animIn.over, animIn.over, 100] : null);
+            animIn.over ? [100 + (animIn.over - 100) * (opts.intensity === undefined ? 1 : opts.intensity), 100 + (animIn.over - 100) * (opts.intensity === undefined ? 1 : opts.intensity), 100] : null);
         keys(pos, from.pos, base, to.pos, null);
         keys(blurProp, from.blur, 0, to.blur, null);
         keys(rot, from.rot, 0, to.rot, null);
@@ -195,9 +196,9 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             an.name = "NOIR Letters " + (isIn ? "In" : "Out");
             var props = an.property("ADBE Text Animator Properties");
             props.addProperty("ADBE Text Opacity").setValue(0);
-            if (kind === "rise") props.addProperty("ADBE Text Position 3D").setValue([0, (isIn ? 1 : -1) * (opts.distance || 40), 0]);
-            if (kind === "pop") props.addProperty("ADBE Text Scale 3D").setValue([35, 35, 100]);
-            if (kind === "blur") props.addProperty("ADBE Text Blur").setValue([opts.blur || 20, opts.blur || 20]);
+            if (kind === "rise") props.addProperty("ADBE Text Position 3D").setValue([0, (isIn ? 1 : -1) * (opts.distance || 40) * (opts.intensity === undefined ? 1 : opts.intensity), 0]);
+            if (kind === "pop") props.addProperty("ADBE Text Scale 3D").setValue([100 - 65 * (opts.intensity === undefined ? 1 : opts.intensity), 100 - 65 * (opts.intensity === undefined ? 1 : opts.intensity), 100]);
+            if (kind === "blur") props.addProperty("ADBE Text Blur").setValue([(opts.blur || 20) * (opts.intensity === undefined ? 1 : opts.intensity), (opts.blur || 20) * (opts.intensity === undefined ? 1 : opts.intensity)]);
             var sel = an.property("ADBE Text Selectors").addProperty("ADBE Text Selector");
             var start = sel.property("ADBE Text Percent Start"), end = sel.property("ADBE Text Percent End");
             if (kind === "type") {          // «печатная машинка»: резкие границы, без плавного перехода между буквами
@@ -347,10 +348,16 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         var lines = [], cur = null, chars = 0;
         for (var i = 0; i < items.length; i++) {
             var it = items[i];
-            var newLine = !cur ||
+            var newLine = !cur || it.lineBefore ||
                 (layout.accentOwnLine && it.accent !== cur[cur.length - 1].accent) ||
                 (layout.lineChars && chars + 1 + it.text.length > layout.lineChars);
-            if (newLine) { cur = []; lines.push(cur); chars = it.text.length; }
+            if (newLine) {
+                var carry = null;
+                if (cur && cur.length > 1 && layout.keepShortWords && !it.lineBefore &&
+                    !layout.accentOwnLine && /^(в|во|на|к|ко|с|со|у|о|об|и|а|но|не|по|из|за|от|до|to|of|a|an|in|on)$/i.test(cur[cur.length - 1].text)) carry = cur.pop();
+                cur = []; lines.push(cur); chars = it.text.length;
+                if (carry) { cur.push(carry); chars += carry.text.length + 1; }
+            }
             else chars += 1 + it.text.length;
             cur.push(it);
         }
@@ -368,14 +375,15 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
     function buildGroup(comp, g, style, anim, ctx) {
         var layout = style.layout;
         var hasAccent = false, i, j;
-        for (i = 0; i < g.words.length; i++) if (g.words[i].accent || g.words[i].invert) hasAccent = true;
+        for (i = 0; i < g.words.length; i++) if (g.words[i].accent || g.words[i].invert || g.words[i].lineBefore) hasAccent = true;
 
+        if (layout.lineChars && g.text.length > layout.lineChars) hasAccent = true;
         var items = [];
         if (layout.reveal === "group" && !hasAccent) {
             items.push({ text: g.text, accent: false, start: g.compStart, order: 0 });
         } else {
             for (i = 0; i < g.words.length; i++) items.push({
-                text: g.words[i].text, accent: !!g.words[i].accent, invert: !!g.words[i].invert, ord: g.words[i].ord,
+                text: g.words[i].text, accent: !!g.words[i].accent, invert: !!g.words[i].invert, lineBefore: !!g.words[i].lineBefore, ord: g.words[i].ord,
                 start: layout.reveal === "group" ? g.compStart : g.words[i].compStart, order: i
             });
         }
@@ -418,7 +426,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
                 var w = ln[j], r = w.rect, L = w.layer, pos = w.pos;
                 L.property("Transform").property("Anchor Point")
                     .setValue([r.left + r.width / 2, r.top + r.height / 2]);
-                setBaseComment(L, pos, gid, w.order);
+                setBaseComment(L, pos, gid, w.order, w.lineBefore);
 
                 var tIn = Math.max(0, Math.min(w.start, tOut - ctx.minDur));
                 L.startTime = 0;
@@ -488,15 +496,15 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
     }
 
     // Метка слоя: noir-captions:generated|x|y|группа|номер — позиция «в покое» и принадлежность фразе (для автоперекладки).
-    function setBaseComment(layer, pos, gid, idx) {
-        layer.comment = N.LAYER_TAG + "|" + pos[0] + "|" + pos[1] + "|" + gid + "|" + idx;
+    function setBaseComment(layer, pos, gid, idx, lineBefore) {
+        layer.comment = N.LAYER_TAG + "|" + pos[0] + "|" + pos[1] + "|" + gid + "|" + idx + (lineBefore ? "|line" : "");
     }
     N.groupInfo = function (layer) {
         var c = String(layer.comment || "");
         if (c.indexOf(N.LAYER_TAG + "|") !== 0) return null;
         var p = c.split("|");
         if (p.length < 5) return null;
-        return { gid: p[3], idx: parseInt(p[4], 10) };
+        return { gid: p[3], idx: parseInt(p[4], 10), lineBefore: p[5] === "line" };
     };
 
     // Автоперекладка фразы: слова одной фразы (по метке группы) снова раскладываются по правилам раскладки
@@ -513,14 +521,14 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             var members = [];
             for (i = 1; i <= comp.numLayers; i++) {
                 var l = comp.layer(i), inf = N.groupInfo(l);
-                if (inf && inf.gid === gids[k]) members.push({ layer: l, order: inf.idx });
+                if (inf && inf.gid === gids[k]) members.push({ layer: l, order: inf.idx, lineBefore: inf.lineBefore });
             }
             members.sort(function (a, b) { return a.order - b.order; });
             var items = [], minL = 1e9, maxR = -1e9, minT = 1e9, maxB = -1e9;
             for (j = 0; j < members.length; j++) {
                 var ly = members[j].layer, doc = ly.property("Source Text").value, t = Math.max(0, ly.inPoint);
                 var rect = ly.sourceRectAtTime(t, false), b0 = N.baseOf(ly);
-                items.push({ layer: ly, text: doc.text, accent: ly.label === 11, size: doc.fontSize, rect: rect, t: t, order: members[j].order, base: b0 });
+                items.push({ layer: ly, text: doc.text, accent: ly.label === 11, size: doc.fontSize, rect: rect, t: t, order: members[j].order, lineBefore: members[j].lineBefore, base: b0 });
                 minL = Math.min(minL, b0[0] - rect.width / 2); maxR = Math.max(maxR, b0[0] + rect.width / 2);
                 minT = Math.min(minT, b0[1] - rect.height / 2); maxB = Math.max(maxB, b0[1] + rect.height / 2);
             }
@@ -543,7 +551,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
                     posProp.setValue(it.pos);
                 }
                 var inf2 = N.groupInfo(it.layer);
-                setBaseComment(it.layer, it.pos, inf2.gid, inf2.idx);
+                setBaseComment(it.layer, it.pos, inf2.gid, inf2.idx, inf2.lineBefore);
                 res.moved++;
             }
             res.groups++;

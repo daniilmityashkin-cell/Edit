@@ -1,0 +1,106 @@
+{
+  "schema": "noir-style/1",
+  "id": "interview-clean",
+  "name": "Интервью · Чистый",
+  "description": "Короткие фразы и мягкое появление без лишних эффектов.",
+  "layout": {
+    "reveal": "group",
+    "maxWords": 5,
+    "maxChars": 42,
+    "lineChars": 24,
+    "pauseBreak": 0.35,
+    "punctBreak": true,
+    "stripPunct": true,
+    "autoAccent": false,
+    "posX": 50,
+    "posY": 68,
+    "lineGap": 0.05,
+    "wordSpace": 0.26,
+    "accentOwnLine": false,
+    "safeWidth": 0.82,
+    "holdGap": 0.3,
+    "keepShortWords": true
+  },
+  "base": {
+    "fonts": [
+      "Poppins-SemiBold",
+      "Montserrat-SemiBold",
+      "SFProDisplay-Semibold",
+      "Inter-SemiBold",
+      "SegoeUI-Semibold",
+      "ArialMT"
+    ],
+    "size": 64,
+    "color": [
+      1,
+      1,
+      1
+    ],
+    "tracking": 0,
+    "caps": false,
+    "strokeWidth": 0,
+    "strokeColor": [
+      0,
+      0,
+      0
+    ],
+    "shadow": {
+      "color": [
+        0,
+        0,
+        0
+      ],
+      "opacity": 65,
+      "distance": 2,
+      "softness": 8
+    },
+    "glow": null,
+    "blend": "normal",
+    "opacity": 100
+  },
+  "accent": {
+    "fonts": [
+      "Poppins-ExtraBoldItalic",
+      "Montserrat-ExtraBoldItalic",
+      "SFProDisplay-HeavyItalic",
+      "Inter-ExtraBoldItalic",
+      "Arial-BoldItalicMT"
+    ],
+    "size": 68,
+    "color": [
+      1.0,
+      0.1,
+      0.85
+    ],
+    "tracking": -6,
+    "caps": false,
+    "strokeWidth": 0,
+    "strokeColor": [
+      0,
+      0,
+      0
+    ],
+    "shadow": {
+      "color": [
+        0,
+        0,
+        0
+      ],
+      "opacity": 65,
+      "distance": 2,
+      "softness": 8
+    },
+    "glow": null,
+    "blend": "normal",
+    "opacity": 100
+  },
+  "anim": {
+    "animIn": "fade",
+    "inDur": 0.12,
+    "animOut": "fade",
+    "outDur": 0.1,
+    "distance": 20,
+    "blur": 0,
+    "easeInfluence": 80
+  }
+}

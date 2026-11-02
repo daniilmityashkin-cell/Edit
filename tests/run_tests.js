@@ -178,7 +178,8 @@ const GOPTS = { maxWords: 1, maxChars: 99, pauseBreak: 0.35, punctBreak: true, s
       const c = mkComp({ width: 720, height: 1280 }), st = styleOf(id);
       const words = N.applyEdits(sample(), "Привет, это *NOIR.*\nСубтитры сами", []);
       const r = N.generate(c, prep(words, st.layout), st, st.anim, true);
-      assert.ok(r.created >= 5, "created " + r.created);
+      assert.ok(r.created >= (st.layout.reveal === "group" ? 2 : 5), "created " + r.created);
+      assert.strictEqual(subs(c).map(l => l.property("Source Text").value.text).join(" ").split(/\s+/).length, 5);
       allKeysInside(c);
       for (const l of subs(c)) {
         const pos = l.transform.Position.value, w = l.sourceRectAtTime().width;
@@ -731,10 +732,14 @@ const GOPTS = { maxWords: 1, maxChars: 99, pauseBreak: 0.35, punctBreak: true, s
   await test("тема: вкладки-кнопки переключают страницы, кнопки получили onDraw", () => {
     assert.ok(N.theme && N.theme.makeTabs, "theme.jsx не загрузилась");
     const tabBtn = (t) => panel.find(e => e.type === "button" && e.text === t);
-    tabBtn("Стиль").onClick(); tabBtn("Раскладка").onClick();
+    tabBtn("3 · Стиль").onClick();
+    assert.strictEqual(tabBtn("Раскладка").visible, false);
+    const advanced = panel.find(e => e.type === "checkbox" && e.text === "Дополнительные настройки");
+    advanced.value = true; advanced.onClick();
+    tabBtn("Раскладка").onClick();
     const stack = panel.find(e => e.type === "group" && e.orientation === "stack");
     assert.deepStrictEqual(stack.children.map(c => c.visible), [false, false, false, false, true, false, false, false, false]);
-    tabBtn("Речь").onClick();
+    tabBtn("1 · Видео").onClick();
     assert.deepStrictEqual(stack.children.map(c => c.visible), [true, false, false, false, false, false, false, false, false]);
     assert.strictEqual(typeof panel.button("Создать субтитры").onDraw, "function");
   });
@@ -920,6 +925,82 @@ const GOPTS = { maxWords: 1, maxChars: 99, pauseBreak: 0.35, punctBreak: true, s
     mkComp(); env.log.alerts.length = 0;
     panel.button("Распознать речь").onClick();
     assert.ok(/Выделите/.test(env.log.alerts[0]));
+  });
+
+  console.log("трёхшаговый редактор");
+  function editorPanel() {
+    const jf = path.join(TMP, "editor.json"); fs.writeFileSync(jf, JSON.stringify(sample()));
+    const p = N.buildPanel(new mock.Panel(), ROOT);
+    const before = global.File.openDialog;
+    global.File.openDialog = () => mock.File(jf);
+    p.button("Загрузить результат…").onClick(); global.File.openDialog = before;
+    return p;
+  }
+  await test("клик по слову, перенос и разделение сохраняют тайминги и JSON-разметку", () => {
+    mkComp(); const p = editorPanel();
+    const ed = p.find(e => e.type === "edittext" && /Привет/.test(e.text));
+    const before = N.applyEdits(sample(), ed.text, []).map(w => [w.start, w.end]);
+    const second = p.find(e => e.type === "button" && e._slot === 1);
+    second.onClick(); p.button("Перенос строки").onClick(); p.button("Разделить фразу").onClick();
+    const words = N.applyEdits(sample(), ed.text, []);
+    assert.ok(words[1].accent && words[1].lineBefore && words[1].breakBefore);
+    assert.deepStrictEqual(words.map(w => [w.start, w.end]), before);
+    const data = {segments:[{words}]};
+    const recovered = N.applyEdits(data, N.toEditorText(data), []);
+    assert.ok(recovered[1].lineBefore && recovered[1].accent && recovered[1].breakBefore);
+    second.onClick(); assert.strictEqual(N.applyEdits(sample(), ed.text, [])[1].accent, false);
+  });
+  await test("быстрая правка слова и отмена сохраняют тайминги", () => {
+    mkComp(); const p = editorPanel();
+    const ed = p.find(e => e.type === "edittext" && /Привет/.test(e.text));
+    const original = ed.text, oldPrompt = global.prompt;
+    global.prompt = () => "Здравствуйте";
+    p.button("Исправить выбранное слово…").onClick(); global.prompt = oldPrompt;
+    const words = N.applyEdits(sample(), ed.text, []);
+    assert.strictEqual(words[0].text, "Здравствуйте");
+    assert.strictEqual(words[0].start, 1); assert.strictEqual(words[0].end, 1.3);
+    p.button("Отменить правку текста").onClick(); assert.strictEqual(ed.text, original);
+  });
+  await test("ручной перенос создаёт разные строки даже в режиме целой фразы и переживает reflow", () => {
+    const c = mkComp(), st = styleOf("interview-clean"); st.layout.autoAccent = false;
+    const words = N.applyEdits(sample(), N.toEditorText(sample()).replace("это", "↵ это"), []);
+    const gs = prep(words, st.layout); N.generate(c, gs, st, st.anim, true);
+    const layers = subs(c), flagged = layers.filter(l => N.groupInfo(l).lineBefore);
+    assert.ok(flagged.length > 0);
+    N.reflowGroups(c, layers, st.layout);
+    assert.ok(flagged.every(l => N.groupInfo(l).lineBefore));
+  });
+  await test("шрифт всем NOIR: меняются только субтитры, выбор и тайминги сохраняются", () => {
+    const c = mkComp(), st = styleOf("reels-glow"); gen(c);
+    const foreign = c.layers.addText("Свой заголовок"); foreign.selected = true;
+    const foreignFont = foreign.property("Source Text").value.font;
+    const times = subs(c).map(l => [l.inPoint, l.outPoint]);
+    const p = N.buildPanel(new mock.Panel(), ROOT);
+    const dd = p.find(e => e.type === "dropdownlist" && e.items.some(i => /Reels Glow/.test(i.text)));
+    dd.selection = dd.items.findIndex(i => /Reels Glow/.test(i.text));
+    p.find(e => e.type === "radiobutton" && e.text === "*Акцент*").onClick();
+    p.button("Шрифт → всем субтитрам NOIR").onClick();
+    assert.ok(subs(c).every(l => l.property("Source Text").value.font === "Inter-Bold"));
+    assert.strictEqual(foreign.property("Source Text").value.font, foreignFont);
+    assert.deepStrictEqual(subs(c).map(l => [l.inPoint, l.outPoint]), times);
+    assert.ok(foreign.selected);
+  });
+  await test("превью создаёт отдельную композицию, ограничивает фрагмент и оставляет исходник", () => {
+    const c = mkComp({duration: 12}); const p = editorPanel();
+    let copy;
+    c.duplicate = () => { copy = new mock.CompItem({duration:12}); copy.openInViewer = () => { copy.opened = true; }; return copy; };
+    const count = c.numLayers;
+    p.button("Превью фразы на видео").onClick();
+    assert.ok(copy && copy.opened); assert.strictEqual(c.numLayers, count);
+    assert.ok(copy.workAreaDuration > 0 && copy.workAreaDuration <= 5);
+    assert.ok(subs(copy).length > 0);
+  });
+  await test("интенсивность меняет масштаб Pop, не меняя тайминги", () => {
+    const c = mkComp(), st = styleOf("reels-glow");
+    st.anim.intensity = .5;
+    N.generate(c, prep(N.flattenWords(sample()), st.layout), st, st.anim, true);
+    const keys = subs(c)[0].transform.Scale.keys;
+    assert.ok(keys.some(k => Math.abs(k.v[0] - 85) < .001));
   });
 
   const PY = process.env.NOIR_PYTHON, MEDIA = process.env.NOIR_MEDIA;

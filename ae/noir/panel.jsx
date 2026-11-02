@@ -27,6 +27,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
 
     var DEFAULTS = {
         language: "ru", model: "large-v3", device: "auto", prompt: "",
+        quick: {size: 100, position: "preset", intensity: "1"},
         replace: true, python: "", presetId: "", style: FALLBACK_STYLE, reflow: true,
         tools: {
             counter: { from: 0, to: 100, duration: 2, hold: 1, step: 0, interval: 0, decimals: 0, pad: 0, thousands: "none", ease: "out",
@@ -46,6 +47,9 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
                 for (var k in saved) if (DEFAULTS.hasOwnProperty(k)) s[k] = saved[k];
             }
         } catch (e) {}
+        var quick = clone(DEFAULTS.quick);
+        for (var qk in (s.quick || {})) quick[qk] = s.quick[qk];
+        s.quick = quick;
         var sf = clone(DEFAULTS.sfx);                       // старые сохранения без новых полей
         for (var k2 in (s.sfx || {})) sf[k2] = s.sfx[k2];
         s.sfx = sf;
@@ -179,9 +183,9 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
 
         var tabs = TH ? TH.makeTabs(win) : win.add("tabbedpanel");
         tabs.alignChildren = ["fill", "top"];
-        var tSpeech = tabs.add("tab", undefined, "Речь");
-        var tText = tabs.add("tab", undefined, "Текст");
-        var tStyle = tabs.add("tab", undefined, "Стиль");
+        var tSpeech = tabs.add("tab", undefined, "1 · Видео");
+        var tText = tabs.add("tab", undefined, "2 · Текст");
+        var tStyle = tabs.add("tab", undefined, "3 · Стиль");
         var tView = tabs.add("tab", undefined, "Вид");
         var tLayout = tabs.add("tab", undefined, "Раскладка");
         var tAnim = tabs.add("tab", undefined, "Анимация");
@@ -195,6 +199,19 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             all[ti].spacing = 3;
             all[ti].margins = [2, 4, 2, 2];
         }
+
+        var cbAdvanced = win.add("checkbox", undefined, "Дополнительные настройки");
+        function showAdvanced() {
+            if (tabs.buttons) {
+                for (var ai = 3; ai < tabs.buttons.length; ai++) tabs.buttons[ai].visible = !!cbAdvanced.value;
+                if (!cbAdvanced.value && tabs.current > 2) tabs.select(0);
+            } else {
+                for (var ai = 3; ai < all.length; ai++) all[ai].enabled = !!cbAdvanced.value;
+            }
+            win.layout.layout(true);
+        }
+        cbAdvanced.onClick = showAdvanced;
+        showAdvanced();
 
         function row(parent, label, labelWidth) {
             var g = parent.add("group");
@@ -301,13 +318,34 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         stStatus.preferredSize.height = 32;
 
         // ================= Текст =================
-        tText.add("statictext", undefined, "Строка = фраза.  *слово* — акцент,  ~слово~ — инверсия,  | — новая фраза");
+        tText.add("statictext", undefined, "Правьте текст или нажимайте слова ниже. ↵ — перенос, | — новая фраза");
         var etText = tText.add("edittext", undefined, "", { multiline: true, scrolling: true, wantReturn: true });
         etText.preferredSize = [260, 120];
         etText.alignment = ["fill", "fill"];
         var rTextBtns = tText.add("group");
         var btnSave = rTextBtns.add("button", undefined, "Сохранить результат…");
         var btnReset = rTextBtns.add("button", undefined, "Сбросить правки");
+
+        var ddPhrase = dropdown(row(tText, "Фраза"), [{id: "0", label: "Сначала распознайте речь"}], "0");
+        var wordButtons = [], rWord;
+        for (var wi = 0; wi < 12; wi++) {
+            if (wi % 4 === 0) rWord = tText.add("group");
+            var wb = rWord.add("button", undefined, "—");
+            wb.preferredSize = [70, 24]; wb._slot = wi; wb.enabled = false;
+            wordButtons.push(wb);
+        }
+        var rWordNav = tText.add("group");
+        var btnWordsBack = rWordNav.add("button", undefined, "← Слова");
+        var btnWordsNext = rWordNav.add("button", undefined, "Слова →");
+        var rEditActions = tText.add("group");
+        var btnLineBreak = rEditActions.add("button", undefined, "Перенос строки");
+        var btnPhraseBreak = rEditActions.add("button", undefined, "Разделить фразу");
+        var btnEditWord = tText.add("button", undefined, "Исправить выбранное слово…");
+        var btnUndoEdit = tText.add("button", undefined, "Отменить правку текста");
+        var editHistory = [];
+        var btnListen = tText.add("button", undefined, "Прослушать фразу");
+        tText.add("statictext", undefined, "Клик по слову: акцент. Перенос — перед выбранным словом.");
+        var wordPage = 0, selectedWord = 0, editingWords = false;
 
         // ================= Стиль =================
         var rPreset = row(tStyle, "Пресет", 60);
@@ -348,6 +386,18 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         rFromTo.orientation = "row";
         var btnFromLayer = rFromTo.add("button", undefined, "Взять со слоя");
         var btnFontToLayers = rFromTo.add("button", undefined, "Шрифт → выделенным слоям");
+        var btnFontAll = tStyle.add("button", undefined, "Шрифт → всем субтитрам NOIR");
+        btnFontAll.helpTip = "Меняет только шрифт у всех субтитров NOIR в текущей композиции. Свои текстовые слои не затрагивает.";
+        var rQuick = row(tStyle, "Размер, %");
+        var etQuickSize = rQuick.add("edittext", undefined, String(S.quick.size)); etQuickSize.characters = 4;
+        var ddQuickPosition = dropdown(row(tStyle, "Положение"), [
+            {id: "preset", label: "Из пресета"}, {id: "25", label: "Сверху"},
+            {id: "50", label: "По центру"}, {id: "75", label: "Снизу"}], S.quick.position);
+        var ddIntensity = dropdown(row(tStyle, "Анимация"), [
+            {id: "1", label: "Из пресета"}, {id: "0.5", label: "Спокойная"},
+            {id: "1.5", label: "Выразительная"}], S.quick.intensity);
+        var btnPreview = tStyle.add("button", undefined, "Превью фразы на видео");
+        btnPreview.helpTip = "Создаёт отдельную композицию с текущим видео и выбранной фразой (до 5 секунд). Исходная композиция сохраняется. Воспроизведение: пробел / Num 0.";
         // ---- вкладка «Вид»: размер, цвет, обводка, эффекты ----
         var rTarget2 = row(tView, "Настраиваю", 95);
         var rbBase2 = rTarget2.add("radiobutton", undefined, "Обычные слова");
@@ -962,6 +1012,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             if (i === 0) { S.presetId = ""; syncUI(); saveSettings(S); return; }
             var p = presets[i - 1];
             S.style = { layout: clone(p.layout), base: clone(p.base), accent: clone(p.accent), anim: clone(p.anim) };
+            etQuickSize.text = "100"; ddQuickPosition.selection = 0; ddIntensity.selection = 0; saveQuick();
             S.presetId = p.id;
             syncUI();
             saveSettings(S);
@@ -1053,10 +1104,106 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             saveSettings(S);
         };
 
+        function phraseIndex() { return ddPhrase.selection ? ddPhrase.selection.index : 0; }
+        function phraseWords() {
+            if (!state.data) return [];
+            var words = N.applyEdits(state.data, etText.text, []), out = [], si = phraseIndex();
+            for (var i = 0; i < words.length; i++) if (words[i].seg === si) out.push(words[i]);
+            return out;
+        }
+        function refreshWords() {
+            var words;
+            try { words = phraseWords(); } catch (e) { setStatus(e.message); return; }
+            if (wordPage >= words.length) wordPage = 0;
+            for (var i = 0; i < wordButtons.length; i++) {
+                var w = words[wordPage + i], b = wordButtons[i];
+                b.enabled = !!w; b.text = w ? (w.accent ? "★ " : "") + (w.conf !== undefined && w.conf < 0.65 ? "? " : "") + w.text : "—";
+                b.helpTip = w ? (w.conf !== undefined && w.conf < 0.65 ? "Низкая уверенность распознавания — проверьте слово. " : "") + "Клик — включить/выключить акцент; затем можно поставить перенос перед этим словом." : "";
+            }
+            btnWordsBack.enabled = wordPage > 0;
+            btnWordsNext.enabled = wordPage + 12 < words.length;
+        }
+        function refreshPhrases() {
+            editingWords = true; ddPhrase.removeAll();
+            if (state.data) for (var i = 0; i < state.data.segments.length; i++)
+                ddPhrase.add("item", String(i + 1) + " · " + N.toEditorText({segments: [state.data.segments[i]]}).substr(0, 42));
+            ddPhrase.selection = 0; editingWords = false;
+            wordPage = 0; selectedWord = 0; refreshWords();
+        }
+        function editWord(action, index) {
+            try {
+                var si = phraseIndex(), lines = etText.text.replace(/\r\n?/g, "\n").split("\n");
+                var words = phraseWords();
+                if (!words[index]) throw new Error("Сначала выберите слово кнопкой.");
+                editHistory.push(etText.text); if (editHistory.length > 30) editHistory.shift();
+                selectedWord = index;
+                if (action === "accent") words[index].accent = !words[index].accent;
+                else if (action === "line") words[index].lineBefore = !words[index].lineBefore;
+                else words[index].breakBefore = !words[index].breakBefore;
+                lines[si] = N.editorWords(words);
+                etText.text = lines.join("\n"); refreshWords();
+                setStatus("Изменено слово: " + words[index].text + ". Тайминги сохранены.");
+            } catch (e) { alert(e.message, "NOIR Captions"); }
+        }
+        ddPhrase.onChange = function () { if (!editingWords) { wordPage = 0; selectedWord = 0; refreshWords(); } };
+        etText.onChange = refreshWords;
+        for (var bi = 0; bi < wordButtons.length; bi++) wordButtons[bi].onClick = function () { editWord("accent", wordPage + this._slot); };
+        btnWordsBack.onClick = function () { wordPage = Math.max(0, wordPage - 12); refreshWords(); };
+        btnWordsNext.onClick = function () { wordPage += 12; refreshWords(); };
+        btnLineBreak.onClick = function () { editWord("line", selectedWord); };
+        btnPhraseBreak.onClick = function () { editWord("phrase", selectedWord); };
+        btnEditWord.onClick = function () {
+            try {
+                var ws = phraseWords(), w = ws[selectedWord];
+                if (!w) throw new Error("Выберите слово.");
+                var answer = prompt("Исправить слово (тайминг сохранится):", w.text);
+                if (answer === null) return;
+                answer = String(answer).replace(/^\s+|\s+$/g, "");
+                if (!answer || /[\s*~|↵]/.test(answer)) throw new Error("Введите одно слово без разметки. Фразу можно исправить в большом поле текста.");
+                editHistory.push(etText.text); if (editHistory.length > 30) editHistory.shift();
+                w.text = answer;
+                var lines = etText.text.replace(/\r\n?/g, "\n").split("\n");
+                lines[phraseIndex()] = N.editorWords(ws); etText.text = lines.join("\n"); refreshWords();
+            } catch (e) { alert(e.message, "NOIR Captions"); }
+        };
+        btnUndoEdit.onClick = function () {
+            if (editHistory.length) { etText.text = editHistory.pop(); refreshWords(); }
+            else setStatus("Нет правок кнопками для отмены. В поле текста используйте Ctrl+Z.");
+        };
+        btnListen.onClick = function () {
+            try {
+                var ws = phraseWords();
+                if (!ws.length) throw new Error("Нет слов для прослушивания.");
+                if (!state.data.source || !state.data.source.file) throw new Error("В JSON нет пути к аудио. Распознайте исходный слой ещё раз.");
+                N.previewAudio(root, S.python, state.data.source.file, ws[0].start, ws[ws.length - 1].end);
+                setStatus("Фраза готовится к воспроизведению во внешнем проигрывателе.");
+            } catch (e) { alert(e.message, "NOIR Captions"); }
+        };
+        function saveQuick() {
+            S.quick = {size: num(etQuickSize.text, 100, 25, 200),
+                position: ["preset", "25", "50", "75"][ddQuickPosition.selection ? ddQuickPosition.selection.index : 0],
+                intensity: ["1", "0.5", "1.5"][ddIntensity.selection ? ddIntensity.selection.index : 0]};
+            saveSettings(S);
+        }
+        etQuickSize.onChange = ddQuickPosition.onChange = ddIntensity.onChange = saveQuick;
+        function renderStyle() {
+            saveQuick();
+            var st = clone(S.style), factor = num(etQuickSize.text, 100, 25, 200) / 100;
+            st.base.size *= factor; st.accent.size *= factor;
+            var position = idOf(ddQuickPosition, [{id:"preset"},{id:"25"},{id:"50"},{id:"75"}]);
+            if (position !== "preset") st.layout.posY = Number(position);
+            var strength = ddIntensity.selection ? [1, 0.5, 1.5][ddIntensity.selection.index] : 1;
+            st.anim.intensity = (st.anim.intensity === undefined ? 1 : st.anim.intensity) * strength;
+            return st;
+        }
+
         function setData(data, link) {
+            editHistory = [];
             state.data = data;
             state.link = link;
             etText.text = N.toEditorText(data);
+            refreshPhrases();
+            if (tabs.select) tabs.select(1);
             var n = 0;
             for (var i = 0; i < data.segments.length; i++) n += data.segments[i].words.length;
             var warn = "";
@@ -1142,8 +1289,9 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
                 var out = clone(state.data);
                 for (var s = 0; s < out.segments.length; s++) out.segments[s].words = [];
                 for (var i = 0; i < words.length; i++) out.segments[words[i].seg].words.push({
-                    text: words[i].text, start: words[i].start, end: words[i].end,
-                    accent: words[i].accent || undefined, breakBefore: words[i].breakBefore || undefined
+                    text: words[i].text, start: words[i].start, end: words[i].end, conf: words[i].conf,
+                    accent: words[i].accent || undefined, invert: words[i].invert || undefined,
+                    lineBefore: words[i].lineBefore || undefined, breakBefore: words[i].breakBefore || undefined
                 });
                 out.link = state.link;
                 N.writeText(f, N.stringify(out));
@@ -1151,7 +1299,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             } catch (e) { alert(e.message, "NOIR Captions"); }
         };
 
-        btnReset.onClick = function () { if (state.data) etText.text = N.toEditorText(state.data); };
+        btnReset.onClick = function () { if (state.data) { etText.text = N.toEditorText(state.data); refreshWords(); } };
 
         // Время старта аудиослоя берём текущее: если слой сдвинули после
         // распознавания, субтитры всё равно встанут синхронно.
@@ -1184,10 +1332,17 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         // which: "base" | "accent" (чьи настройки брать).
         // look: true — весь вид + КАПС; объект {font,size,color,stroke,fx} — только отмеченное; false — не менять вид.
         // anim: применять анимацию.
-        function applyToLayers(which, look, anim, undoName) {
+        function applyToLayers(which, look, anim, undoName, allNoir) {
             readUI();
             var sel;
-            try { sel = selectedTextLayers(); } catch (e) { alert(e.message, "NOIR Captions"); return; }
+            try {
+                if (allNoir) {
+                    var fc = activeComp(), fl = [];
+                    for (var fi = 1; fi <= fc.numLayers; fi++) if (fc.layer(fi) instanceof TextLayer && N.isGenerated(fc.layer(fi))) fl.push(fc.layer(fi));
+                    if (!fl.length) throw new Error("В композиции нет субтитров NOIR.");
+                    sel = {comp: fc, layers: fl};
+                } else sel = selectedTextLayers();
+            } catch (e) { alert(e.message, "NOIR Captions"); return; }
             app.beginUndoGroup(undoName);
             try {
                 var res = N.restyleLayers(sel.comp, sel.layers, {
@@ -1196,7 +1351,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
                     safeWidth: S.style.layout.safeWidth, anim: anim ? S.style.anim : null
                 });
                 var rf = "";
-                if (S.reflow && look && N.reflowGroups) {
+                if (S.reflow && look && (look === true || !look.font || look.size) && N.reflowGroups) {
                     var rr = N.reflowGroups(sel.comp, sel.layers, S.style.layout);
                     if (rr.groups) rf = ", фраз переложено: " + rr.groups;
                 }
@@ -1289,6 +1444,10 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         };
         btnFontToLayers.onClick = function () {
             applyToLayers(state.target, { font: true }, false, "NOIR Captions: шрифт выделенным слоям");
+        };
+
+        btnFontAll.onClick = function () {
+            applyToLayers(state.target, {font: true}, false, "NOIR Captions: шрифт всем субтитрам", true);
         };
 
         // ----- SFX -----
@@ -1434,7 +1593,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             toolAction("NOIR Captions: убрать маски", function () { setStatus("Убрано масок: " + N.removeMasks(activeComp())); });
         };
 
-        btnGenerate.onClick = function () {
+        function generateCaptions(preview) {
             readUI();
             if (!state.data) { alert("Сначала распознайте речь или откройте JSON.", "NOIR Captions"); return; }
             var comp = app.project.activeItem;
@@ -1443,7 +1602,14 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             try { words = N.applyEdits(state.data, etText.text, warnings); }
             catch (e) { alert(e.message, "NOIR Captions"); return; }
 
-            var L = S.style.layout;
+            var outputStyle = renderStyle();
+            if (preview) {
+                var subset = [], si = phraseIndex();
+                for (var pw = 0; pw < words.length; pw++) if (words[pw].seg === si) subset.push(words[pw]);
+                words = subset;
+                if (!words.length) { alert("Выберите непустую фразу.", "NOIR Captions"); return; }
+            }
+            var L = outputStyle.layout;
             var groups = N.groupWords(words, {
                 maxWords: L.maxWords, maxChars: L.maxChars, pauseBreak: L.pauseBreak,
                 punctBreak: L.punctBreak, stripPunct: L.stripPunct
@@ -1460,9 +1626,28 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
                     g.words[j].compStart = N.sourceToComp(g.words[j].start, map.startTime, map.stretch);
             }
 
+            var previewComp = null;
+            if (preview && (!groups.length || groups[0].compStart >= comp.duration || groups[groups.length - 1].compOut <= 0)) {
+                alert("Выбранная фраза находится вне композиции.", "NOIR Captions"); return;
+            }
             app.beginUndoGroup("NOIR Captions: создать субтитры");
             try {
-                var res = N.generate(comp, groups, S.style, S.style.anim, S.replace);
+                if (preview) {
+                    var original = comp;
+                    comp = original.duplicate(); previewComp = comp;
+                    comp.name = "NOIR Preview · " + original.name;
+                    if (N.removeSfx) N.removeSfx(comp);
+                    var begin = Math.max(0, groups[0].compStart);
+                    var finish = Math.min(comp.duration, begin + 5, groups[groups.length - 1].compOut);
+                    var clipped = [];
+                    for (var cg = 0; cg < groups.length; cg++) if (groups[cg].compStart < finish) {
+                        groups[cg].compOut = Math.min(groups[cg].compOut, finish); clipped.push(groups[cg]);
+                    }
+                    groups = clipped;
+                    comp.workAreaStart = begin; comp.workAreaDuration = Math.max(0.01, finish - begin); comp.time = begin;
+                }
+                var res = N.generate(comp, groups, outputStyle, outputStyle.anim, preview ? true : S.replace);
+                if (preview) { comp.openInViewer(); setStatus("Превью создано отдельно. Пробел / Num 0 — воспроизведение. Ctrl+Z — убрать превью."); return; }
                 warnings = warnings.concat(res.warnings);
                 var voiced = (SFX && S.sfx.enabled) ? voiceGenerated(comp, res.made, warnings) : -1;
                 var msg = "Создано слоёв: " + res.created + (res.removed ? ", заменено старых: " + res.removed : "") +
@@ -1470,12 +1655,16 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
                 setStatus(msg);
                 if (warnings.length) alert(msg + "\n\n- " + warnings.join("\n- "), "NOIR Captions");
             } catch (e2) {
+                if (previewComp) { try { previewComp.remove(); } catch (cleanup) {} }
                 alert("Ошибка генерации: " + e2.toString() + (e2.line ? " (строка " + e2.line + ")" : ""),
                     "NOIR Captions");
             } finally {
                 app.endUndoGroup();
             }
         };
+
+        btnGenerate.onClick = function () { generateCaptions(false); };
+        btnPreview.onClick = function () { generateCaptions(true); };
 
         // Первый запуск: стиль из первого встроенного пресета.
         if (firstRun && presets.length) {

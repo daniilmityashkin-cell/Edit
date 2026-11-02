@@ -63,18 +63,21 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
     // Текст для редактора: одна строка = один сегмент распознавания.
     N.toEditorText = function (data) {
         var lines = [];
-        for (var i = 0; i < data.segments.length; i++) {
-            var ws = data.segments[i].words, parts = [];
-            for (var j = 0; j < ws.length; j++) {
-                if (ws[j].breakBefore && j) parts.push("|");
-                var wt = ws[j].text;
-                if (ws[j].invert) wt = "~" + wt + "~";
-                if (ws[j].accent) wt = "*" + wt + "*";
-                parts.push(wt);
-            }
-            lines.push(parts.join(" "));
-        }
+        for (var i = 0; i < data.segments.length; i++) lines.push(N.editorWords(data.segments[i].words));
         return lines.join("\n");
+    };
+
+    N.editorWords = function (words) {
+        var parts = [];
+        for (var j = 0; j < words.length; j++) {
+            var w = words[j], text = w.text;
+            if (w.breakBefore && j) parts.push("|");
+            if (w.lineBefore && j) parts.push("↵");
+            if (w.invert) text = "~" + text + "~";
+            if (w.accent) text = "*" + text + "*";
+            parts.push(text);
+        }
+        return parts.join(" ");
     };
 
     // Разметка в редакторе:
@@ -83,11 +86,12 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
     // Возвращает [{text, accent, breakBefore}]; разметка в число слов не входит.
     N.parseLine = function (line) {
         var raw = String(line).replace(/^\s+|\s+$/g, "").split(/\s+/), out = [];
-        var inAccent = false, inInvert = false, pendingBreak = false;
+        var inAccent = false, inInvert = false, pendingBreak = false, pendingLine = false;
         for (var i = 0; i < raw.length; i++) {
             var t = raw[i];
             if (t === "") continue;
             if (t === "|") { pendingBreak = true; continue; }
+            if (t === "↵") { pendingLine = true; continue; }
             // открывающие маркеры: *…  ~…  (можно оба: *~слово~*)
             while (t.charAt(0) === "*" || t.charAt(0) === "~") {
                 if (t.charAt(0) === "*") inAccent = true; else inInvert = true;
@@ -106,8 +110,8 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
                 }
             }
             if (t === "") continue;
-            out.push({ text: t, accent: accent, invert: invert, breakBefore: pendingBreak });
-            pendingBreak = false;
+            out.push({ text: t, accent: accent, invert: invert, breakBefore: pendingBreak, lineBefore: pendingLine });
+            pendingBreak = false; pendingLine = false;
         }
         return out;
     };
@@ -135,8 +139,8 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             }
             if (texts.length === ws.length) {
                 for (var j = 0; j < ws.length; j++) out.push({
-                    text: texts[j].text, accent: texts[j].accent, invert: texts[j].invert, breakBefore: texts[j].breakBefore,
-                    start: ws[j].start, end: ws[j].end, seg: s
+                    text: texts[j].text, accent: texts[j].accent, invert: texts[j].invert, breakBefore: texts[j].breakBefore, lineBefore: texts[j].lineBefore,
+                    start: ws[j].start, end: ws[j].end, conf: ws[j].conf, seg: s
                 });
                 continue;
             }
@@ -148,7 +152,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             for (k = 0; k < texts.length; k++) {
                 var a = t0 + (t1 - t0) * acc / total;
                 acc += texts[k].text.length + 1;
-                out.push({ text: texts[k].text, accent: texts[k].accent, invert: texts[k].invert, breakBefore: texts[k].breakBefore,
+                out.push({ text: texts[k].text, accent: texts[k].accent, invert: texts[k].invert, breakBefore: texts[k].breakBefore, lineBefore: texts[k].lineBefore,
                     start: a, end: t0 + (t1 - t0) * acc / total, seg: s });
             }
         }
@@ -172,7 +176,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
                 if (cur.words.length >= opts.maxWords || len > opts.maxChars ||
                     gap > opts.pauseBreak || w.seg !== cur.seg || w.breakBefore) flush();
             }
-            var item = { text: text, accent: !!w.accent, invert: !!w.invert, start: w.start, end: w.end };
+            var item = { text: text, accent: !!w.accent, invert: !!w.invert, lineBefore: !!w.lineBefore, start: w.start, end: w.end };
             if (!cur) cur = { text: text, start: w.start, end: w.end, seg: w.seg, words: [item] };
             else { cur.text += " " + text; cur.end = w.end; cur.words.push(item); }
             if (opts.punctBreak && /[.!?…,;:]$/.test(w.text)) flush();
