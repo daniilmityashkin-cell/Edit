@@ -701,14 +701,14 @@ const GOPTS = { maxWords: 1, maxChars: 99, pauseBreak: 0.35, punctBreak: true, s
     const area = N.makeScrollArea(new mock.Panel());
     area.body.size = {width: 340, height: 180};
     assert.strictEqual(area.content.size, undefined);
-    assert.doesNotThrow(() => area.refresh(true));
+    assert.doesNotThrow(() => area.initialize());
     assert.ok(Number.isFinite(area.scrollbar.maxvalue));
   });
   await test("прокрутка: нижние элементы достижимы, при расширении смещение ограничивается", () => {
     const area = N.makeScrollArea(new mock.Panel());
     area.body.size = {width: 340, height: 180};
     area.content.size = {width: 320, height: 700}; area.content.location = [0, 0];
-    area.refresh(true);
+    area.initialize();
     assert.strictEqual(area.scrollbar.maxvalue, 520);
     area.scrollbar.value = 520; area.scrollbar.onChanging();
     assert.deepStrictEqual(area.content.location, [0, -520]);

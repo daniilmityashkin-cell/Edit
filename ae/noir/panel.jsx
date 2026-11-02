@@ -7,7 +7,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
 (function (N) {
     var SECTION = "NOIR Captions";
     var SETTINGS_KEY = "settings.v2";
-    var VERSION = "0.7.3";
+    var VERSION = "0.7.4";
 
     function clone(o) { return N.parseJSON(N.stringify(o)); }
 
@@ -158,19 +158,44 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             if (!content.location) return;
             content.location = [0, -Math.round(scroll.value || 0)];
         }
-        var api = {body: body, viewport: viewport, content: content, scrollbar: scroll};
+        var api = {body: body, viewport: viewport, content: content, scrollbar: scroll, initialized: false};
+        function naturalHeight() {
+            var height = 0;
+            for (var i = 0; i < content.children.length; i++) {
+                var bounds = content.children[i].bounds;
+                if (bounds) height = Math.max(height, bounds.bottom === undefined ? bounds[3] : bounds.bottom);
+            }
+            if (!height && content.size) height = content.size.height === undefined ? content.size[1] : content.size.height;
+            return Math.max(1, height || 1);
+        }
+        api.initialize = function () {
+            // Wait until ALL tabs and controls exist; early layout freezes an empty group at one pixel.
+            content.layout.layout(true);
+            api.initialized = true;
+            api.refresh(true);
+        };
         api.refresh = function (reset) {
+            if (!api.initialized) return;
+            if (parent.size && parent.size.width && parent.size.height) {
+                var top = 4;
+                for (var i = 0; i < parent.children.length; i++) {
+                    if (parent.children[i] === body) break;
+                    var bounds = parent.children[i].bounds;
+                    if (bounds) top = Math.max(top, (bounds.bottom === undefined ? bounds[3] : bounds.bottom) + 4);
+                }
+                body.bounds = [6, top, Math.max(7, parent.size.width - 6), Math.max(top + 1, parent.size.height - 4)];
+            }
             if (!body.size || !body.size.width || !body.size.height) return;
             var width = Math.max(1, body.size.width - 18), height = Math.max(1, body.size.height);
             viewport.bounds = [0, 0, width, height];
             scroll.bounds = [width + 2, 0, width + 18, height];
-            content.minimumSize.width = width; content.maximumSize.width = width;
-            // ScriptUI has no size object until this manually laid-out group is measured.
-            if (content.size) content.size.width = width;
-            else content.size = [width, 1];
+            content.minimumSize = [width, 0]; content.maximumSize = [width, 100000];
+            content.preferredSize = [width, -1];
             content.layout.layout(true);
-            var measuredHeight = content.size.height === undefined ? content.size[1] : content.size.height;
+            var measuredHeight = naturalHeight();
+            // Explicit bounds are essential for children of a manual ScriptUI viewport.
             var range = N.scrollRange(measuredHeight, height, reset ? 0 : scroll.value);
+            content.bounds = [0, -range.value, width, measuredHeight - range.value];
             scroll.maxvalue = range.max; scroll.value = range.value;
             scroll.enabled = range.max > 0; scroll.jumpdelta = Math.max(28, height * 0.8);
             position();
@@ -1733,7 +1758,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         win.onResizing = win.onResize = function () { this.layout.resize(); scroller.refresh(false); };
         if (win instanceof Window) { win.center(); win.show(); }
         else { win.layout.layout(true); win.layout.resize(); }
-        scroller.refresh(true);
+        scroller.initialize();
         return win;
     };
 })(NOIR);
