@@ -1,0 +1,128 @@
+{
+ "schema": "noir-style/1",
+ "id": "mix-colors",
+ "name": "Mix Colors (реф. 4 — набережная)",
+ "description": "Слова ступенькой, главные — крупные и каждое своего цвета (синий, красный, зелёный, оранжевый) по кругу. Blur Pop.",
+ "layout": {
+  "reveal": "word",
+  "maxWords": 4,
+  "maxChars": 28,
+  "lineChars": 11,
+  "pauseBreak": 0.35,
+  "punctBreak": true,
+  "stripPunct": true,
+  "autoAccent": true,
+  "posX": 50,
+  "posY": 40,
+  "lineGap": -0.12,
+  "wordSpace": 0.26,
+  "accentOwnLine": true,
+  "safeWidth": 0.9,
+  "holdGap": 0.3
+ },
+ "base": {
+  "fonts": [
+   "Poppins-SemiBold",
+   "Montserrat-SemiBold",
+   "SFProDisplay-Semibold",
+   "Inter-SemiBold",
+   "SegoeUI-Semibold",
+   "ArialMT"
+  ],
+  "size": 84,
+  "color": [
+   1,
+   1,
+   1
+  ],
+  "tracking": 0,
+  "caps": false,
+  "strokeWidth": 0,
+  "strokeColor": [
+   0,
+   0,
+   0
+  ],
+  "shadow": {
+   "color": [
+    0,
+    0,
+    0
+   ],
+   "opacity": 40,
+   "distance": 3,
+   "softness": 12
+  },
+  "glow": null,
+  "blend": "normal",
+  "opacity": 100
+ },
+ "accent": {
+  "fonts": [
+   "Poppins-ExtraBold",
+   "Montserrat-ExtraBold",
+   "SFProDisplay-Heavy",
+   "Inter-ExtraBold",
+   "SegoeUI-Black",
+   "Arial-BoldMT"
+  ],
+  "size": 150,
+  "color": [
+   0.25,
+   0.65,
+   1.0
+  ],
+  "tracking": -8,
+  "caps": false,
+  "strokeWidth": 0,
+  "strokeColor": [
+   0,
+   0,
+   0
+  ],
+  "shadow": {
+   "color": [
+    0,
+    0,
+    0
+   ],
+   "opacity": 40,
+   "distance": 3,
+   "softness": 12
+  },
+  "glow": null,
+  "blend": "normal",
+  "opacity": 100,
+  "colors": [
+   [
+    0.25,
+    0.65,
+    1.0
+   ],
+   [
+    1.0,
+    0.25,
+    0.2
+   ],
+   [
+    0.45,
+    0.85,
+    0.2
+   ],
+   [
+    1.0,
+    0.6,
+    0.1
+   ]
+  ]
+ },
+ "anim": {
+  "animIn": "blurPop",
+  "inDur": 0.25,
+  "animOut": "blur",
+  "outDur": 0.18,
+  "distance": 40,
+  "blur": 24,
+  "easeInfluence": 80
+ }
+}

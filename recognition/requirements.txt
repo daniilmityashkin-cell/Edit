@@ -1,0 +1,3 @@
+# Проверено: faster-whisper 1.2.1 + av 15.1 (av 16+ ломает decode_audio: "metadata_errors").
+faster-whisper==1.2.1
+av>=11,<16

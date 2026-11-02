@@ -1,0 +1,3 @@
+# CUDA 12 библиотеки для CTranslate2 (GPU NVIDIA). Ставятся в venv, систему не трогают.
+nvidia-cublas-cu12
+nvidia-cudnn-cu12==9.*

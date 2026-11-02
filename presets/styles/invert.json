@@ -1,0 +1,87 @@
+{
+ "schema": "noir-style/1",
+ "id": "invert",
+ "name": "Invert (реф. 1, инверсия)",
+ "description": "Белый текст в режиме Difference — инвертирует кадр под буквами. Крупные слова капсом, blur.",
+ "layout": {
+  "reveal": "word",
+  "maxWords": 3,
+  "maxChars": 26,
+  "lineChars": 12,
+  "pauseBreak": 0.35,
+  "punctBreak": true,
+  "stripPunct": true,
+  "autoAccent": true,
+  "posX": 50,
+  "posY": 42,
+  "lineGap": -0.05,
+  "wordSpace": 0.24,
+  "accentOwnLine": true,
+  "safeWidth": 0.9,
+  "holdGap": 0.3
+ },
+ "base": {
+  "fonts": [
+   "Montserrat-SemiBold",
+   "SFProDisplay-Semibold",
+   "Inter-SemiBold",
+   "SegoeUI-Semibold",
+   "ArialMT"
+  ],
+  "size": 90,
+  "color": [
+   1,
+   1,
+   1
+  ],
+  "tracking": 0,
+  "caps": false,
+  "strokeWidth": 0,
+  "strokeColor": [
+   0,
+   0,
+   0
+  ],
+  "shadow": null,
+  "glow": null,
+  "blend": "difference",
+  "opacity": 100
+ },
+ "accent": {
+  "fonts": [
+   "Montserrat-ExtraBold",
+   "Montserrat-Black",
+   "SFProDisplay-Heavy",
+   "Inter-ExtraBold",
+   "SegoeUI-Black",
+   "Arial-BoldMT"
+  ],
+  "size": 200,
+  "color": [
+   1,
+   1,
+   1
+  ],
+  "tracking": -10,
+  "caps": true,
+  "strokeWidth": 0,
+  "strokeColor": [
+   0,
+   0,
+   0
+  ],
+  "shadow": null,
+  "glow": null,
+  "blend": "difference",
+  "opacity": 100
+ },
+ "anim": {
+  "animIn": "blurPop",
+  "inDur": 0.28,
+  "animOut": "blur",
+  "outDur": 0.2,
+  "distance": 40,
+  "blur": 26,
+  "easeInfluence": 80
+ }
+}

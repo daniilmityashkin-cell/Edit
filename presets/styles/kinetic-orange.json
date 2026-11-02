@@ -1,0 +1,101 @@
+{
+ "schema": "noir-style/1",
+ "id": "kinetic-orange",
+ "name": "Kinetic Orange (реф. 1, белый + оранжевый)",
+ "description": "Белые слова строчными, главное слово огромное оранжевое капсом. Снизу + blur.",
+ "layout": {
+  "reveal": "word",
+  "maxWords": 4,
+  "maxChars": 30,
+  "lineChars": 12,
+  "pauseBreak": 0.35,
+  "punctBreak": true,
+  "stripPunct": true,
+  "autoAccent": true,
+  "posX": 50,
+  "posY": 33,
+  "lineGap": -0.1,
+  "wordSpace": 0.24,
+  "accentOwnLine": true,
+  "safeWidth": 0.9,
+  "holdGap": 0.3
+ },
+ "base": {
+  "fonts": [
+   "Montserrat-Bold",
+   "SFProDisplay-Bold",
+   "Inter-Bold",
+   "SegoeUI-Bold",
+   "Arial-BoldMT"
+  ],
+  "size": 108,
+  "color": [
+   1,
+   1,
+   1
+  ],
+  "tracking": 0,
+  "caps": false,
+  "strokeWidth": 0,
+  "strokeColor": [
+   0,
+   0,
+   0
+  ],
+  "shadow": {
+   "color": [
+    0,
+    0,
+    0
+   ],
+   "opacity": 40,
+   "distance": 3,
+   "softness": 12
+  },
+  "glow": null
+ },
+ "accent": {
+  "fonts": [
+   "Montserrat-ExtraBold",
+   "Montserrat-Black",
+   "SFProDisplay-Heavy",
+   "Inter-ExtraBold",
+   "SegoeUI-Black",
+   "Arial-BoldMT"
+  ],
+  "size": 190,
+  "color": [
+   1.0,
+   0.5,
+   0.1
+  ],
+  "tracking": -10,
+  "caps": true,
+  "strokeWidth": 0,
+  "strokeColor": [
+   0,
+   0,
+   0
+  ],
+  "shadow": {
+   "color": [
+    0,
+    0,
+    0
+   ],
+   "opacity": 40,
+   "distance": 3,
+   "softness": 12
+  },
+  "glow": null
+ },
+ "anim": {
+  "animIn": "blurRise",
+  "inDur": 0.3,
+  "animOut": "blur",
+  "outDur": 0.22,
+  "distance": 45,
+  "blur": 28,
+  "easeInfluence": 80
+ }
+}
