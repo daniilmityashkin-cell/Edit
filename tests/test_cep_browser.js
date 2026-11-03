@@ -7,9 +7,10 @@ global.$.fileName=root+'/cep/host/bridge.jsx';
 (0,eval)(fs.readFileSync(global.$.fileName,'utf8')); NOIR_CEP.load(root);
 (async()=>{
  const browser=await chromium.launch({executablePath:'/usr/bin/chromium',headless:true,args:['--no-sandbox','--disable-dev-shm-usage']});
- const page=await browser.newPage({viewport:{width:880,height:480}});
+ const page=await browser.newPage({viewport:{width:880,height:360}});
  const errors=[];page.on('pageerror',e=>errors.push(e.message));
- await page.exposeFunction('hostEval',script=>(0,eval)(script));
+ let hostCalls=0;
+ await page.exposeFunction('hostEval',script=>{hostCalls++;return (0,eval)(script);});
  const server = require('http').createServer((req,res)=>{
    const relative=decodeURIComponent(req.url.split('?')[0]).replace(/^\//,'');
    const file=path.resolve(root,'cep',relative||'index.html');
@@ -20,6 +21,8 @@ global.$.fileName=root+'/cep/host/bridge.jsx';
  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
  await page.addInitScript(()=>{window.__adobe_cep__={evalScript:(script,cb)=>window.hostEval(script).then(cb)};});
  await page.goto('http://127.0.0.1:'+server.address().port+'/index.html');
+ await page.waitForTimeout(400);
+ const idleCalls=hostCalls;await page.waitForTimeout(2200);assert.strictEqual(hostCalls,idleCalls,'Idle panel must not invoke AE repeatedly');
  await page.getByRole('tab',{name:'Стиль',exact:true}).click();
  const area=page.locator('.workspace');
  await page.waitForFunction(()=>document.querySelector('.scroll-body').scrollHeight>document.querySelector('.scroll-body').clientHeight);
@@ -114,6 +117,7 @@ global.$.fileName=root+'/cep/host/bridge.jsx';
  assert.ok(comp._l.some(l=>/здравствуйте/i.test(l.name)),'Immediate update includes latest input');
  assert.ok(otherLayers.every(l=>comp._l.includes(l)),'Updating one phrase preserves other layers');
  assert.ok(!comp._l.some(l=>String(l.comment).indexOf(NOIR.SFX_TAG)===0),'SFX remains manual');
+ await page.setViewportSize({width:320,height:300});
  // Native textarea gets wheel first; at its edge, the panel takes over.
  await area.evaluate(e=>{e.scrollTop=0;});await editor.evaluate(e=>{e.scrollTop=0;});
  await editor.hover();await page.mouse.wheel(0,80);await page.waitForTimeout(100);

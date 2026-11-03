@@ -9,7 +9,12 @@ global.$.fileName = path.join(root,"cep/host/bridge.jsx");
 let shown = 0;
 const show = global.Window.prototype.show;
 global.Window.prototype.show = () => shown++;
+// AE may report controls on hidden native pages as invisible. HTML owns visibility.
+const proto=Object.getPrototypeOf(global.Window.prototype), nativeAdd=proto.add;
+proto.add=function(){const el=nativeAdd.apply(this,arguments);if(el.type==="edittext" || el.type==="dropdownlist")el.visible=false;return el;};
 const first = JSON.parse(global.NOIR_CEP.load(root));
+proto.add=nativeAdd;
+assert.ok(first.nodes.find(n=>n.role==="fontFamily").visible,"Hidden host must not hide HTML font controls");
 global.Window.prototype.show = show;
 assert.strictEqual(shown,0,"HTML host must not open the old ScriptUI window");
 assert.ok(first.full && first.nodes.length > 100);

@@ -7,7 +7,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
 (function (N) {
     var SECTION = "NOIR Captions";
     var SETTINGS_KEY = "settings.v2";
-    var VERSION = "0.10.0";
+    var VERSION = "0.10.1";
 
     function clone(o) { return N.parseJSON(N.stringify(o)); }
 
@@ -322,7 +322,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             } else {
                 for (var ai = 3; ai < all.length; ai++) all[ai].enabled = !!cbAdvanced.value;
             }
-            win.layout.layout(true);
+            if (!options.headless) win.layout.layout(true);
             scroller.refresh(true);
         }
         cbAdvanced.onClick = showAdvanced;
@@ -630,7 +630,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         galOut.orientation = "column";
         galOut.alignChildren = ["left", "top"];
         galOut.spacing = 3;
-        galOut.visible = false;
+        galOut._cepVisible = galOut.visible = false;
         var chipsIn = [], chipsOut = [];
         function buildGallery(parent, list, chips, which) {
             var rowG = null;
@@ -718,7 +718,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             g.orientation = "column";
             g.alignChildren = ["fill", "top"];
             g.spacing = 3;
-            g.visible = visible;
+            g._cepVisible = g.visible = visible;
             return g;
         }
         var pgCounter = toolPage(true), pgStrike = toolPage(false), pgMask = toolPage(false);
@@ -1613,8 +1613,8 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             if (hasSelectedText()) applyToLayers("base", false, true, "NOIR Captions: вылет выделенным слоям");
             else setStatus((which === "in" ? "Вход" : "Выход") + " выбран для новых субтитров. Выделите слои — применится к ним.");
         }
-        rbAnimIn.onClick = function () { galIn.visible = true; galOut.visible = false; };
-        rbAnimOut.onClick = function () { galIn.visible = false; galOut.visible = true; };
+        rbAnimIn.onClick = function () { galIn._cepVisible = galIn.visible = true; galOut._cepVisible = galOut.visible = false; };
+        rbAnimOut.onClick = function () { galIn._cepVisible = galIn.visible = false; galOut._cepVisible = galOut.visible = true; };
         btnAnimApply.onClick = function () { applyToLayers("base", false, true, "NOIR Captions: анимация выделенным слоям"); };
         // Слой, к которому применима инверсия: текст, фигура, SVG/картинка/видео, солид (не камера, свет, пустышка, аудио).
         function isGraphicLayer(l) {
@@ -1743,9 +1743,9 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         };
 
         // ----- Функции -----
-        rbToolCounter.onClick = function () { pgCounter.visible = true; pgStrike.visible = false; pgMask.visible = false; };
-        rbToolStrike.onClick = function () { pgCounter.visible = false; pgStrike.visible = true; pgMask.visible = false; };
-        rbToolMask.onClick = function () { pgCounter.visible = false; pgStrike.visible = false; pgMask.visible = true; };
+        rbToolCounter.onClick = function () { pgCounter._cepVisible = pgCounter.visible = true; pgStrike._cepVisible = pgStrike.visible = false; pgMask._cepVisible = pgMask.visible = false; };
+        rbToolStrike.onClick = function () { pgCounter._cepVisible = pgCounter.visible = false; pgStrike._cepVisible = pgStrike.visible = true; pgMask._cepVisible = pgMask.visible = false; };
+        rbToolMask.onClick = function () { pgCounter._cepVisible = pgCounter.visible = false; pgStrike._cepVisible = pgStrike.visible = false; pgMask._cepVisible = pgMask.visible = true; };
         btnStrikeColor.onClick = function () {
             var c = $.colorPicker(rgbToHex(S.tools.strike.color));
             if (c < 0) return;

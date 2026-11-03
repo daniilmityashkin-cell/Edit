@@ -172,3 +172,34 @@ progress { height: 4px; width: 100%; display: block; accent-color: var(--accent)
 }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
 @media (max-width: 320px) { .brand-subtitle { display: none; } }
+/* Compact workspace: spend vertical space on controls, not introductory artwork. */
+.app-header { padding: 10px 14px 6px; }
+.brand-mark { width: 28px; height: 28px; font-size: 19px; }
+.brand-name { font-size: 12px; }
+.brand-subtitle { display: none; }
+.status-row { padding: 0 14px 6px; min-height: 21px; }
+.step-navigation { padding: 0 10px 7px; }
+.step-tab { padding: 7px 12px; }
+.workspace { padding: 12px 14px; }
+.eyebrow, .section-title, .source-symbol, .source-title, .source-card > .micro-copy { display: none; }
+.section-copy { margin: 0 0 10px; font-size: 11px; }
+.source-card { padding: 12px; margin-bottom: 4px; }
+.source-card .field { margin-top: 0; }
+.secondary-action { margin-top: 6px; }
+.preview-frame { height: 105px; }
+.filter-row { margin-bottom: 7px; }
+.quick-settings { padding-top: 10px; margin-top: 10px; }
+.caption-editor { height: clamp(100px, 32vh, 230px); }
+.drawer-header { padding: 10px 12px 6px; }
+.settings-select { margin: 0 12px 8px; width: calc(100% - 24px); }
+.drawer-scroll { padding: 4px 12px 12px; }
+.settings-section { gap: 10px; }
+@media (max-height: 430px) {
+    .app-header { padding-top: 6px; }
+    button, input, select, textarea { padding-top: 7px; padding-bottom: 7px; }
+    .preview-frame { height: 76px; }
+    .workspace { padding-top: 8px; }
+    .section-copy { display: none; }
+}
+.source-fields { display: grid; grid-template-columns: minmax(85px, .7fr) minmax(0, 1.3fr); gap: 10px; }
+@media (max-width: 340px) { .source-fields { grid-template-columns: 1fr; } }

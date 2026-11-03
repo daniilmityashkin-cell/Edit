@@ -232,7 +232,7 @@
         view.shell=element("div","shell","",app);
         var header=element("header","app-header","",view.shell),brand=element("div","brand","",header);
         element("span","brand-mark","N",brand);var title=element("div","","",brand);
-        element("div","brand-name","NOIR",title);element("div","brand-subtitle","CAPTIONS · 0.10",title);
+        element("div","brand-name","NOIR",title);element("div","brand-subtitle","CAPTIONS · 0.10.1",title);
         var primaryArea=element("div","primary-area","",header);
         view.primary=button("Распознать речь","create-action",primaryArea,function(){
             action(ui.main===0 || !workflow.hasData?"recognize":workflow.canUpdate?"updatePhrase":"generate");
@@ -262,15 +262,16 @@
         button("Продолжить с замечаниями","quiet-action",view.issues,function(){send({action:"continueGeneration"});});
         var speech=place("speechPage",view.body,"step-page");speech.el.textContent="";speech.el.id="speechPage";
         element("div","eyebrow","01 / ИСХОДНИК",speech.el);
-        sectionTitle("Всё начинается с голоса.","Выделите слой со звуком в композиции. Затем нажмите «Распознать речь».",speech.el);
+        sectionTitle("Видео","Выделите слой со звуком и нажмите «Распознать речь».",speech.el);
         var source=element("div","source-card surface","",speech.el);
         element("div","source-symbol","≋",source);element("div","source-title","Ваш голос. Ваши слова.",source);
         element("p","micro-copy","Распознавание на вашем компьютере",source);
-        field("language","Язык речи",source);
-        button("Качество и словарь →","text-button",speech.el,function(){openSettings("recognition");});
+        var sourceFields=element("div","source-fields","",source);
+        field("language","Язык речи",sourceFields);field("model","Качество",sourceFields);
+        button("Устройство и словарь →","text-button",speech.el,function(){openSettings("recognition");});
         var saved=element("div","secondary-action","",speech.el);place("load",saved);compact("load","Загрузить готовый текст…","Загрузить результат распознавания JSON");
         var text=place("textPage",view.body,"step-page");text.el.textContent="";text.el.id="textPage";
-        element("div","eyebrow","02 / РЕДАКТОР",text.el);sectionTitle("Каждое слово на месте.","Выделите слово для акцента или переноса. Каждая строка — фраза с исходным таймингом.",text.el);
+        element("div","eyebrow","02 / РЕДАКТОР",text.el);sectionTitle("Текст","Выделите слово: акцент, перенос или разделение.",text.el);
         view.empty=element("div","surface empty-state","Сначала распознайте речь или загрузите готовый текст в разделе «Видео».",text.el);
         view.editorArea=element("div","editor-area","",text.el);
         view.phraseCount=element("div","field-label","",view.editorArea);
@@ -295,7 +296,7 @@
         [["Акцент на слове","accent"],["Перенос перед словом","line"],["Разделить перед словом","phrase"]].forEach(function(item){button(item[0],"",editMenu,function(){editSelected(item[1]);});});
         ["undoEdit","save","reset"].forEach(function(role){place(role,editMenu);});
         var style=place("stylePage",view.body,"step-page");style.el.textContent="";style.el.id="stylePage";
-        element("div","eyebrow","03 / ОФОРМЛЕНИЕ",style.el);sectionTitle("Почерк вашего видео.","Выберите стиль. Наведите курсор на видеокарточку, чтобы увидеть пример.",style.el);
+        element("div","eyebrow","03 / ОФОРМЛЕНИЕ",style.el);sectionTitle("Стиль","Наведите на видеокарточку для просмотра.",style.el);
         var filter=element("div","filter-row","",style.el);place("favorites",filter);
         var grid=element("div","style-grid","",style.el);
         for(var k=0;k<4;k++)(function(index){
@@ -325,7 +326,7 @@
         categories.forEach(function(item){var option=element("option","",item[1],view.settingsSelect);option.value=item[0];view.sections[item[0]]=element("section","settings-section","",view.settingsBody);});
         view.settingsSelect.onchange=function(){ui.section=this.value;view.settingsBody.scrollTop=0;renderLayout();};
         var recognition=view.sections.recognition;
-        field("model","Качество распознавания",recognition);field("device","Устройство",recognition);field("prompt","Имена, бренды и термины",recognition);
+        field("device","Устройство",recognition);field("prompt","Имена, бренды и термины",recognition);
         var font=view.sections.font;
         var targets=element("div","action-row","",font);place("fontTargetBase",targets);place("fontTargetAccent",targets);
         field("recentFonts","Последние шрифты",font);field("fontSearch","Найти шрифт",font);field("fontFamily","Семейство",font);field("fontStyle","Начертание",font);field("fontPS","PostScript-имя",font);
@@ -384,6 +385,11 @@
     });
     if(!window.__adobe_cep__){showError("Откройте Window → Extensions (Legacy) → NOIR Captions · HTML в After Effects.");return;}
     send({action:"open"});
-    timer=setInterval(function(){if(!document.hidden && !busy && !queue.length)send({action:"poll"});},750);
+    // AE evalScript briefly changes the system cursor. Never call it repeatedly while idle.
+    timer=setInterval(function(){
+        if(!document.hidden && !busy && !queue.length && workflow.recognizing)send({action:"poll"});
+        else if(view.body)renderLayout();
+    },1000);
+
     window.addEventListener("unload",function(){clearInterval(timer);stopVideos();});
 }());

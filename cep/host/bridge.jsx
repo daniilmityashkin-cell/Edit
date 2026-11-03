@@ -24,7 +24,7 @@ var NOIR_CEP = (function () {
         if (!el._cepId) { el._cepId = String(nodes.length + 1); nodes.push(el); }
         var id = el._cepId;
         var type = el._scrub ? "number" : el.type;
-        var node = {id:id,parent:parentId,type:type,text:String(el.text || ""),visible:parentId === null ? true : el.visible !== false,
+        var node = {id:id,parent:parentId,type:type,text:String(el.text || ""),visible:el._cepVisible !== false,
             enabled:el.enabled !== false,orientation:el.orientation || "column",tip:el.helpTip || "",role:el._cepRole || "",preview:el._cepPreview || null,scroll:!!el._noirScrollBody,tabs:!!el._noirTabBar,tabSelected:!!el._noirTabSelected};
         if (type === "checkbox" || type === "radiobutton") node.value = !!el.value;
         if (type === "progressbar") node.value = el.value || 0;
@@ -42,8 +42,8 @@ var NOIR_CEP = (function () {
     }
     function snapshot(full) {
         // No wrapping below the main tabs. HTML supplies horizontal overflow if necessary.
-        if (win._noirTabs && win._noirTabs.fit) win._noirTabs.fit(100000);
-        var result = {full:!!full,nodes:[],version:"0.10.0",workflow:win._cep.workflow()};
+        // HTML owns layout; polling must never rebuild native dropdowns or repaint tabs.
+        var result = {full:!!full,nodes:[],version:"0.10.1",workflow:win._cep.workflow()};
         walk(win, null, result);
         return NOIR.stringify(result);
     }
