@@ -3,7 +3,12 @@
     var app = document.getElementById("app"), message = document.getElementById("message");
     var records = {}, queue = [], busy = false, timer, noticeUntil=0;
     function showError(text) { message.textContent = text; }
-    function send(command) { queue.push(command); pump(); }
+    function send(command) {
+        if (command.action !== "set" && command.action !== "poll" && command.action !== "open") {
+            Object.keys(records).forEach(function(id){var el=records[id].el;if(el._flush)el._flush();});
+        }
+        queue.push(command); pump();
+    }
     function pump() {
         if (busy || !queue.length) return;
         busy = true;
@@ -13,9 +18,9 @@
             busy = false;
             try {
                 var response = JSON.parse(raw);
-                if (response.error) showError(response.error);
+                if (response.error) { showError(response.error); noticeUntil=Date.now()+8000; }
                 else { if(response.notice){showError(response.notice);noticeUntil=Date.now()+5000;}else if(Date.now()>noticeUntil)showError(""); update(response); }
-            } catch (error) { showError("Не удалось связаться с панелью AE: " + String(raw).slice(0, 300)); }
+            } catch (error) { showError("Не удалось связаться с панелью AE: " + String(raw).slice(0, 300)); noticeUntil=Date.now()+8000; }
             pump();
         });
     }
@@ -37,10 +42,12 @@
         } else if (node.type === "edittext" || node.type === "number") {
             el = input = document.createElement(node.multiline ? "textarea" : "input");
             if (!node.multiline) input.type = node.type === "number" ? "number" : "text";
-            var pending;
-            function commit() { clearTimeout(pending); send({action:"set",id:node.id,value:input.value}); }
+            var pending, dirty=false;
+            function flush() { clearTimeout(pending); if(dirty){dirty=false;queue.push({action:"set",id:node.id,value:input.value});} }
+            function commit() { flush(); pump(); }
+            el._flush=flush;
             input.addEventListener("change", commit);
-            input.addEventListener("input", function () { clearTimeout(pending); pending = setTimeout(commit, 250); });
+            input.addEventListener("input", function () { dirty=true; clearTimeout(pending); pending = setTimeout(commit, 250); });
         } else if (node.type === "progressbar") {
             el = input = document.createElement("progress"); input.max = 100;
         } else {
@@ -62,9 +69,10 @@
     }
     function apply(record, node) {
         if (record.ignored) return;
+        record.node=node;
         var el = record.el, input = record.input;
         el.hidden = record.wordChip ? !node.enabled && node.text === "—" : !node.visible;
-        if(record.tile){record.tile.hidden=!node.enabled;record.meta=node.preview;preview(record,node.preview);} el.title = node.tip || "";
+        if(record.tile){record.tile.hidden=!node.enabled;record.meta=node.preview;record.frame.setAttribute("aria-label","Выбрать стиль "+(node.preview?node.preview.name:""));preview(record,node.preview);} el.title = node.tip || "";
         el.classList.toggle("tab-active", node.tabSelected);
         if (input) input.disabled = !node.enabled;
         if (el.tagName === "BUTTON") { el.disabled = !node.enabled; el.textContent = record.shortText || node.text; el.classList.toggle("star", node.text === "☆" || node.text === "★"); }
@@ -85,146 +93,297 @@
             if (node.type === "number") { input.min = node.min; input.max = node.max; input.step = node.step || "any"; }
         } else if (node.type === "progressbar") input.value = node.value;
     }
-    var roles = {};
+    var roles = {}, workflow = {}, ui = {main:0, settings:false, section:"recognition", lastPage:0, completed:0, successUntil:0}, view = {};
     function element(tag, cls, text, parent) {
         var el = document.createElement(tag); el.className = cls || "";
         if (text) el.textContent = text;
         if (parent) parent.appendChild(el); return el;
     }
+    function button(text, cls, parent, action) {
+        var el = element("button",cls,text,parent); el.type="button"; el.onclick=action; return el;
+    }
     function place(role, parent, cls) {
-        var record = roles[role]; if (!record) return null;
-        parent.appendChild(record.el); if (cls) record.el.classList.add(cls); return record;
+        var record=roles[role]; if(!record)return null;
+        parent.appendChild(record.el); if(cls)record.el.classList.add(cls); return record;
     }
     function field(role, label, parent) {
-        var box = element("div", "field", "", parent); element("div","field-label",label,box); return place(role, box);
+        if(!roles[role])return null;
+        var box=element("label","field","",parent); box.dataset.field=role;
+        element("span","field-label",label,box); place(role,box); return box;
     }
-    function details(title, parent) {
-        var el = element("details","settings-fold","",parent); element("summary","",title,el);
+    function details(title,parent) {
+        var el=element("details","settings-fold","",parent);element("summary","",title,el);
         return element("div","fold-content","",el);
     }
-    function sectionTitle(title, subtitle, parent) {
-        element("h1","section-title",title,parent); element("p","section-copy",subtitle,parent);
+    function sectionTitle(title,subtitle,parent) {
+        element("h1","section-title",title,parent);element("p","section-copy",subtitle,parent);
     }
-    function compact(role, text, title) {
-        var record=roles[role]; if(!record)return;
-        record.shortText=text; record.el.textContent=text;record.el.title=title;
+    function action(role) { if(roles[role])send({action:"click",id:roles[role].id}); }
+    function compact(role,text,title) {
+        if(!roles[role])return;var r=roles[role];r.shortText=text;r.el.textContent=text;r.el.setAttribute("aria-label",title);r.el.title=title;
     }
-    function preview(record, meta) {
+    function stopVideos(except) {
+        Object.keys(roles).forEach(function(key){var r=roles[key];if(r.video && r!==except){r.video.pause();r.tile.classList.remove("playing");}});
+    }
+    function playPreview(record) {
+        stopVideos(record);
+        if(!record.hasReference || document.hidden || window.matchMedia("(prefers-reduced-motion: reduce)").matches)return;
+        record.tile.classList.add("playing");var play=record.video.play();if(play && play.catch)play.catch(function(){record.tile.classList.remove("playing");});
+    }
+    function preview(record,meta) {
         if(!record.tile || !meta)return;
-        var video=record.video, reference=meta.id==="noir-red";
-        record.hasReference=reference;
-        record.tile.classList.toggle("has-reference",reference);
-        video.hidden=!reference;
-        if(reference && record.source!=="noir") {
-            video.src="media/noir.mp4";video.poster="media/noir.jpg";record.source="noir";
-        } else if(!reference && record.source) {
-            video.pause();video.removeAttribute("src");video.removeAttribute("poster");video.load();record.source=null;
-        }
-        record.caption.hidden=reference;
-        record.caption.textContent=meta.name;
-        record.previewLabel.textContent=reference?"РЕФЕРЕНС С СУБТИТРАМИ":"БЕЗ ВИДЕОПРИМЕРА";
+        var video=record.video,reference=meta.id==="noir-red";
+        record.hasReference=reference;record.tile.classList.toggle("has-reference",reference);video.hidden=!reference;
+        if(reference && record.source!=="noir") {video.src="media/noir.mp4";video.poster="media/noir.jpg";record.source="noir";}
+        else if(!reference && record.source){video.pause();video.removeAttribute("src");video.removeAttribute("poster");video.load();record.source=null;}
+        var names={"mix-colors":"Mix Colors","editorial-italic":"Editorial Italic","kinetic-stack":"Kinetic Blue","noir-red":"NOIR Red","editorial":"Editorial","pop-words":"Pop Words","kinetic-orange":"Kinetic Orange","invert":"Invert","reels-glow":"Reels Glow"};
+        var name=names[meta.id] || meta.name;
+        record.caption.hidden=reference;record.caption.textContent=name;
+        record.shortText=name;record.el.textContent=name;
+        record.frame.setAttribute("aria-label","Выбрать стиль "+name);
+        record.frame.setAttribute("aria-pressed",String(meta.id===workflow.preset));
+        record.previewLabel.textContent=reference?"ВИДЕО · 3 СЕК":"СТИЛЬ";
         record.caption.style.color="rgb("+meta.base.color.map(function(c){return Math.round(c*255);}).join(",")+")";
         record.caption.style.fontFamily=meta.base.fonts.join(",");
         record.caption.style.textTransform=meta.base.caps?"uppercase":"none";
+        record.tile.classList.toggle("selected",meta.id===workflow.preset);
+    }
+    function selectMain(index,notifyHost) {
+        ui.main=index;view.body.scrollTop=0;view.tools.hidden=true;stopVideos();
+        if(notifyHost)action("tab"+index);
+        renderLayout();
+    }
+    function openSettings(section) {
+        ui.settings=true;ui.section=section || ui.section;view.settingsSelect.value=ui.section;
+        view.settingsBody.scrollTop=0;stopVideos();renderLayout();view.close.focus();
+    }
+    function closeSettings() {ui.settings=false;renderLayout();view.more.focus();}
+    function renderLayout() {
+        if(!view.body)return;
+        ["speechPage","textPage","stylePage"].forEach(function(role,index){roles[role].el.hidden=ui.main!==index;});
+        view.tabs.forEach(function(tab,index){tab.classList.toggle("tab-active",ui.main===index);tab.setAttribute("aria-selected",ui.main===index?"true":"false");});
+        view.shell.classList.toggle("settings-open",ui.settings);view.drawer.hidden=!ui.settings;view.backdrop.hidden=!ui.settings;
+        view.more.setAttribute("aria-expanded",String(ui.settings));
+        Object.keys(view.sections).forEach(function(key){view.sections[key].hidden=key!==ui.section;});
+        view.drawer.setAttribute("aria-modal",String(window.innerWidth<760));
+        view.body.setAttribute("aria-hidden",String(ui.settings && window.innerWidth<760));
+        view.primary.textContent=workflow.recognizing?"Распознавание…":ui.main===0 || !workflow.hasData?"Распознать речь":workflow.canUpdate?"Обновить фразу":"Создать субтитры";
+        view.primary.disabled=!!workflow.recognizing;
+        view.all.hidden=!workflow.canUpdate || ui.main===0;
+        view.status.textContent=workflow.recognizing?"Распознавание":workflow.pending?"Есть замечания перед созданием":!workflow.hasData?"Выберите слой со звуком в AE":workflow.dirty?"Текст изменён — обновите фразу":"Можно редактировать";
+        view.status.dataset.state=workflow.recognizing?"busy":workflow.dirty || workflow.pending?"dirty":workflow.hasData?"ready":"idle";
+        if(Date.now()<ui.successUntil && !workflow.dirty && !workflow.pending)view.status.textContent="✓ Субтитры обновлены";
+        view.status.title=roles.status && roles.status.node?roles.status.node.tip:"";
+        view.progress.hidden=!workflow.recognizing;
+        roles.cancel.el.hidden=!workflow.recognizing;
+        view.phraseCount.textContent=workflow.count?"Фраза "+(workflow.phrase+1)+" из "+workflow.count:"Загрузите или распознайте речь";
+        view.empty.hidden=!!workflow.hasData;view.editorArea.hidden=!workflow.hasData;
+        Object.keys(roles).forEach(function(key){var r=roles[key];if(r.tile){r.tile.classList.toggle("selected",!!r.meta && r.meta.id===workflow.preset);r.frame.setAttribute("aria-pressed",String(!!r.meta && r.meta.id===workflow.preset));if(ui.main!==2 || r.tile.hidden)r.video.pause();}});
+        renderIssues();
+    }
+    function issueTarget(issue) {
+        if(issue.code==="font" || issue.code==="font_unknown")return {section:"font",field:roles.fontFamily?"fontFamily":"fontPS",label:"Выбрать шрифт"};
+        if(issue.code==="safe_area")return {main:2,field:"quickPosition",label:"Настроить положение"};
+        return {main:1,field:"editor",label:"Открыть фразу"};
+    }
+    function goToIssue(issue) {
+        var target=issueTarget(issue);
+        if(target.section){
+            if(issue.target)send({action:"click",id:roles[issue.target==="accent"?"fontTargetAccent":"fontTargetBase"].id,value:true});
+            openSettings(target.section);
+        }
+        else {ui.settings=false;selectMain(target.main,true);}
+        if(issue.segment!==undefined && roles.phrase)send({action:"set",id:roles.phrase.id,value:issue.segment});
+        var r=roles[target.field];if(r){r.el.scrollIntoView({block:"center"});r.el.focus();}
+    }
+    function renderIssues() {
+        var issues=workflow.issues || [], signature=JSON.stringify(issues);
+        view.issues.hidden=!issues.length;
+        if(view.issueSignature===signature)return;view.issueSignature=signature;
+        view.issueList.textContent="";
+        Array.prototype.forEach.call(app.querySelectorAll(".field-issue"),function(el){el.remove();});
+        issues.forEach(function(issue){
+            var row=element("div","issue-row","",view.issueList);element("span","",issue.message,row);
+            button(issueTarget(issue).label,"text-button",row,function(){goToIssue(issue);});
+            var target=issueTarget(issue),container=app.querySelector('[data-field="'+target.field+'"]');
+            if(container)element("span","field-issue",issue.message,container);
+        });
+    }
+    function showWordTools() {
+        var editor=roles.editor.input,start=editor.selectionStart,end=editor.selectionEnd;
+        view.selection={start:start,end:end,text:editor.value};
+        var line=editor.value.substring(0,start).split("\n").length-1;
+        if(line!==workflow.phrase && line<workflow.count && view.caretPhrase!==line){view.caretPhrase=line;send({action:"selectTextPhrase",index:line});}
+        view.tools.hidden=!workflow.hasData || start===end || editor.value.substring(start,end).indexOf("\n")!==-1;
+        view.toolsLabel.textContent="Выделено: "+editor.value.substring(start,end).slice(0,38);
+        view.wordMenu.disabled=!workflow.hasData;
+        // A caret is also usable from the explicit menu; highlighting is only needed for the floating toolbar.
+        view.wordMenu.title="Действия со словом под курсором, строка "+(line+1);
+    }
+    function editSelected(kind) {
+        var selection=view.selection;if(!selection)return;
+        send({action:"wordEdit",kind:kind,text:selection.text,start:selection.start,end:selection.end});
+        view.tools.hidden=true;view.wordDetails.open=false;
+        roles.editor.input.blur();
     }
     function curated() {
-        roles={}; Object.keys(records).forEach(function(id){var r=records[id];if(r.role)roles[r.role]=r;});
-        app.textContent="";
-        var shell=element("div","shell","",app);
-        var header=element("header","app-header","",shell),brand=element("div","brand","",header);
-        element("span","brand-mark","N",brand);var title=element("div","", "",brand);
-        element("div","brand-name","NOIR CAPTIONS",title);element("div","brand-subtitle","LOCAL STUDIO · 0.9",title);
-        place("generate",header,"create-action");
-        place("status",shell,"workflow-status");
-        var nav=element("nav","step-navigation tabs","",shell);
-        for(var i=0;i<3;i++)place("tab"+i,nav);
-        var moreWrap=element("div","more-wrap","",nav),more=element("button","more-button","Настройки ⌄",moreWrap);
-        var menu=element("div","more-menu","",moreWrap);menu.hidden=true;
-        more.onclick=function(){menu.hidden=!menu.hidden;};
-        for(var a=3;a<9;a++)(function(index){
-            var source=roles["tab"+index];if(!source)return;
-            var item=element("button","",source.el.textContent,menu);
-            item.onclick=function(){
-                if(roles.advanced)send({action:"click",id:roles.advanced.id,value:true});
-                send({action:"click",id:source.id});menu.hidden=true;
-            };
-        })(a);
-        var body=element("main","scroll-body workspace","",shell);
-        var speech=place("speechPage",body,"step-page");speech.el.textContent="";
-        sectionTitle("Начнём с вашего видео", "Выделите слой со звуком в After Effects. Распознавание работает на вашем компьютере.",speech.el);
-        var inputCard=element("div","surface","",speech.el);
-        var recognitionFields=element("div","form-grid","",inputCard);
-        field("language","Язык речи",recognitionFields);field("model","Качество распознавания",recognitionFields);
-        var actions=element("div","action-row","",inputCard);place("recognize",actions,"primary");place("cancel",actions);
-        place("progress",inputCard);
-        var recognitionOptions=details("Устройство и словарь",speech.el);
-        field("device","Устройство",recognitionOptions);field("prompt","Имена, бренды и термины",recognitionOptions);
-        var saved=element("div","secondary-action","",speech.el);element("span","muted","Уже распознали этот ролик?",saved);place("load",saved);
-        var text=place("textPage",body,"step-page");text.el.textContent="";
-        sectionTitle("Текст, который звучит точно", "Исправьте слова. Нажатие на слово ниже включает или выключает акцент.",text.el);
-        var phraseNav=element("div","phrase-navigation","",text.el);
+        roles={};Object.keys(records).forEach(function(id){var r=records[id];if(r.role)roles[r.role]=r;});
+        app.textContent="";view={};view.sections={};view.tabs=[];
+        view.shell=element("div","shell","",app);
+        var header=element("header","app-header","",view.shell),brand=element("div","brand","",header);
+        element("span","brand-mark","N",brand);var title=element("div","","",brand);
+        element("div","brand-name","NOIR",title);element("div","brand-subtitle","CAPTIONS · 0.10",title);
+        var primaryArea=element("div","primary-area","",header);
+        view.primary=button("Распознать речь","create-action",primaryArea,function(){
+            action(ui.main===0 || !workflow.hasData?"recognize":workflow.canUpdate?"updatePhrase":"generate");
+        });
+        view.all=element("details","action-menu","",primaryArea);element("summary","","⋯",view.all).setAttribute("aria-label","Другие действия создания");
+        var allMenu=element("div","popover","",view.all);
+        button("Обновить все фразы","",allMenu,function(){view.all.open=false;action("generate");});
+        var statusRow=element("div","status-row","",view.shell);
+        view.status=element("div","workflow-status","",statusRow);view.status.setAttribute("role","status");view.status.setAttribute("aria-live","polite");
+        place("cancel",statusRow,"text-button");
+        view.progress=element("div","recognition-progress","",view.shell);place("progress",view.progress);
+        var nav=element("nav","step-navigation tabs","",view.shell);nav.setAttribute("aria-label","Основные разделы");nav.setAttribute("role","tablist");
+        ["Видео","Текст","Стиль"].forEach(function(name,index){
+            var tab=button(name,"step-tab",nav,function(){selectMain(index,true);});
+            tab.setAttribute("role","tab");tab.setAttribute("aria-controls",["speechPage","textPage","stylePage"][index]);
+            tab.onkeydown=function(event){if(event.key==="ArrowRight" || event.key==="ArrowLeft"){event.preventDefault();var next=(index+(event.key==="ArrowRight"?1:2))%3;selectMain(next,true);view.tabs[next].focus();}};
+            view.tabs.push(tab);
+        });
+        view.more=button("Настройки","more-button",nav,function(){if(ui.settings)closeSettings();else openSettings();});
+        view.more.setAttribute("aria-controls","settings-drawer");
+        var workspace=element("div","workspace-layout","",view.shell);
+        view.body=element("main","scroll-body workspace","",workspace);
+        view.issues=element("section","preflight","",view.body);view.issues.hidden=true;
+        element("div","eyebrow","ПЕРЕД СОЗДАНИЕМ",view.issues);
+        view.issueList=element("div","issue-list","",view.issues);
+        element("p","micro-copy","Безопасная область оценивается приблизительно. Проверьте результат в композиции.",view.issues);
+        button("Продолжить с замечаниями","quiet-action",view.issues,function(){send({action:"continueGeneration"});});
+        var speech=place("speechPage",view.body,"step-page");speech.el.textContent="";speech.el.id="speechPage";
+        element("div","eyebrow","01 / ИСХОДНИК",speech.el);
+        sectionTitle("Всё начинается с голоса.","Выделите слой со звуком в композиции. Затем нажмите «Распознать речь».",speech.el);
+        var source=element("div","source-card surface","",speech.el);
+        element("div","source-symbol","≋",source);element("div","source-title","Ваш голос. Ваши слова.",source);
+        element("p","micro-copy","Распознавание на вашем компьютере",source);
+        field("language","Язык речи",source);
+        button("Качество и словарь →","text-button",speech.el,function(){openSettings("recognition");});
+        var saved=element("div","secondary-action","",speech.el);place("load",saved);compact("load","Загрузить готовый текст…","Загрузить результат распознавания JSON");
+        var text=place("textPage",view.body,"step-page");text.el.textContent="";text.el.id="textPage";
+        element("div","eyebrow","02 / РЕДАКТОР",text.el);sectionTitle("Каждое слово на месте.","Выделите слово для акцента или переноса. Каждая строка — фраза с исходным таймингом.",text.el);
+        view.empty=element("div","surface empty-state","Сначала распознайте речь или загрузите готовый текст в разделе «Видео».",text.el);
+        view.editorArea=element("div","editor-area","",text.el);
+        view.phraseCount=element("div","field-label","",view.editorArea);
+        var phraseNav=element("div","phrase-navigation","",view.editorArea);
         compact("prevPhrase","←","Предыдущая фраза");compact("nextPhrase","→","Следующая фраза");
-        place("prevPhrase",phraseNav);place("phrase",phraseNav);place("nextPhrase",phraseNav);
-        place("editor",text.el,"caption-editor");
-        var chips=element("div","word-chips","",text.el);
-        for(var w=0;w<12;w++){var chip=place("word"+w,chips,"word-chip");if(chip)chip.wordChip=true;}
-        var wordNav=element("div","word-pagination","",text.el);place("wordsPrev",wordNav);place("wordsNext",wordNav);
-        var textActions=element("div","action-row","",text.el);place("listen",textActions);place("updatePhrase",textActions,"primary");
-        var textMore=details("Правки фразы и сохранение",text.el);
-        ["seek","lineBreak","phraseBreak","editWord","undoEdit","save","reset"].forEach(function(r){place(r,textMore);});
-        var style=place("stylePage",body,"step-page");style.el.textContent="";
-        sectionTitle("Один стиль. Ваш характер.","Карточки с видеопримером оживают по наведению. Выберите оформление — композиция останется без изменений.",style.el);
-        var filterBar=element("div","filter-row","",style.el);place("favorites",filterBar);
+        place("prevPhrase",phraseNav);place("phrase",phraseNav);place("nextPhrase",phraseNav);roles.phrase.el.setAttribute("aria-label","Выбрать фразу");
+        var editorField=element("div","editor-field","",view.editorArea);editorField.dataset.field="editor";
+        var editor=place("editor",editorField,"caption-editor").input;editor.setAttribute("aria-label","Текст субтитров");editor.spellcheck=false;
+        view.tools=element("div","word-toolbar","",editorField);view.tools.hidden=true;view.tools.setAttribute("role","toolbar");view.tools.setAttribute("aria-label","Правки выделенного текста");
+        view.toolsLabel=element("span","selection-label","",view.tools);
+        [["Акцент","accent"],["Перенос","line"],["Разделить","phrase"]].forEach(function(item){
+            var b=button(item[0],"",view.tools,function(){editSelected(item[1]);});b.onmousedown=function(event){event.preventDefault();};
+        });
+        ["select","keyup","mouseup","input"].forEach(function(event){editor.addEventListener(event,showWordTools);});
+        editor.addEventListener("keydown",function(event){
+            if(event.key==="Escape"){view.tools.hidden=true;return;}
+            if((event.ctrlKey || event.metaKey) && event.shiftKey && (event.key==="A" || event.code==="KeyA")){event.preventDefault();showWordTools();editSelected("accent");}
+        });
+        var textActions=element("div","editor-actions","",view.editorArea);place("listen",textActions,"text-button");compact("listen","▷ Прослушать","Прослушать выбранную фразу");
+        view.wordDetails=element("details","action-menu","",textActions);view.wordMenu=element("summary","","Правки ⋯",view.wordDetails);
+        var editMenu=element("div","popover","",view.wordDetails);
+        [["Акцент на слове","accent"],["Перенос перед словом","line"],["Разделить перед словом","phrase"]].forEach(function(item){button(item[0],"",editMenu,function(){editSelected(item[1]);});});
+        ["undoEdit","save","reset"].forEach(function(role){place(role,editMenu);});
+        var style=place("stylePage",view.body,"step-page");style.el.textContent="";style.el.id="stylePage";
+        element("div","eyebrow","03 / ОФОРМЛЕНИЕ",style.el);sectionTitle("Почерк вашего видео.","Выберите стиль. Наведите курсор на видеокарточку, чтобы увидеть пример.",style.el);
+        var filter=element("div","filter-row","",style.el);place("favorites",filter);
         var grid=element("div","style-grid","",style.el);
         for(var k=0;k<4;k++)(function(index){
             var record=roles["galleryCard"+index];if(!record)return;
-            var tile=element("article","style-tile","",grid);record.tile=tile;
-            var frame=element("div","preview-frame","",tile);record.video=element("video","", "",frame);
-            record.video.muted=true;record.video.loop=true;record.video.playsInline=true;record.video.preload="metadata";
-            record.caption=element("div","preview-caption","",frame);
-            element("span","","Ваши ",record.caption);element("strong","","слова",record.caption);element("span",""," оживают",record.caption);
-            record.previewLabel=element("span","preview-label","ЭСКИЗ СТИЛЯ",frame);
-            var info=element("div","tile-info","",tile);place("galleryCard"+index,info);place("galleryStar"+index,info);
-            frame.onclick=function(){send({action:"click",id:record.id});};
-            tile.onmouseenter=function(){if(!record.hasReference)return;tile.classList.add("playing");var result=record.video.play();if(result&&result.catch)result.catch(function(){});};
-            tile.onmouseleave=function(){tile.classList.remove("playing");record.video.pause();};
+            record.tile=element("article","style-tile","",grid);
+            var frame=button("","preview-frame",record.tile,function(){send({action:"click",id:record.id});});
+            frame.setAttribute("aria-label","Выбрать стиль");record.frame=frame;
+            record.video=element("video","","",frame);record.video.muted=true;record.video.loop=true;record.video.playsInline=true;record.video.preload="none";
+            record.caption=element("div","preview-caption","",frame);record.previewLabel=element("span","preview-label","",frame);
+            var info=element("div","tile-info","",record.tile);place("galleryCard"+index,info);place("galleryStar"+index,info);
+            record.tile.onmouseenter=function(){playPreview(record);};record.tile.onmouseleave=function(){stopVideos();};
+            frame.onfocus=function(){playPreview(record);};frame.onblur=function(){stopVideos();};
             preview(record,record.meta);
         })(k);
         var pages=element("div","gallery-pagination","",style.el);place("galleryPrev",pages);place("galleryPage",pages);place("galleryNext",pages);
-        element("p","micro-copy","Видеопримеры показывают исходные ролики с субтитрами. Для остальных стилей пока доступны статические карточки.",style.el);
+        element("p","micro-copy","Видеопримеры — из ваших роликов с субтитрами. Для остальных стилей показан статический образец.",style.el);
         var quick=element("div","form-grid quick-settings","",style.el);
-        field("quickSize","Размер, %",quick);field("quickPosition","Положение",quick);field("intensity","Анимация",quick);
-        var typeSettings=details("Шрифт и точная настройка",style.el);
-        var targets=element("div","action-row","",typeSettings);place("fontTargetBase",targets);place("fontTargetAccent",targets);
-        ["fontSearch","fontFamily","fontStyle","fontPS","recentFonts"].forEach(function(r){place(r,typeSettings);});
-        var applyFonts=element("div","action-row","",typeSettings);place("fontSelected",applyFonts);place("fontAll",applyFonts);
-        place("savePreset",typeSettings);place("check",typeSettings);
-        var cleanup=details("Управление проектом",style.el);
-        place("replace",cleanup);
-        var clear=element("button","quiet-action","Удалить старые NOIR-превью",cleanup);
-        clear.onclick=function(){if(window.confirm("Удалить отдельные композиции NOIR-превью и галерей? Композиции, используемые в монтаже, будут пропущены. Действие можно отменить в AE через Ctrl+Z."))send({action:"removePreviews"});};
-        ["viewPage","layoutPage","animationPage","layersPage","toolsPage","sfxPage"].forEach(function(r){place(r,body,"step-page advanced-page");});
-        Object.keys(roles).forEach(function(role){var record=roles[role];if(record.wordChip)record.el.hidden=record.el.disabled&&record.el.textContent==="—";});
+        field("quickSize","Размер, %",quick);field("quickPosition","Положение",quick);field("intensity","Интенсивность",quick);
+        button("Шрифт и детали →","text-button",style.el,function(){openSettings("font");});
+        view.backdrop=button("","drawer-backdrop",workspace,closeSettings);view.backdrop.setAttribute("aria-label","Закрыть настройки");view.backdrop.tabIndex=-1;
+        view.drawer=element("aside","settings-drawer","",workspace);view.drawer.id="settings-drawer";view.drawer.setAttribute("role","dialog");view.drawer.setAttribute("aria-labelledby","settings-title");
+        var drawerHead=element("div","drawer-header","",view.drawer);element("h2","","Настройки",drawerHead).id="settings-title";
+        view.close=button("×","close-button",drawerHead,closeSettings);view.close.setAttribute("aria-label","Закрыть настройки");
+        view.settingsSelect=element("select","settings-select","",view.drawer);view.settingsSelect.setAttribute("aria-label","Раздел настроек");
+        var categories=[["recognition","Распознавание"],["font","Шрифт"],["viewPage","Вид и эффекты"],["layoutPage","Раскладка"],["animationPage","Анимация"],["layersPage","Слои"],["toolsPage","Инструменты"],["sfxPage","Звук · вручную"],["project","Проект"]];
+        view.settingsBody=element("div","drawer-scroll","",view.drawer);
+        categories.forEach(function(item){var option=element("option","",item[1],view.settingsSelect);option.value=item[0];view.sections[item[0]]=element("section","settings-section","",view.settingsBody);});
+        view.settingsSelect.onchange=function(){ui.section=this.value;view.settingsBody.scrollTop=0;renderLayout();};
+        var recognition=view.sections.recognition;
+        field("model","Качество распознавания",recognition);field("device","Устройство",recognition);field("prompt","Имена, бренды и термины",recognition);
+        var font=view.sections.font;
+        var targets=element("div","action-row","",font);place("fontTargetBase",targets);place("fontTargetAccent",targets);
+        field("recentFonts","Последние шрифты",font);field("fontSearch","Найти шрифт",font);field("fontFamily","Семейство",font);field("fontStyle","Начертание",font);field("fontPS","PostScript-имя",font);
+        var fonts=details("Применить к существующим слоям",font);place("fontSelected",fonts);place("fontAll",fonts);
+        ["viewPage","layoutPage","animationPage","layersPage","toolsPage","sfxPage"].forEach(function(role){
+            var r=place(role,view.sections[role],"advanced-page");r.el.hidden=false;
+        });
+        var sound=view.sections.sfxPage;
+        var soundNote=element("p","micro-copy","Звуки добавляются только по вашей команде. После добавления их можно двигать и подгонять в композиции.");sound.insertBefore(soundNote,sound.firstChild);
+        var project=view.sections.project;place("replace",project);place("savePreset",project);
+        button("Удалить старые NOIR-превью","quiet-action",project,function(){if(window.confirm("Удалить отдельные композиции NOIR-превью? Используемые в монтаже будут пропущены. Можно отменить через Ctrl+Z в AE."))send({action:"removePreviews"});});
+        element("p","micro-copy","Ваши настройки и избранные стили сохраняются автоматически.",project);
+        renderLayout();
     }
     function update(data) {
-        if (data.full) { app.textContent = ""; records = {}; }
-        data.nodes.forEach(function (node) {
-            if (!records[node.id]) records[node.id] = create(node);
-            apply(records[node.id], node);
-        });
+        var previousPhrase=workflow.phrase;
+        if(data.full){app.textContent="";records={};}
+        if(data.workflow)workflow=data.workflow;
+        view.caretPhrase=workflow.phrase;
+        if(workflow.completed>ui.completed){ui.successUntil=Date.now()+4000;ui.completed=workflow.completed;}
+        data.nodes.forEach(function(node){if(!records[node.id])records[node.id]=create(node);apply(records[node.id],node);});
         if(data.full)curated();
-        if(roles.wordsPrev && roles.wordsNext){var pagination=app.querySelector(".word-pagination");if(pagination)pagination.hidden=roles.wordsPrev.el.disabled && roles.wordsNext.el.disabled;}
-        Object.keys(roles).forEach(function(role){var record=roles[role];if(record.tile && record.tile.closest("[hidden]"))record.video.pause();});
+        if(workflow.page<3 && workflow.page!==ui.lastPage){ui.main=workflow.page;if(view.body)view.body.scrollTop=0;}
+        ui.lastPage=workflow.page;
+        // Legacy pages supply controls, while HTML owns independent main and inspector navigation.
+        ["viewPage","layoutPage","animationPage","layersPage","toolsPage","sfxPage"].forEach(function(role){if(roles[role])roles[role].el.hidden=false;});
+        if(previousPhrase!==workflow.phrase && roles.editor && document.activeElement!==roles.editor.input){
+            var editor=roles.editor.input,lines=editor.value.split("\n"),start=0;
+            for(var i=0;i<workflow.phrase;i++)start+=(lines[i] || "").length+1;
+            editor.setSelectionRange(start,start+(lines[workflow.phrase] || "").length);
+            editor.scrollTop=workflow.phrase*25;view.tools.hidden=true;
+        }
+        renderLayout();
     }
-    document.body.addEventListener("wheel", function (event) {
-        var body = app.querySelector(".scroll-body");
-        if (!body || event.ctrlKey) return;
-        // Route wheel from ANY part of this panel, including header, fields and lists.
-        body.scrollTop += event.deltaY * (event.deltaMode === 1 ? 30 : event.deltaMode === 2 ? body.clientHeight : 1);
-        event.preventDefault();
-    }, {passive:false});
-    if (!window.__adobe_cep__) { showError("Откройте панель через Window → Extensions (Legacy) → NOIR Captions · HTML в After Effects."); return; }
+    document.body.addEventListener("wheel",function(event){
+        if(event.ctrlKey || !view.body)return;
+        var target=event.target,delta=event.deltaY*(event.deltaMode===1?30:event.deltaMode===2?view.body.clientHeight:1);
+        var editor=target.closest("textarea");
+        if(editor && ((delta>0 && editor.scrollTop<editor.scrollHeight-editor.clientHeight-1) || (delta<0 && editor.scrollTop>0))){editor.scrollTop+=delta;event.preventDefault();return;}
+        var area=ui.settings && (view.drawer.contains(target) || window.innerWidth<760)?view.settingsBody:view.body;
+        area.scrollTop+=delta;event.preventDefault();
+    },{passive:false});
+    document.addEventListener("visibilitychange",function(){if(document.hidden)stopVideos();});
+    document.addEventListener("click",function(event){Array.prototype.forEach.call(app.querySelectorAll(".action-menu[open]"),function(menu){if(!menu.contains(event.target))menu.open=false;});});
+    window.addEventListener("blur",function(){stopVideos();});
+    window.addEventListener("resize",renderLayout);
+    document.addEventListener("keydown",function(event){
+        if(event.key==="Escape")Array.prototype.forEach.call(app.querySelectorAll(".action-menu[open]"),function(menu){menu.open=false;});
+        if(event.key==="Escape" && ui.settings){event.preventDefault();closeSettings();}
+        if(event.key==="Tab" && ui.settings && window.innerWidth<760){
+            var focusable=Array.prototype.filter.call(view.drawer.querySelectorAll("button,select,input,summary,textarea"),function(el){return !el.disabled && el.getClientRects().length;});
+            var first=focusable[0],last=focusable[focusable.length-1];
+            if(event.shiftKey && (document.activeElement===first || !view.drawer.contains(document.activeElement))){event.preventDefault();last.focus();}
+            else if(!event.shiftKey && (document.activeElement===last || !view.drawer.contains(document.activeElement))){event.preventDefault();first.focus();}
+        }
+    });
+    if(!window.__adobe_cep__){showError("Откройте Window → Extensions (Legacy) → NOIR Captions · HTML в After Effects.");return;}
     send({action:"open"});
-    timer = setInterval(function () { if (!busy && !queue.length) send({action:"poll"}); }, 750);
-    window.addEventListener("unload", function () { clearInterval(timer); });
+    timer=setInterval(function(){if(!document.hidden && !busy && !queue.length)send({action:"poll"});},750);
+    window.addEventListener("unload",function(){clearInterval(timer);stopVideos();});
 }());

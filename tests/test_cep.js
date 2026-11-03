@@ -43,6 +43,39 @@ request({action:"click",id:first.nodes.find(n=>n.text==="Создать субт
 assert.ok(global.app.project.activeItem._l.some(l=>/ЗДРАВСТВУЙТЕ|Здравствуйте/.test(l.name)));
 assert.ok(!global.app.project.activeItem._l.some(l=>String(l.comment).indexOf(global.NOIR.SFX_TAG)===0));
 assert.ok(JSON.parse(global.NOIR_CEP.request('{"action":"click","id":"999999"}')).error);
+
+const role = name => [...tree.values()].find(n=>n.role===name);
+assert.strictEqual(request({action:"poll"}).workflow.canUpdate,true);
+// Word actions work on the actual selection, preserve timing and undo as one edit.
+request({action:"set",id:editor.id,value:"Первое второе третье"});
+request({action:"wordEdit",kind:"accent",text:"Первое второе третье",start:7,end:13});
+assert.strictEqual(tree.get(editor.id).text,"Первое *второе* третье");
+request({action:"wordEdit",kind:"line",text:tree.get(editor.id).text,start:7,end:15});
+assert.strictEqual(tree.get(editor.id).text,"Первое ↵ *второе* третье");
+request({action:"click",id:role("undoEdit").id});
+assert.strictEqual(tree.get(editor.id).text,"Первое *второе* третье");
+const stale=JSON.parse(NOIR_CEP.request(JSON.stringify({action:"wordEdit",kind:"accent",text:"old",start:0,end:3})));
+assert.ok(stale.error,"Stale selection must not modify another word");
+// No layers are changed by preflight; continuation is bound to what was checked.
+request({action:"set",id:editor.id,value:"Оченьдлинноесловокотороенеумещается"});
+const originalLayers=app.project.activeItem._l.slice();
+let checked=request({action:"click",id:role("generate").id});
+assert.ok(checked.workflow.pending && checked.workflow.issues.some(i=>i.code==="word"));
+assert.deepStrictEqual(app.project.activeItem._l,originalLayers);
+app.project.activeItem.width+=20;
+checked=request({action:"continueGeneration"});
+assert.ok(checked.workflow.pending,"A changed composition must be checked again");
+assert.deepStrictEqual(app.project.activeItem._l,originalLayers);
+checked=request({action:"continueGeneration"});
+assert.strictEqual(checked.workflow.pending,false);
+assert.ok(checked.workflow.completed>=2);
+request({action:"click",id:role("generate").id});
+request({action:"set",id:editor.id,value:"Коротко"});
+assert.ok(JSON.parse(NOIR_CEP.request('{"action":"continueGeneration"}')).error,"Edited inputs invalidate pending preflight");
+// Font search is an onChanging control in the native model.
+request({action:"set",id:role("fontSearch").id,value:"Times"});
+assert.ok(role("fontFamily").items.includes("TimesNewRomanPSMT"));
+
 const main = new mock.CompItem({name:"Main"}), preview = new mock.CompItem({name:"NOIR Preview · Main"}), used = new mock.CompItem({name:"NOIR · Галерея стилей"});
 used.usedIn=[main]; global.app.project._items.push(main,preview,used);
 preview.remove=()=>{global.app.project._items.splice(global.app.project._items.indexOf(preview),1);};

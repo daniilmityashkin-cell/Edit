@@ -765,8 +765,8 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         if (hasAccent) sides.push("accent");
         for (i = 0; i < sides.length; i++) {
             var fonts = style[sides[i]].fonts || [], primary = fonts[0], installed = primary ? N.fontInstalled(primary) : false;
-            if (installed === false) issues.push({code: "font", message: fontMissingMessage(fonts, pickFont(fonts))});
-            else if (installed === null) issues.push({code: "font_unknown", message: "AE не позволяет проверить шрифт: " + primary + "."});
+            if (installed === false) issues.push({code: "font", target:sides[i], message: fontMissingMessage(fonts, pickFont(fonts))});
+            else if (installed === null) issues.push({code: "font_unknown", target:sides[i], message: "AE не позволяет проверить шрифт: " + primary + "."});
         }
         if (!groups.length) issues.push({code: "empty", message: "Нет слов для создания субтитров."});
         var width = comp.width, height = comp.height, scale = width / N.REF_WIDTH;

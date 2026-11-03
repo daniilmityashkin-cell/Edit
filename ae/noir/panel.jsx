@@ -7,7 +7,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
 (function (N) {
     var SECTION = "NOIR Captions";
     var SETTINGS_KEY = "settings.v2";
-    var VERSION = "0.9.0";
+    var VERSION = "0.10.0";
 
     function clone(o) { return N.parseJSON(N.stringify(o)); }
 
@@ -1330,8 +1330,12 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
                 setStatus("Фраза " + (phraseIndex() + 1) + " · " + time.toFixed(2) + " с" + (map.note ? " · " + map.note : ""));
             } catch (e) { alert(e.message, "NOIR: переход к фразе"); }
         }
-        btnPrevPhrase.onClick = function () { if (state.data && phraseIndex() > 0) { ddPhrase.selection = phraseIndex() - 1; seekPhrase(); } };
-        btnNextPhrase.onClick = function () { if (state.data && phraseIndex() + 1 < state.data.segments.length) { ddPhrase.selection = phraseIndex() + 1; seekPhrase(); } };
+        function navigatePhrase(index) {
+            editingWords = true; ddPhrase.selection = index; editingWords = false;
+            wordPage = 0; selectedWord = 0; refreshWords(); seekPhrase();
+        }
+        btnPrevPhrase.onClick = function () { if (state.data && phraseIndex() > 0) navigatePhrase(phraseIndex() - 1); };
+        btnNextPhrase.onClick = function () { if (state.data && phraseIndex() + 1 < state.data.segments.length) navigatePhrase(phraseIndex() + 1); };
         btnSeekPhrase.onClick = seekPhrase;
         function refreshWords() {
             var words;
@@ -1370,7 +1374,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
                 setStatus("Изменено слово: " + words[index].text + ". Тайминги сохранены.");
             } catch (e) { alert(e.message, "NOIR Captions"); }
         }
-        ddPhrase.onChange = function () { if (!editingWords) { wordPage = 0; selectedWord = 0; refreshWords(); } };
+        ddPhrase.onChange = function () { if (!editingWords) { wordPage = 0; selectedWord = 0; refreshWords(); if (options.headless) seekPhrase(); } };
         etText.onChange = etText.onChanging = function () { refreshWords(); setStatus("Проверьте текст и обновите нужные фразы."); };
         for (var bi = 0; bi < wordButtons.length; bi++) wordButtons[bi].onClick = function () { editWord("accent", wordPage + this._slot); };
         btnWordsBack.onClick = function () { wordPage = Math.max(0, wordPage - 12); refreshWords(); };
@@ -1810,7 +1814,8 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             toolAction("NOIR Captions: убрать маски", function () { setStatus("Убрано масок: " + N.removeMasks(activeComp())); });
         };
 
-        function generateCaptions(preview, phraseOnly, checkOnly) {
+        var cepIssues = [], pendingCheck = null, generationSerial = 0;
+        function generateCaptions(preview, phraseOnly, checkOnly, acceptIssues) {
             readUI();
             if (!state.data) { alert("Сначала распознайте речь или откройте JSON.", "NOIR Captions"); return; }
             var comp = app.project.activeItem;
@@ -1849,8 +1854,18 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
                 var issue = issues[ci], key = issue.code + ":" + (issue.segment === undefined ? issue.message : issue.segment);
                 if (!codes[key]) { codes[key] = true; messages.push(issue.message); }
             }
+            if (options.headless && !preview && !checkOnly) {
+                var signature = N.stringify({words:words,style:outputStyle,comp:comp.id,width:comp.width,height:comp.height,duration:comp.duration,phrase:!!phraseOnly,issues:issues,replace:S.replace});
+                if (issues.length && !(acceptIssues && pendingCheck && pendingCheck.signature === signature)) {
+                    cepIssues = issues;
+                    pendingCheck = {signature:signature,phrase:!!phraseOnly};
+                    setStatus("Проверьте замечания перед созданием.");
+                    return;
+                }
+                cepIssues = []; pendingCheck = null;
+            }
             if (checkOnly) { alert(messages.length ? "Проверка перед созданием:\n\n" + messages.join("\n") : "Проблем по предварительной проверке не найдено. Геометрию и анимацию проверьте в превью.", "NOIR: проверка"); return; }
-            if (!preview && messages.length && !confirm("Перед созданием:\n\n" + messages.slice(0, 10).join("\n") +
+            if (!options.headless && !preview && messages.length && !confirm("Перед созданием:\n\n" + messages.slice(0, 10).join("\n") +
                 (messages.length > 10 ? "\nЕщё замечаний: " + (messages.length - 10) : "") + "\n\nПродолжить?", true, "NOIR: проверка")) return;
             if (phraseOnly) {
                 var canUpdate = false, sourceKey = N.sourceKey(state.data, state.link);
@@ -1891,6 +1906,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
                 if (preview) { comp.openInViewer(); setStatus("Превью создано отдельно. Пробел / Num 0 — воспроизведение. Ctrl+Z — убрать превью."); return; }
                 if (phraseOnly) state.cleanLines[phraseIndex()] = etText.text.replace(/\r\n?/g, "\n").split("\n")[phraseIndex()];
                 else state.cleanLines = etText.text.replace(/\r\n?/g, "\n").split("\n");
+                generationSerial++;
                 warnings = warnings.concat(res.warnings);
                 var msg = "Создано слоёв: " + res.created + (res.removed ? ", заменено старых: " + res.removed : "");
                 setStatus(msg);
@@ -1951,6 +1967,57 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         }
         if (tabs.buttons) for (var tabRole = 0; tabRole < tabs.buttons.length; tabRole++) tabs.buttons[tabRole]._cepRole = "tab" + tabRole;
         for (var wordRole = 0; wordRole < wordButtons.length; wordRole++) wordButtons[wordRole]._cepRole = "word" + wordRole;
+        win._cep = {
+            clearIssues: function () { cepIssues = []; pendingCheck = null; },
+            selectTextPhrase: function (index) {
+                if (!state.data || index < 0 || index >= state.data.segments.length || index !== Math.floor(index)) throw new Error("Нет такой фразы.");
+                editingWords = true; ddPhrase.selection = index; editingWords = false;
+                wordPage = 0; selectedWord = 0; refreshWords();
+            },
+            continueGeneration: function () {
+                if (!pendingCheck) throw new Error("Запустите проверку кнопкой создания ещё раз.");
+                generateCaptions(false, pendingCheck.phrase, false, true);
+            },
+            workflow: function () {
+                var comp = app.project.activeItem, canUpdate = false, lines = etText.text.replace(/\r\n?/g, "\n").split("\n");
+                if (state.data && comp instanceof CompItem) {
+                    var key = N.sourceKey(state.data, state.link);
+                    for (var i = 1; i <= comp.numLayers; i++) {
+                        var info = N.groupInfo(comp.layer(i));
+                        if (info && info.sourceKey === key) { canUpdate = true; break; }
+                    }
+                }
+                return {hasData:!!state.data,recognizing:state.recognizing,canUpdate:canUpdate,
+                    dirty:textDirty(),phraseDirty:!!state.data && lines[phraseIndex()] !== state.cleanLines[phraseIndex()],
+                    phrase:phraseIndex(),count:state.data ? state.data.segments.length : 0,
+                    page:tabs.current || 0,issues:cepIssues,pending:!!pendingCheck,preset:S.presetId,completed:generationSerial};
+            },
+            wordEdit: function (command) {
+                if (!state.data || command.text !== etText.text) throw new Error("Текст изменился. Выделите слово ещё раз.");
+                if (command.kind !== "accent" && command.kind !== "line" && command.kind !== "phrase") throw new Error("Неизвестная правка слова.");
+                var start = Number(command.start), end = Number(command.end), text = etText.text;
+                if (!isFinite(start) || !isFinite(end) || start < 0 || end > text.length || end < start) throw new Error("Выделите слово в тексте.");
+                var si = text.substring(0, start).split("\n").length - 1, lines = text.split("\n");
+                var offset = text.substring(0, start).lastIndexOf("\n") + 1, line = lines[si];
+                if (end > offset + line.length) throw new Error("Выделите слова внутри одной фразы.");
+                var ws = N.parseLine(line), re = /\S+/g, match, index = 0, chosen = [];
+                while ((match = re.exec(line)) !== null) {
+                    if (!N.parseLine(match[0]).length) continue;
+                    if (match.index + match[0].length > start - offset && match.index < Math.max(end - offset, start - offset + 1)) chosen.push(index);
+                    index++;
+                }
+                if (!chosen.length) throw new Error("Выделите слово в тексте.");
+                editHistory.push(text); if (editHistory.length > 30) editHistory.shift();
+                var flag = !ws[chosen[0]].accent;
+                if (command.kind === "accent") for (var wi = 0; wi < chosen.length; wi++) ws[chosen[wi]].accent = flag;
+                else if (command.kind === "line") ws[chosen[0]].lineBefore = !ws[chosen[0]].lineBefore;
+                else ws[chosen[0]].breakBefore = !ws[chosen[0]].breakBefore;
+                lines[si] = N.editorWords(ws); etText.text = lines.join("\n");
+                editingWords = true; ddPhrase.selection = si; editingWords = false;
+                selectedWord = chosen[0]; refreshWords(); cepIssues = []; pendingCheck = null;
+                setStatus("Правка сохранена. Тайминги слов сохранены.");
+            }
+        };
         if (options.headless) return win;
         if (win instanceof Window) { win.center(); win.show(); }
         else { win.layout.layout(true); win.layout.resize(); }

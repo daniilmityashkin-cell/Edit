@@ -43,7 +43,7 @@ var NOIR_CEP = (function () {
     function snapshot(full) {
         // No wrapping below the main tabs. HTML supplies horizontal overflow if necessary.
         if (win._noirTabs && win._noirTabs.fit) win._noirTabs.fit(100000);
-        var result = {full:!!full,nodes:[],version:"0.9.0"};
+        var result = {full:!!full,nodes:[],version:"0.10.0",workflow:win._cep.workflow()};
         walk(win, null, result);
         return NOIR.stringify(result);
     }
@@ -60,6 +60,9 @@ var NOIR_CEP = (function () {
             ensure();
             var command = NOIR.parseJSON(raw);
             if (command.action === "poll") return snapshot(false);
+            if (command.action === "wordEdit") { win._cep.wordEdit(command); return snapshot(false); }
+            if (command.action === "selectTextPhrase") { win._cep.selectTextPhrase(Number(command.index)); return snapshot(false); }
+            if (command.action === "continueGeneration") { win._cep.continueGeneration(); return snapshot(false); }
             if (command.action === "removePreviews") {
                 var count = 0;
                 app.beginUndoGroup("NOIR: удалить старые примеры");
@@ -76,6 +79,7 @@ var NOIR_CEP = (function () {
             }
             var el = nodes[Number(command.id) - 1];
             if (!el || el.enabled === false) throw new Error("Элемент панели недоступен.");
+            if (command.action === "set" || (command.action === "click" && el.type !== "button" && el._cepRole !== "fontTargetBase" && el._cepRole !== "fontTargetAccent") || el._cepPreview) win._cep.clearIssues();
             if (command.action === "click") {
                 if (el.type === "checkbox" || el.type === "radiobutton") el.value = !!command.value;
                 if (el.onClick) el.onClick.call(el);
@@ -87,6 +91,7 @@ var NOIR_CEP = (function () {
                     try { el.selection = index; } finally { el.onChange = handler; }
                 } else el.text = String(command.value);
                 if (el.onChange) el.onChange.call(el);
+                else if (el.onChanging) el.onChanging.call(el);
             } else throw new Error("Неизвестная команда панели.");
             return snapshot(false);
         } catch (e) { return '{"error":' + quoteError(e) + '}'; }
