@@ -7,7 +7,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
 (function (N) {
     var SECTION = "NOIR Captions";
     var SETTINGS_KEY = "settings.v2";
-    var VERSION = "0.12.0";
+    var VERSION = "0.13.0";
 
     function clone(o) { return N.parseJSON(N.stringify(o)); }
 
@@ -247,7 +247,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         var S = loadSettings();
         var presets = N.loadPresets(root);
         // syncing: идёт программное заполнение контролов — их onChange не считаются правкой
-        var state = { data: null, link: null, target: "base", syncing: false, recognizing: false, cleanLines: [] };
+        var state = { data: null, link: null, target: "base", syncing: false, recognizing: false, cleanLines: [], dataRevision: 0 };
 
         // Тема необязательна: если файла нет или он сломан — обычные вкладки и кнопки.
         try { $.evalFile(File(root + "/ae/noir/theme.jsx")); } catch (eTheme) {}
@@ -294,7 +294,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         var cbAdvanced = win.add("checkbox", undefined, "Дополнительные настройки");
         cbAdvanced.helpTip = "Показать вид, раскладку, анимацию, слои, функции и SFX";
         var scroller = N.makeScrollArea(win);
-        var tabs = TH ? TH.makeTabs(scroller.content) : scroller.content.add("tabbedpanel");
+        var tabs = TH ? TH.makeTabs(scroller.content, {headless:!!options.headless}) : scroller.content.add("tabbedpanel");
         win._noirTabs = tabs;
         tabs.alignChildren = ["fill", "top"];
         var tSpeech = tabs.add("tab", undefined, "1 · Видео");
@@ -355,7 +355,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         // Числовое поле-бегунок: зажать левую кнопку на числе и двигать мышью (Shift — точнее, Ctrl/Alt — быстрее);
         // простой клик — ввод значения. Ведёт себя как edittext: .text (строка), .onChange, .helpTip.
         var scrubs = [];
-        function redrawScrubs() { for (var i = 0; i < scrubs.length; i++) { try { scrubs[i].notify("onDraw"); } catch (e) {} } }
+        function redrawScrubs() { if (options.headless) return; for (var i = 0; i < scrubs.length; i++) { try { scrubs[i].notify("onDraw"); } catch (e) {} } }
         function field(parent, value, chars, spec) {
             if (!spec) {
                 var e = parent.add("edittext", undefined, String(value));
@@ -365,6 +365,10 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             var b = parent.add("button", undefined, N.scrubFormat(value, spec.dec));
             b._scrub = spec;
             b.preferredSize = [Math.max(54, (chars || 4) * 8 + 14), 22];
+            if (options.headless) {
+                b.helpTip = spec.name || "Значение";
+                scrubs.push(b); return b;
+            }
             var st = { down: false, moved: false, lastX: 0, val: 0 };
             function redraw() { try { b.notify("onDraw"); } catch (e1) {} }
             b.addEventListener("mousedown", function (ev) {
@@ -891,7 +895,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         if (!TH) scroller.content.add("statictext", undefined, "NOIR CAPTIONS " + VERSION);
 
         // ================= тема =================
-        if (TH) {
+        if (TH && !options.headless) {
             var primary = [btnRecognize, btnGenerate, btnMakeAccent, btnCounter, btnStrike, btnMask];
             var ghost = [btnCancel, btnLoad, btnSave, btnReset, btnSavePreset, btnFromLayer, btnFontToLayers,
                 btnColor, btnStrokeColor, btnMakeBase, btnApply, btnInvert, btnReflow, btnAnimApply, btnStrikeColor, btnStrikeRemove, btnMaskRemove, btnSfxSelected, btnSfxRemove, btnSfxHere, btnSfxRescan, btnSfxFolder];
@@ -971,7 +975,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
                 c.button.text = p ? (p.id === S.presetId ? "✓ " : "") + p.name : "Нет стиля";
                 c.star.text = p && N.hasItem(S.favoriteStyles, p.id) ? "★" : "☆";
                 c.sample.text = p ? "Ваши слова оживают" : "";
-                if (p) try {
+                if (p && !options.headless) try {
                     c.sample.graphics.font = ScriptUI.newFont(p.base.fonts[0], "REGULAR", 18);
                     c.sample.graphics.foregroundColor = c.sample.graphics.newPen(c.sample.graphics.PenType.SOLID_COLOR, p.base.color, 1);
                 } catch (fontPreview) {}
@@ -1427,6 +1431,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         }
 
         function setData(data, link) {
+            state.dataRevision++;
             editHistory = [];
             state.cleanLines = N.toEditorText(data).split("\n");
             state.data = data;
@@ -1598,8 +1603,8 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         }
         function refreshChips() {
             var A = S.style.anim, i;
-            for (i = 0; i < chipsIn.length; i++) { if (TH) TH.setChip(chipsIn[i], chipsIn[i]._id === A.animIn); }
-            for (i = 0; i < chipsOut.length; i++) { if (TH) TH.setChip(chipsOut[i], chipsOut[i]._id === A.animOut); }
+            for (i = 0; i < chipsIn.length; i++) { if (TH && !options.headless) TH.setChip(chipsIn[i], chipsIn[i]._id === A.animIn); }
+            for (i = 0; i < chipsOut.length; i++) { if (TH && !options.headless) TH.setChip(chipsOut[i], chipsOut[i]._id === A.animOut); }
             stAnimCur.text = "Вход: " + N.findAnim(N.ANIM_IN, A.animIn).abbr + "   ·   Выход: " +
                 N.findAnim(N.ANIM_OUT, A.animOut).abbr;
         }
@@ -1933,6 +1938,11 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
                 S.presetId = p0.id;
             }
         }
+        // Start on the saved style instead of making users page through the gallery.
+        var initialGallery = galleryItems();
+        for (var gi = 0; gi < initialGallery.length; gi++) if (initialGallery[gi].id === S.presetId) {
+            galleryPage = Math.floor(gi / 4); break;
+        }
         fillPresets();
         syncUI();
         refreshRecentFonts();
@@ -1990,7 +2000,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
                 return {hasData:!!state.data,recognizing:state.recognizing,canUpdate:canUpdate,
                     dirty:textDirty(),phraseDirty:!!state.data && lines[phraseIndex()] !== state.cleanLines[phraseIndex()],
                     phrase:phraseIndex(),count:state.data ? state.data.segments.length : 0,
-                    page:tabs.current || 0,issues:cepIssues,pending:!!pendingCheck,preset:S.presetId,completed:generationSerial};
+                    dataRevision:state.dataRevision,page:tabs.current || 0,issues:cepIssues,pending:!!pendingCheck,preset:S.presetId,completed:generationSerial};
             },
             wordEdit: function (command) {
                 if (!state.data || command.text !== etText.text) throw new Error("Текст изменился. Выделите слово ещё раз.");

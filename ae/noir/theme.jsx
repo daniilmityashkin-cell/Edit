@@ -115,7 +115,8 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
 
     // Замена tabbedpanel: полоса текстовых вкладок + стопка групп.
     // Возвращает объект с add("tab", undefined, label), как у tabbedpanel.
-    T.makeTabs = function (parent) {
+    T.makeTabs = function (parent, options) {
+        options = options || {};
         var bar = parent.add("group");
         bar._noirTabBar = true;
         bar.orientation = "row";
@@ -162,7 +163,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             for (var k = 0; k < api.pages.length; k++) {
                 api.pages[k].visible = (k === i);
                 api.buttons[k]._noirTabSelected = k === i;
-                redraw(api.buttons[k]);
+                if (!options.headless) redraw(api.buttons[k]);
             }
             api.current = i;
         };
@@ -174,7 +175,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             var b = bar.add("button", undefined, label);
             b._tabWidth = Math.max(48, label.length * 7 + 16);
             b.preferredSize = [b._tabWidth, 24];
-            try {
+            if (!options.headless) try {
                 b.onDraw = function () {
                     var g = this.graphics, w = this.size.width, h = this.size.height;
                     var sel = api.current === idx, hot = !!this._hot;

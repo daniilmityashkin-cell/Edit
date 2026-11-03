@@ -10,21 +10,52 @@ global.$.fileName=root+'/cep/host/bridge.jsx';
  const page=await browser.newPage({viewport:{width:880,height:360}});
  page.setDefaultTimeout(15000);
  const errors=[];page.on('pageerror',e=>errors.push(e.message));
- let hostCalls=0;
- await page.exposeFunction('hostEval',script=>{hostCalls++;return (0,eval)(script);});
+ let hostCalls=0,bridgeDelay=0;const commands=[];
+ await page.exposeFunction('hostEval',script=>{
+   hostCalls++;const match=/^NOIR_CEP\.request\((.*)\)$/.exec(script);
+   if(match)commands.push(JSON.parse(JSON.parse(match[1])));
+   if(bridgeDelay){const delay=bridgeDelay;return new Promise(resolve=>setTimeout(()=>resolve((0,eval)(script)),delay));}
+   return (0,eval)(script);
+ });
  const server = require('http').createServer((req,res)=>{
    const relative=decodeURIComponent(req.url.split('?')[0]).replace(/^\//,'');
    const file=path.resolve(root,'cep',relative||'index.html');
    if(!file.startsWith(path.join(root,'cep')+path.sep)){res.writeHead(403);res.end();return;}
-   try { const data=fs.readFileSync(file);const ext=path.extname(file);res.setHeader('Content-Type',({'.html':'text/html','.js':'application/javascript','.css':'text/css','.mp4':'video/mp4','.jpg':'image/jpeg','.svg':'image/svg+xml'})[ext]||'application/octet-stream');res.end(data); }
+   try { const data=fs.readFileSync(file);const ext=path.extname(file);res.setHeader('Content-Type',({'.html':'text/html','.js':'application/javascript','.css':'text/css','.mp4':'video/mp4','.jpg':'image/jpeg','.svg':'image/svg+xml','.woff2':'font/woff2'})[ext]||'application/octet-stream');res.end(data); }
    catch(e){res.writeHead(404);res.end();}
  });
  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
  await page.addInitScript(()=>{window.__adobe_cep__={evalScript:(script,cb)=>window.hostEval(script).then(cb)};});
  await page.goto('http://127.0.0.1:'+server.address().port+'/index.html');
  await page.waitForFunction(()=>{const logo=document.querySelector('.brand-mark img');return logo && logo.complete && logo.naturalWidth>0;});
+ const loadedFaces=await page.evaluate(async()=>(await document.fonts.load('12px "Open Sans"','Субтитры Open Sans')).length);
+ assert.ok(loadedFaces>0,"Bundled Open Sans must load instead of a fallback font");
+ assert.ok(await page.evaluate(()=>document.fonts.check('12px "Open Sans"') && getComputedStyle(document.body).fontFamily.includes('Open Sans')),'Open Sans must load locally');
  await page.waitForTimeout(400);
+ await page.evaluate(()=>{window.idleMutations=0;window.idleObserver=new MutationObserver(items=>window.idleMutations+=items.length);window.idleObserver.observe(document.getElementById('app'),{subtree:true,attributes:true,childList:true,characterData:true});});
  const idleCalls=hostCalls;await page.waitForTimeout(2200);assert.strictEqual(hostCalls,idleCalls,'Idle panel must not invoke AE repeatedly');
+ assert.strictEqual(await page.evaluate(()=>{window.idleObserver.disconnect();return window.idleMutations;}),0,'Idle panel must not rewrite its DOM every second');
+ const navCalls=hostCalls;
+ await page.getByRole('tab',{name:'Текст',exact:true}).click();
+ await page.getByRole('tab',{name:'Видео',exact:true}).click();
+ await page.getByRole('tab',{name:'Стиль',exact:true}).click();
+ assert.strictEqual(hostCalls,navCalls,'Navigation must stay local to the browser');
+ await page.getByRole('tab',{name:'Стиль',exact:true}).click();
+ // Recognition is the only source of scheduled host calls; completion opens the editor.
+ const nativeRecognition={getAudioSource:NOIR.getAudioSource,modelCached:NOIR.modelCached,startRecognition:NOIR.startRecognition};
+ let recognitionCallbacks;
+ NOIR.getAudioSource=()=>({file:'test.wav'});NOIR.modelCached=()=>true;
+ NOIR.startRecognition=(src,options,callbacks)=>{recognitionCallbacks=callbacks;callbacks.onStatus({state:'recognizing',message:'Тест распознавания',progress:.25});};
+ await page.getByRole('tab',{name:'Видео',exact:true}).click();
+ await page.locator('.create-action').click();
+ await page.waitForFunction(()=>document.querySelector('.workflow-status').dataset.state==='busy');
+ const pollsBefore=commands.filter(c=>c.action==='poll').length;
+ await page.waitForTimeout(2200);
+ assert.ok(commands.filter(c=>c.action==='poll').length>pollsBefore,'Active recognition must receive status polls');
+ recognitionCallbacks.onDone({schema:'noir-captions/1',language:'ru',segments:[{words:[{text:'Готово',start:1,end:2}]}]},{link:null});
+ Object.assign(NOIR,nativeRecognition);
+ await page.waitForFunction(()=>document.querySelector('.workflow-status').dataset.state==='ready' && document.querySelector('#textPage').hidden===false);
+ const completedCalls=hostCalls;await page.waitForTimeout(1300);assert.strictEqual(hostCalls,completedCalls,'Polling must stop after recognition completes');
  await page.getByRole('tab',{name:'Стиль',exact:true}).click();
  const area=page.locator('.workspace');
  await page.waitForFunction(()=>document.querySelector('.scroll-body').scrollHeight>document.querySelector('.scroll-body').clientHeight);
@@ -32,11 +63,15 @@ global.$.fileName=root+'/cep/host/bridge.jsx';
  for(let i=0;i<3 && !(await page.locator('.style-tile.has-reference').count());i++){
    await page.getByRole('button',{name:'Стили →',exact:true}).click();await page.waitForTimeout(100);
  }
+ assert.ok(await page.locator('.style-tile.selected').count(),'Saved style must be on the initial gallery page');
  const tile=page.locator('.style-tile.has-reference').first();
  await tile.hover();
  await page.waitForFunction(()=>{const v=document.querySelector('.style-tile.has-reference video');return v && v.currentTime>0 && !v.paused;});
  assert.strictEqual(app.project.numItems,initialItems,'Hover previews must not create AE project items');
  const tabs=page.locator('.tabs'); const before=await tabs.boundingBox();
+ await area.evaluate(e=>{e.scrollTop=e.scrollHeight;});
+ await page.waitForFunction(()=>document.querySelector('.style-tile.has-reference video').paused);
+ await area.evaluate(e=>{e.scrollTop=0;});
  await page.mouse.move(300,330);await page.mouse.wheel(0,450);await page.waitForTimeout(200);
  assert.ok(await area.evaluate(e=>e.scrollTop)>0,'wheel over contents must scroll');
  assert.strictEqual((await tabs.boundingBox()).y,before.y,'tabs must remain pinned');
@@ -120,6 +155,25 @@ global.$.fileName=root+'/cep/host/bridge.jsx';
  assert.ok(otherLayers.every(l=>comp._l.includes(l)),'Updating one phrase preserves other layers');
  assert.ok(!comp._l.some(l=>String(l.comment).indexOf(NOIR.SFX_TAG)===0),'SFX remains manual');
  await page.setViewportSize({width:320,height:300});
+ // A slow bridge must receive the latest queued text, never intermediate stale edits.
+ await page.setViewportSize({width:420,height:500});
+ const stableText=await editor.inputValue(), commandStart=commands.length;
+ bridgeDelay=1200;
+ await editor.focus();
+ await editor.evaluate((el,value)=>{el.value=value;el.setSelectionRange(0,0);el.dispatchEvent(new Event('input',{bubbles:true}));},stableText.replace('Здравствуйте','Первый'));
+ await page.waitForTimeout(280);
+ await editor.evaluate((el,value)=>{el.value=value;el.setSelectionRange(0,0);el.dispatchEvent(new Event('input',{bubbles:true}));},stableText.replace('Здравствуйте','Промежуточный'));
+ await page.waitForTimeout(280);
+ await editor.evaluate((el,value)=>{el.value=value;el.setSelectionRange(0,0);el.dispatchEvent(new Event('input',{bubbles:true}));},stableText.replace('Здравствуйте','Финальный'));
+ await page.waitForTimeout(280);bridgeDelay=0;
+ await page.locator('.create-action').click();
+ await page.waitForFunction(()=>document.querySelector('.caption-editor').value.startsWith('Финальный'));
+ await page.waitForTimeout(1600);
+ if(await page.locator('.preflight').isVisible())await page.getByRole('button',{name:'Продолжить с замечаниями',exact:true}).click();
+ await page.waitForFunction(()=>document.querySelector('.workflow-status').textContent.indexOf('✓')===0);
+ assert.ok(comp._l.some(l=>/финальный/i.test(l.name)));
+ assert.ok(!commands.slice(commandStart).some(c=>c.action==='set' && String(c.value).startsWith('Промежуточный')),'Queued intermediate input must be collapsed');
+ await page.setViewportSize({width:320,height:300});
  // Native textarea gets wheel first; at its edge, the panel takes over.
  await area.evaluate(e=>{e.scrollTop=0;});await editor.evaluate(e=>{e.scrollTop=0;});
  await editor.hover();const outerBefore=await area.evaluate(e=>e.scrollTop);await page.mouse.wheel(0,80);await page.waitForTimeout(100);
@@ -149,10 +203,10 @@ global.$.fileName=root+'/cep/host/bridge.jsx';
  await page.evaluate(()=>document.fonts.ready);
  if(process.env.NOIR_CEP_SCREENSHOT) {
    await page.screenshot({path:process.env.NOIR_CEP_SCREENSHOT});
-   await page.setViewportSize({width:1200,height:780});await area.evaluate(e=>{e.scrollTop=0;});await page.waitForTimeout(250);
+   await page.setViewportSize({width:1200,height:500});await area.evaluate(e=>{e.scrollTop=0;});await page.waitForTimeout(250);
    await page.screenshot({path:process.env.NOIR_CEP_SCREENSHOT.replace('.png','-wide.png')});
  }
  assert.deepStrictEqual(errors,[]);
- console.log('Chromium: glass UI, independent inspector, narrow overlay, contextual edits, latest-input generation, phrase update/seek, nested wheel, finite scroll, hover previews and reduced motion: PASS');
+ console.log('Chromium: Open Sans, zero idle DOM/host work, local navigation, queued input coalescing, offscreen video pause, recognition-only polling, compact UI, independent inspector, narrow overlay, contextual edits, latest-input generation, phrase update/seek, nested wheel, finite scroll, hover previews and reduced motion: PASS');
  await browser.close();server.close();fs.rmSync(tmp,{recursive:true,force:true});
 })().catch(e=>{console.error(e);process.exit(1)});

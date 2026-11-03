@@ -1,13 +1,32 @@
 (function () {
     "use strict";
     var app = document.getElementById("app"), message = document.getElementById("message");
-    var records = {}, queue = [], busy = false, timer, noticeUntil=0;
-    function showError(text) { message.textContent = text; }
+    var records = {}, queue = [], busy = false, timer, noticeTimer, successTimer, noticeUntil=0;
+    var editableInputs=[], videoRecords=[], previewObserver=null;
+    function showError(text, duration) {
+        clearTimeout(noticeTimer);
+        if(message.textContent!==text)message.textContent=text;
+        noticeUntil=duration ? Date.now()+duration : 0;
+        if(text && duration)noticeTimer=setTimeout(function(){noticeUntil=0;message.textContent="";},duration);
+    }
+    function enqueue(command) {
+        var last=queue[queue.length-1];
+        // Collapse only adjacent value updates; never move edits across an AE action.
+        if(last && command.action==="set" && last.action==="set" && command.id===last.id)queue[queue.length-1]=command;
+        else if(last && command.action==="selectTextPhrase" && last.action===command.action)queue[queue.length-1]=command;
+        else queue.push(command);
+    }
+    function flushInputs() { editableInputs.forEach(function(el){el._flush();}); }
+    function schedulePoll() {
+        clearTimeout(timer);
+        if(document.hidden || !workflow.recognizing)return;
+        timer=setTimeout(function(){if(!busy && !queue.length)send({action:"poll"});else schedulePoll();},1000);
+    }
     function send(command) {
         if (command.action !== "set" && command.action !== "poll" && command.action !== "open") {
-            Object.keys(records).forEach(function(id){var el=records[id].el;if(el._flush)el._flush();});
+            flushInputs();
         }
-        queue.push(command); pump();
+        enqueue(command); pump();
     }
     function pump() {
         if (busy || !queue.length) return;
@@ -18,10 +37,10 @@
             busy = false;
             try {
                 var response = JSON.parse(raw);
-                if (response.error) { showError(response.error); noticeUntil=Date.now()+8000; }
-                else { if(response.notice){showError(response.notice);noticeUntil=Date.now()+5000;}else if(Date.now()>noticeUntil)showError(""); update(response); }
-            } catch (error) { showError("Не удалось связаться с панелью AE: " + String(raw).slice(0, 300)); noticeUntil=Date.now()+8000; }
-            pump();
+                if (response.error) showError(response.error,8000);
+                else { if(response.notice){showError(response.notice,5000);}else if(Date.now()>noticeUntil)showError(""); update(response); }
+            } catch (error) { showError("Не удалось связаться с панелью AE: " + String(raw).slice(0, 300),8000); }
+            schedulePoll();pump();
         });
     }
     function create(node) {
@@ -43,9 +62,9 @@
             el = input = document.createElement(node.multiline ? "textarea" : "input");
             if (!node.multiline) input.type = node.type === "number" ? "number" : "text";
             var pending, dirty=false;
-            function flush() { clearTimeout(pending); if(dirty){dirty=false;queue.push({action:"set",id:node.id,value:input.value});} }
+            function flush() { clearTimeout(pending); if(dirty){dirty=false;enqueue({action:"set",id:node.id,value:input.value});} }
             function commit() { flush(); pump(); }
-            el._flush=flush;
+            el._flush=flush;editableInputs.push(el);
             input.addEventListener("change", commit);
             input.addEventListener("input", function () { dirty=true; clearTimeout(pending); pending = setTimeout(commit, 250); });
         } else if (node.type === "progressbar") {
@@ -93,7 +112,7 @@
             if (node.type === "number") { input.min = node.min; input.max = node.max; input.step = node.step || "any"; }
         } else if (node.type === "progressbar") input.value = node.value;
     }
-    var roles = {}, workflow = {}, ui = {main:0, settings:false, section:"recognition", lastPage:0, completed:0, successUntil:0}, view = {};
+    var roles = {}, workflow = {}, ui = {main:0, settings:false, section:"recognition", completed:0, successUntil:0}, view = {};
     function element(tag, cls, text, parent) {
         var el = document.createElement(tag); el.className = cls || "";
         if (text) el.textContent = text;
@@ -123,7 +142,7 @@
         if(!roles[role])return;var r=roles[role];r.shortText=text;r.el.textContent=text;r.el.setAttribute("aria-label",title);r.el.title=title;
     }
     function stopVideos(except) {
-        Object.keys(roles).forEach(function(key){var r=roles[key];if(r.video && r!==except){r.video.pause();r.tile.classList.remove("playing");}});
+        videoRecords.forEach(function(r){if(r!==except){if(!r.video.paused)r.video.pause();r.tile.classList.remove("playing");}});
     }
     function playPreview(record) {
         stopVideos(record);
@@ -148,9 +167,9 @@
         record.caption.style.textTransform=meta.base.caps?"uppercase":"none";
         record.tile.classList.toggle("selected",meta.id===workflow.preset);
     }
-    function selectMain(index,notifyHost) {
+    function selectMain(index) {
         ui.main=index;view.body.scrollTop=0;view.tools.hidden=true;stopVideos();
-        if(notifyHost)action("tab"+index);
+        flushInputs();pump();
         renderLayout();
     }
     function openSettings(section) {
@@ -179,7 +198,7 @@
         roles.cancel.el.hidden=!workflow.recognizing;
         view.phraseCount.textContent=workflow.count?"Фраза "+(workflow.phrase+1)+" из "+workflow.count:"Загрузите или распознайте речь";
         view.empty.hidden=!!workflow.hasData;view.editorArea.hidden=!workflow.hasData;
-        Object.keys(roles).forEach(function(key){var r=roles[key];if(r.tile){r.tile.classList.toggle("selected",!!r.meta && r.meta.id===workflow.preset);r.frame.setAttribute("aria-pressed",String(!!r.meta && r.meta.id===workflow.preset));if(ui.main!==2 || r.tile.hidden)r.video.pause();}});
+        videoRecords.forEach(function(r){r.tile.classList.toggle("selected",!!r.meta && r.meta.id===workflow.preset);r.frame.setAttribute("aria-pressed",String(!!r.meta && r.meta.id===workflow.preset));if((ui.main!==2 || r.tile.hidden) && !r.video.paused)r.video.pause();});
         renderIssues();
     }
     function issueTarget(issue) {
@@ -193,7 +212,7 @@
             if(issue.target)send({action:"click",id:roles[issue.target==="accent"?"fontTargetAccent":"fontTargetBase"].id,value:true});
             openSettings(target.section);
         }
-        else {ui.settings=false;selectMain(target.main,true);}
+        else {ui.settings=false;selectMain(target.main);}
         if(issue.segment!==undefined && roles.phrase)send({action:"set",id:roles.phrase.id,value:issue.segment});
         var r=roles[target.field];if(r){r.el.scrollIntoView({block:"center"});r.el.focus();}
     }
@@ -214,7 +233,7 @@
         var editor=roles.editor.input,start=editor.selectionStart,end=editor.selectionEnd;
         view.selection={start:start,end:end,text:editor.value};
         var line=editor.value.substring(0,start).split("\n").length-1;
-        if(line!==workflow.phrase && line<workflow.count && view.caretPhrase!==line){view.caretPhrase=line;send({action:"selectTextPhrase",index:line});}
+        if(line<workflow.count && view.caretPhrase!==line){view.caretPhrase=line;send({action:"selectTextPhrase",index:line});}
         view.tools.hidden=!workflow.hasData || start===end || editor.value.substring(start,end).indexOf("\n")!==-1;
         view.toolsLabel.textContent="Выделено: "+editor.value.substring(start,end).slice(0,38);
         view.wordMenu.disabled=!workflow.hasData;
@@ -229,16 +248,16 @@
     }
     function curated() {
         roles={};Object.keys(records).forEach(function(id){var r=records[id];if(r.role)roles[r.role]=r;});
-        app.textContent="";view={};view.sections={};view.tabs=[];
+        if(previewObserver)previewObserver.disconnect();
+        app.textContent="";view={};view.sections={};view.tabs=[];videoRecords=[];
         view.shell=element("div","shell","",app);
         var sidebar=element("aside","sidebar","",view.shell),brand=element("div","brand","",sidebar);
         var stage=element("div","stage","",view.shell),header=element("header","app-header","",stage);
         var introduction=element("div","introduction","",header);
         view.heading=element("h1","workspace-heading","Ваше видео",introduction);
-        element("p","workspace-subtitle","Рабочее пространство субтитров",introduction);
         var mark=element("span","brand-mark","",brand);
         var logo=element("img","","",mark);logo.src="media/noir-mark.svg";logo.alt="";mark.setAttribute("aria-hidden","true");
-        brand.title="NOIR Captions · 0.12.0";brand.setAttribute("aria-label","NOIR Captions");
+        brand.title="NOIR Captions · 0.13.0";brand.setAttribute("aria-label","NOIR Captions");
         var primaryArea=element("div","primary-area","",header);
         view.primary=button("Распознать речь","create-action",primaryArea,function(){
             action(ui.main===0 || !workflow.hasData?"recognize":workflow.canUpdate?"updatePhrase":"generate");
@@ -252,13 +271,13 @@
         view.progress=element("div","recognition-progress","",stage);place("progress",view.progress);
         var nav=element("nav","step-navigation tabs","",sidebar);nav.setAttribute("aria-label","Основные разделы");nav.setAttribute("role","tablist");
         ["Видео","Текст","Стиль"].forEach(function(name,index){
-            var tab=button("","step-tab",nav,function(){selectMain(index,true);});
+            var tab=button("","step-tab",nav,function(){selectMain(index);});
             var icon=element("span","nav-icon","",tab);icon.setAttribute("aria-hidden","true");
             var paths=["M4 5h12v14H4z M16 9l5-3v12l-5-3", "M4 5h16 M12 5v15 M8 20h8", "M5 4h14v16H5z M8 8h8 M8 12h8 M8 16h4"];
             icon.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="'+paths[index]+'"/></svg>';
             element("span","nav-label",name,tab);
             tab.setAttribute("role","tab");tab.setAttribute("aria-controls",["speechPage","textPage","stylePage"][index]);
-            tab.onkeydown=function(event){if(event.key==="ArrowRight" || event.key==="ArrowLeft"){event.preventDefault();var next=(index+(event.key==="ArrowRight"?1:2))%3;selectMain(next,true);view.tabs[next].focus();}};
+            tab.onkeydown=function(event){if(event.key==="ArrowRight" || event.key==="ArrowLeft"){event.preventDefault();var next=(index+(event.key==="ArrowRight"?1:2))%3;selectMain(next);view.tabs[next].focus();}};
             view.tabs.push(tab);
         });
         view.more=button("Настройки","more-button",nav,function(){if(ui.settings)closeSettings();else openSettings();});
@@ -268,6 +287,9 @@
         view.more.insertBefore(settingsIcon,view.more.firstChild);
         var workspace=element("div","workspace-layout","",stage);
         view.body=element("main","scroll-body workspace","",workspace);
+        if(window.IntersectionObserver)previewObserver=new IntersectionObserver(function(entries){
+            entries.forEach(function(entry){if(!entry.isIntersecting){var r=entry.target._previewRecord;if(r && !r.video.paused){r.video.pause();r.tile.classList.remove("playing");}}});
+        },{root:view.body});
         view.issues=element("section","preflight","",view.body);view.issues.hidden=true;
         element("div","eyebrow","ПЕРЕД СОЗДАНИЕМ",view.issues);
         view.issueList=element("div","issue-list","",view.issues);
@@ -310,15 +332,18 @@
         [["Акцент на слове","accent"],["Перенос перед словом","line"],["Разделить перед словом","phrase"]].forEach(function(item){button(item[0],"",editMenu,function(){editSelected(item[1]);});});
         ["undoEdit","save","reset"].forEach(function(role){place(role,editMenu);});
         var style=place("stylePage",view.body,"step-page");style.el.textContent="";style.el.id="stylePage";
-        element("div","eyebrow","03 / ОФОРМЛЕНИЕ",style.el);sectionTitle("Стиль","Наведите на видеокарточку для просмотра.",style.el);
-        var filter=element("div","filter-row","",style.el);place("favorites",filter);
+        element("div","eyebrow","03 / ОФОРМЛЕНИЕ",style.el);sectionTitle("Стиль","Видеопример — по наведению",style.el);
+        var styleToolbar=element("div","style-toolbar","",style.el);
+        styleToolbar.appendChild(style.el.querySelector(".section-copy"));
+        var filter=element("div","filter-row","",styleToolbar);place("favorites",filter);
         var grid=element("div","style-grid","",style.el);
         for(var k=0;k<4;k++)(function(index){
             var record=roles["galleryCard"+index];if(!record)return;
             record.tile=element("article","style-tile","",grid);
             var frame=button("","preview-frame",record.tile,function(){send({action:"click",id:record.id});});
             frame.setAttribute("aria-label","Выбрать стиль");record.frame=frame;
-            record.video=element("video","","",frame);record.video.muted=true;record.video.loop=true;record.video.playsInline=true;record.video.preload="none";
+            record.video=element("video","","",frame);videoRecords.push(record);record.tile._previewRecord=record;
+            if(previewObserver)previewObserver.observe(record.tile);record.video.muted=true;record.video.loop=true;record.video.playsInline=true;record.video.preload="none";
             record.caption=element("div","preview-caption","",frame);record.previewLabel=element("span","preview-label","",frame);
             var info=element("div","tile-info","",record.tile);place("galleryCard"+index,info);place("galleryStar"+index,info);
             record.tile.onmouseenter=function(){playPreview(record);};record.tile.onmouseleave=function(){stopVideos();};
@@ -326,7 +351,6 @@
             preview(record,record.meta);
         })(k);
         var pages=element("div","gallery-pagination","",style.el);place("galleryPrev",pages);place("galleryPage",pages);place("galleryNext",pages);
-        element("p","micro-copy","Видеопримеры — из ваших роликов с субтитрами. Для остальных стилей показан статический образец.",style.el);
         var quickCard=element("section","quick-card surface","",style.el);
         element("h2","card-heading","Параметры субтитров",quickCard);
         var quick=element("div","form-grid quick-settings","",quickCard);
@@ -358,15 +382,17 @@
         renderLayout();
     }
     function update(data) {
-        var previousPhrase=workflow.phrase;
-        if(data.full){app.textContent="";records={};}
+        var previousPhrase=workflow.phrase, previousDataRevision=workflow.dataRevision;
+        if(data.full){app.textContent="";records={};editableInputs=[];}
         if(data.workflow)workflow=data.workflow;
         view.caretPhrase=workflow.phrase;
-        if(workflow.completed>ui.completed){ui.successUntil=Date.now()+4000;ui.completed=workflow.completed;}
+        if(workflow.completed>ui.completed){
+            ui.successUntil=Date.now()+4000;ui.completed=workflow.completed;clearTimeout(successTimer);
+            successTimer=setTimeout(function(){ui.successUntil=0;renderLayout();},4000);
+        }
         data.nodes.forEach(function(node){if(!records[node.id])records[node.id]=create(node);apply(records[node.id],node);});
         if(data.full)curated();
-        if(workflow.page<3 && workflow.page!==ui.lastPage){ui.main=workflow.page;if(view.body)view.body.scrollTop=0;}
-        ui.lastPage=workflow.page;
+        if(workflow.hasData && workflow.dataRevision!==previousDataRevision){ui.main=1;if(view.body)view.body.scrollTop=0;}
         // Legacy pages supply controls, while HTML owns independent main and inspector navigation.
         ["viewPage","layoutPage","animationPage","layersPage","toolsPage","sfxPage"].forEach(function(role){if(roles[role])roles[role].el.hidden=false;});
         if(previousPhrase!==workflow.phrase && roles.editor && document.activeElement!==roles.editor.input){
@@ -385,7 +411,7 @@
         var area=ui.settings && (view.drawer.contains(target) || window.innerWidth<760)?view.settingsBody:view.body;
         area.scrollTop+=delta;event.preventDefault();
     },{passive:false});
-    document.addEventListener("visibilitychange",function(){if(document.hidden)stopVideos();});
+    document.addEventListener("visibilitychange",function(){if(document.hidden)stopVideos();schedulePoll();});
     document.addEventListener("click",function(event){Array.prototype.forEach.call(app.querySelectorAll(".action-menu[open]"),function(menu){if(!menu.contains(event.target))menu.open=false;});});
     window.addEventListener("blur",function(){stopVideos();});
     window.addEventListener("resize",renderLayout);
@@ -401,11 +427,6 @@
     });
     if(!window.__adobe_cep__){showError("Откройте Window → Extensions (Legacy) → NOIR Captions · HTML в After Effects.");return;}
     send({action:"open"});
-    // AE evalScript briefly changes the system cursor. Never call it repeatedly while idle.
-    timer=setInterval(function(){
-        if(!document.hidden && !busy && !queue.length && workflow.recognizing)send({action:"poll"});
-        else if(view.body)renderLayout();
-    },1000);
-
-    window.addEventListener("unload",function(){clearInterval(timer);stopVideos();});
+    // Nothing ticks while idle. Polls exist only for an active recognition job.
+    window.addEventListener("unload",function(){clearTimeout(timer);clearTimeout(noticeTimer);clearTimeout(successTimer);stopVideos();if(previewObserver)previewObserver.disconnect();});
 }());

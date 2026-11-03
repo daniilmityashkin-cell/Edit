@@ -10,10 +10,13 @@ let shown = 0;
 const show = global.Window.prototype.show;
 global.Window.prototype.show = () => shown++;
 // AE may report controls on hidden native pages as invisible. HTML owns visibility.
-const proto=Object.getPrototypeOf(global.Window.prototype), nativeAdd=proto.add;
+const proto=Object.getPrototypeOf(global.Window.prototype), nativeAdd=proto.add, nativeNotify=proto.notify;
+let hiddenDraws=0;
+proto.notify=function(event){if(event==="onDraw")hiddenDraws++;return nativeNotify.apply(this,arguments);};
 proto.add=function(){const el=nativeAdd.apply(this,arguments);if(el.type==="edittext" || el.type==="dropdownlist")el.visible=false;return el;};
 const first = JSON.parse(global.NOIR_CEP.load(root));
-proto.add=nativeAdd;
+proto.add=nativeAdd;proto.notify=nativeNotify;
+assert.strictEqual(hiddenDraws,0,"Hidden CEP model must not dispatch native redraws");
 assert.ok(first.nodes.find(n=>n.role==="fontFamily").visible,"Hidden host must not hide HTML font controls");
 global.Window.prototype.show = show;
 assert.strictEqual(shown,0,"HTML host must not open the old ScriptUI window");
@@ -21,6 +24,7 @@ assert.ok(first.full && first.nodes.length > 100);
 assert.strictEqual(first.nodes[0].visible,true);
 assert.ok(first.nodes.some(n=>n.scroll)); assert.ok(first.nodes.some(n=>n.tabs));
 assert.ok(first.nodes.some(n=>n.type==="edittext" && n.multiline));
+assert.ok(first.nodes.some(n=>n.preview && n.preview.id===first.workflow.preset),"Initial gallery contains the saved style");
 const tree = new Map(first.nodes.map(n=>[n.id,n]));
 function request(data) {
  const result=JSON.parse(global.NOIR_CEP.request(JSON.stringify(data)));

@@ -1131,9 +1131,11 @@ const GOPTS = { maxWords: 1, maxChars: 99, pauseBreak: 0.35, punctBreak: true, s
   });
   await test("отмена проверки останавливает создание до удаления исходных слоёв", () => {
     const c = mkComp(), p = editorPanel(); gen(c); const old = c._l.slice();
-    const before = global.confirm; let asked = false;
+    const before = global.confirm, fonts = global.__installedFonts; let asked = false;
+    global.__installedFonts = []; // An explicit warning, independent of the last saved style.
     global.confirm = () => { asked = true; return false; };
-    p.button("Создать субтитры").onClick(); global.confirm = before;
+    try { p.button("Создать субтитры").onClick(); }
+    finally { global.confirm = before; global.__installedFonts = fonts; }
     assert.ok(asked); assert.deepStrictEqual(c._l, old);
   });
   await test("редактор показывает изменение текста и обновляет только выбранную фразу", () => {
