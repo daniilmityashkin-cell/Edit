@@ -161,6 +161,7 @@
     function renderLayout() {
         if(!view.body)return;
         ["speechPage","textPage","stylePage"].forEach(function(role,index){roles[role].el.hidden=ui.main!==index;});
+        if(view.heading)view.heading.textContent=["Ваше видео","Редактор текста","Галерея стилей"][ui.main];
         view.tabs.forEach(function(tab,index){tab.classList.toggle("tab-active",ui.main===index);tab.setAttribute("aria-selected",ui.main===index?"true":"false");});
         view.shell.classList.toggle("settings-open",ui.settings);view.drawer.hidden=!ui.settings;view.backdrop.hidden=!ui.settings;
         view.more.setAttribute("aria-expanded",String(ui.settings));
@@ -230,10 +231,14 @@
         roles={};Object.keys(records).forEach(function(id){var r=records[id];if(r.role)roles[r.role]=r;});
         app.textContent="";view={};view.sections={};view.tabs=[];
         view.shell=element("div","shell","",app);
-        var header=element("header","app-header","",view.shell),brand=element("div","brand","",header);
+        var sidebar=element("aside","sidebar","",view.shell),brand=element("div","brand","",sidebar);
+        var stage=element("div","stage","",view.shell),header=element("header","app-header","",stage);
+        var introduction=element("div","introduction","",header);
+        view.heading=element("h1","workspace-heading","Ваше видео",introduction);
+        element("p","workspace-subtitle","Рабочее пространство субтитров",introduction);
         var mark=element("span","brand-mark","",brand);
         var logo=element("img","","",mark);logo.src="media/noir-mark.svg";logo.alt="";mark.setAttribute("aria-hidden","true");
-        element("div","brand-name","NOIR CAPTIONS",brand);brand.title="NOIR CAPTIONS · 0.11.0";
+        brand.title="NOIR Captions · 0.12.0";brand.setAttribute("aria-label","NOIR Captions");
         var primaryArea=element("div","primary-area","",header);
         view.primary=button("Распознать речь","create-action",primaryArea,function(){
             action(ui.main===0 || !workflow.hasData?"recognize":workflow.canUpdate?"updatePhrase":"generate");
@@ -241,20 +246,27 @@
         view.all=element("details","action-menu","",primaryArea);element("summary","","⋯",view.all).setAttribute("aria-label","Другие действия создания");
         var allMenu=element("div","popover","",view.all);
         button("Обновить все фразы","",allMenu,function(){view.all.open=false;action("generate");});
-        var statusRow=element("div","status-row","",view.shell);
+        var statusRow=element("div","status-row","",stage);
         view.status=element("div","workflow-status","",statusRow);view.status.setAttribute("role","status");view.status.setAttribute("aria-live","polite");
         place("cancel",statusRow,"text-button");
-        view.progress=element("div","recognition-progress","",view.shell);place("progress",view.progress);
-        var nav=element("nav","step-navigation tabs","",view.shell);nav.setAttribute("aria-label","Основные разделы");nav.setAttribute("role","tablist");
+        view.progress=element("div","recognition-progress","",stage);place("progress",view.progress);
+        var nav=element("nav","step-navigation tabs","",sidebar);nav.setAttribute("aria-label","Основные разделы");nav.setAttribute("role","tablist");
         ["Видео","Текст","Стиль"].forEach(function(name,index){
-            var tab=button(name,"step-tab",nav,function(){selectMain(index,true);});
+            var tab=button("","step-tab",nav,function(){selectMain(index,true);});
+            var icon=element("span","nav-icon","",tab);icon.setAttribute("aria-hidden","true");
+            var paths=["M4 5h12v14H4z M16 9l5-3v12l-5-3", "M4 5h16 M12 5v15 M8 20h8", "M5 4h14v16H5z M8 8h8 M8 12h8 M8 16h4"];
+            icon.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="'+paths[index]+'"/></svg>';
+            element("span","nav-label",name,tab);
             tab.setAttribute("role","tab");tab.setAttribute("aria-controls",["speechPage","textPage","stylePage"][index]);
             tab.onkeydown=function(event){if(event.key==="ArrowRight" || event.key==="ArrowLeft"){event.preventDefault();var next=(index+(event.key==="ArrowRight"?1:2))%3;selectMain(next,true);view.tabs[next].focus();}};
             view.tabs.push(tab);
         });
         view.more=button("Настройки","more-button",nav,function(){if(ui.settings)closeSettings();else openSettings();});
-        view.more.setAttribute("aria-controls","settings-drawer");
-        var workspace=element("div","workspace-layout","",view.shell);
+        view.more.setAttribute("aria-controls","settings-drawer");view.more.setAttribute("aria-label","Настройки");
+        var settingsIcon=element("span","nav-icon","");settingsIcon.setAttribute("aria-hidden","true");
+        settingsIcon.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><path d="m9 3-.7 2.6-2.6.7L4 8.7l1.8 2L5 13.4l-1 1 1.8 3.1 2.5-.5 1.8 2H13l1.8-2 2.5.5 1.8-3.1-1.7-2.2.6-2.6-1.8-3.1-2.6.1L12 3H9Z"/><circle cx="11.5" cy="11.4" r="3"/></svg>';
+        view.more.insertBefore(settingsIcon,view.more.firstChild);
+        var workspace=element("div","workspace-layout","",stage);
         view.body=element("main","scroll-body workspace","",workspace);
         view.issues=element("section","preflight","",view.body);view.issues.hidden=true;
         element("div","eyebrow","ПЕРЕД СОЗДАНИЕМ",view.issues);
@@ -265,6 +277,7 @@
         element("div","eyebrow","01 / ИСХОДНИК",speech.el);
         sectionTitle("Видео","Выделите слой со звуком и нажмите «Распознать речь».",speech.el);
         var source=element("div","source-card surface","",speech.el);
+        element("h2","card-heading","Распознавание речи",source);
         element("div","source-symbol","≋",source);element("div","source-title","Ваш голос. Ваши слова.",source);
         element("p","micro-copy","Распознавание на вашем компьютере",source);
         var sourceFields=element("div","source-fields","",source);
@@ -314,7 +327,9 @@
         })(k);
         var pages=element("div","gallery-pagination","",style.el);place("galleryPrev",pages);place("galleryPage",pages);place("galleryNext",pages);
         element("p","micro-copy","Видеопримеры — из ваших роликов с субтитрами. Для остальных стилей показан статический образец.",style.el);
-        var quick=element("div","form-grid quick-settings","",style.el);
+        var quickCard=element("section","quick-card surface","",style.el);
+        element("h2","card-heading","Параметры субтитров",quickCard);
+        var quick=element("div","form-grid quick-settings","",quickCard);
         field("quickSize","Размер, %",quick);field("quickPosition","Положение",quick);field("intensity","Интенсивность",quick);
         button("Шрифт и детали →","text-button",style.el,function(){openSettings("font");});
         view.backdrop=button("","drawer-backdrop",workspace,closeSettings);view.backdrop.setAttribute("aria-label","Закрыть настройки");view.backdrop.tabIndex=-1;

@@ -8,6 +8,7 @@ global.$.fileName=root+'/cep/host/bridge.jsx';
 (async()=>{
  const browser=await chromium.launch({executablePath:'/usr/bin/chromium',headless:true,args:['--no-sandbox','--disable-dev-shm-usage']});
  const page=await browser.newPage({viewport:{width:880,height:360}});
+ page.setDefaultTimeout(15000);
  const errors=[];page.on('pageerror',e=>errors.push(e.message));
  let hostCalls=0;
  await page.exposeFunction('hostEval',script=>{hostCalls++;return (0,eval)(script);});
@@ -121,10 +122,10 @@ global.$.fileName=root+'/cep/host/bridge.jsx';
  await page.setViewportSize({width:320,height:300});
  // Native textarea gets wheel first; at its edge, the panel takes over.
  await area.evaluate(e=>{e.scrollTop=0;});await editor.evaluate(e=>{e.scrollTop=0;});
- await editor.hover();await page.mouse.wheel(0,80);await page.waitForTimeout(100);
+ await editor.hover();const outerBefore=await area.evaluate(e=>e.scrollTop);await page.mouse.wheel(0,80);await page.waitForTimeout(100);
  assert.ok(await editor.evaluate(e=>e.scrollTop)>0);
- assert.strictEqual(await area.evaluate(e=>e.scrollTop),0);
- await editor.evaluate(e=>{e.scrollTop=e.scrollHeight;});await page.mouse.wheel(0,200);await page.waitForTimeout(100);
+ assert.strictEqual(await area.evaluate(e=>e.scrollTop),outerBefore);
+ await editor.evaluate(e=>{e.scrollTop=e.scrollHeight;});await area.evaluate(e=>{e.scrollTop=0;});await page.mouse.wheel(0,200);await page.waitForTimeout(100);
  assert.ok(await area.evaluate(e=>e.scrollTop)>0,'Textarea boundary transfers wheel to panel');
  await page.getByRole('button',{name:'Следующая фраза',exact:true}).click();
  await page.waitForFunction(()=>document.querySelector('.phrase-navigation select').selectedIndex===1);
@@ -144,7 +145,13 @@ global.$.fileName=root+'/cep/host/bridge.jsx';
  await page.setViewportSize({width:420,height:680});await area.evaluate(e=>{e.scrollTop=0;});
 
  await page.waitForTimeout(250);
- if(process.env.NOIR_CEP_SCREENSHOT) await page.screenshot({path:process.env.NOIR_CEP_SCREENSHOT});
+ assert.strictEqual(await page.locator('.brand-name').count(),0,'No product name inside the panel');
+ await page.evaluate(()=>document.fonts.ready);
+ if(process.env.NOIR_CEP_SCREENSHOT) {
+   await page.screenshot({path:process.env.NOIR_CEP_SCREENSHOT});
+   await page.setViewportSize({width:1200,height:780});await area.evaluate(e=>{e.scrollTop=0;});await page.waitForTimeout(250);
+   await page.screenshot({path:process.env.NOIR_CEP_SCREENSHOT.replace('.png','-wide.png')});
+ }
  assert.deepStrictEqual(errors,[]);
  console.log('Chromium: glass UI, independent inspector, narrow overlay, contextual edits, latest-input generation, phrase update/seek, nested wheel, finite scroll, hover previews and reduced motion: PASS');
  await browser.close();server.close();fs.rmSync(tmp,{recursive:true,force:true});
