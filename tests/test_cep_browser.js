@@ -15,12 +15,13 @@ global.$.fileName=root+'/cep/host/bridge.jsx';
    const relative=decodeURIComponent(req.url.split('?')[0]).replace(/^\//,'');
    const file=path.resolve(root,'cep',relative||'index.html');
    if(!file.startsWith(path.join(root,'cep')+path.sep)){res.writeHead(403);res.end();return;}
-   try { const data=fs.readFileSync(file);const ext=path.extname(file);res.setHeader('Content-Type',({'.html':'text/html','.js':'application/javascript','.css':'text/css','.mp4':'video/mp4','.jpg':'image/jpeg'})[ext]||'application/octet-stream');res.end(data); }
+   try { const data=fs.readFileSync(file);const ext=path.extname(file);res.setHeader('Content-Type',({'.html':'text/html','.js':'application/javascript','.css':'text/css','.mp4':'video/mp4','.jpg':'image/jpeg','.svg':'image/svg+xml'})[ext]||'application/octet-stream');res.end(data); }
    catch(e){res.writeHead(404);res.end();}
  });
  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
  await page.addInitScript(()=>{window.__adobe_cep__={evalScript:(script,cb)=>window.hostEval(script).then(cb)};});
  await page.goto('http://127.0.0.1:'+server.address().port+'/index.html');
+ await page.waitForFunction(()=>{const logo=document.querySelector('.brand-mark img');return logo && logo.complete && logo.naturalWidth>0;});
  await page.waitForTimeout(400);
  const idleCalls=hostCalls;await page.waitForTimeout(2200);assert.strictEqual(hostCalls,idleCalls,'Idle panel must not invoke AE repeatedly');
  await page.getByRole('tab',{name:'Стиль',exact:true}).click();

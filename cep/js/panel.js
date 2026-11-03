@@ -231,8 +231,9 @@
         app.textContent="";view={};view.sections={};view.tabs=[];
         view.shell=element("div","shell","",app);
         var header=element("header","app-header","",view.shell),brand=element("div","brand","",header);
-        element("span","brand-mark","N",brand);var title=element("div","","",brand);
-        element("div","brand-name","NOIR",title);element("div","brand-subtitle","CAPTIONS · 0.10.1",title);
+        var mark=element("span","brand-mark","",brand);
+        var logo=element("img","","",mark);logo.src="media/noir-mark.svg";logo.alt="";mark.setAttribute("aria-hidden","true");
+        element("div","brand-name","NOIR CAPTIONS",brand);brand.title="NOIR CAPTIONS · 0.11.0";
         var primaryArea=element("div","primary-area","",header);
         view.primary=button("Распознать речь","create-action",primaryArea,function(){
             action(ui.main===0 || !workflow.hasData?"recognize":workflow.canUpdate?"updatePhrase":"generate");

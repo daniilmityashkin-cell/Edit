@@ -7,7 +7,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
 (function (N) {
     var SECTION = "NOIR Captions";
     var SETTINGS_KEY = "settings.v2";
-    var VERSION = "0.10.1";
+    var VERSION = "0.11.0";
 
     function clone(o) { return N.parseJSON(N.stringify(o)); }
 
