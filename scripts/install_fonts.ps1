@@ -1,6 +1,6 @@
 <#
  NOIR Captions: install Cyrillic fonts for subtitles (Windows, no administrator rights needed).
- Fonts are free (SIL Open Font License) from the Google Fonts repository. They are installed for the current user
+ Fonts are free (SIL Open Font License) from the Google Fonts repository, plus any .ttf/.otf files you put into fonts\user. They are installed for the current user
  into %LOCALAPPDATA%\Microsoft\Windows\Fonts. Fonts that are already installed are skipped. Restart After Effects afterwards.
 
  Run from the project folder:
@@ -52,6 +52,27 @@ New-Item -ItemType Directory -Force -Path $dir | Out-Null
 $reg = 'HKCU:\Software\Microsoft\Windows NT\CurrentVersion\Fonts'
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 $installed = 0; $skipped = 0; $failed = @()
+
+function Register-FontFile($path, $regName, $kind) {
+  New-ItemProperty -Path $reg -Name ($regName + ' (' + $kind + ')') -Value $path -PropertyType String -Force | Out-Null
+}
+
+# 1) your own fonts from fonts\user (any .ttf / .otf)
+$mine = Join-Path (Split-Path -Parent $PSScriptRoot) 'fonts\user'
+if (Test-Path $mine) {
+  Get-ChildItem -Path $mine -File | Where-Object { $_.Extension -match '^\.(ttf|otf)$' } | ForEach-Object {
+    $target = Join-Path $dir $_.Name
+    if (Test-Path $target) { $skipped++; return }
+    try {
+      Copy-Item -Force $_.FullName $target
+      $kind = if ($_.Extension -ieq '.otf') { 'OpenType' } else { 'TrueType' }
+      Register-FontFile $target $_.BaseName $kind
+      $installed++; Write-Host ("  + {0} (yours)" -f $_.Name)
+    } catch { $failed += ("{0}: {1}" -f $_.Name, $_.Exception.Message) }
+  }
+}
+
+# 2) free Cyrillic set from Google Fonts
 foreach ($f in $fonts) {
   $name = $f[1] -replace '[\[\],]', '_'      # safe file name: Montserrat[wght].ttf -> Montserrat_wght_.ttf
   $target = Join-Path $dir $name
@@ -64,7 +85,7 @@ foreach ($f in $fonts) {
     $magic = ($bytes[0..3] | ForEach-Object { $_.ToString('X2') }) -join ''
     if ($bytes.Length -lt 20000 -or ($magic -ne '00010000' -and $magic -ne '74727565')) { throw "not a TrueType font ($($bytes.Length) bytes)" }
     Move-Item -Force $tmp $target
-    New-ItemProperty -Path $reg -Name ($f[2] + ' (TrueType)') -Value $target -PropertyType String -Force | Out-Null
+    Register-FontFile $target $f[2] 'TrueType'
     $installed++
     Write-Host ("  + {0}" -f $f[2])
   } catch {

@@ -1,0 +1,96 @@
+{
+ "schema": "noir-style/1",
+ "id": "onder-wide",
+ "name": "Onder Wide (ультражирный широкий)",
+ "description": "Очень жирный широкий Onder капсом: белый текст, акцент жёлто-салатовый. Нужен шрифт Onder.",
+ "layout": {
+  "reveal": "group",
+  "maxWords": 4,
+  "maxChars": 30,
+  "lineChars": 0,
+  "pauseBreak": 0.4,
+  "punctBreak": true,
+  "stripPunct": true,
+  "autoAccent": true,
+  "posX": 50,
+  "posY": 64,
+  "lineGap": 0.05,
+  "wordSpace": 0.24,
+  "accentOwnLine": true,
+  "safeWidth": 0.9,
+  "holdGap": 0.3
+ },
+ "base": {
+  "fonts": [
+   "Onder-Regular",
+   "Montserrat-Bold",
+   "ArialMT"
+  ],
+  "size": 64,
+  "color": [
+   1,
+   1,
+   1
+  ],
+  "tracking": -10,
+  "caps": true,
+  "strokeWidth": 0,
+  "strokeColor": [
+   0,
+   0,
+   0
+  ],
+  "shadow": {
+   "color": [
+    0,
+    0,
+    0
+   ],
+   "opacity": 55,
+   "distance": 3,
+   "softness": 12
+  },
+  "glow": null
+ },
+ "accent": {
+  "fonts": [
+   "Onder-Regular",
+   "Montserrat-Bold",
+   "ArialMT"
+  ],
+  "size": 92,
+  "color": [
+   0.78,
+   1.0,
+   0.2
+  ],
+  "tracking": -10,
+  "caps": true,
+  "strokeWidth": 0,
+  "strokeColor": [
+   0,
+   0,
+   0
+  ],
+  "shadow": {
+   "color": [
+    0,
+    0,
+    0
+   ],
+   "opacity": 55,
+   "distance": 3,
+   "softness": 12
+  },
+  "glow": null
+ },
+ "anim": {
+  "animIn": "pop",
+  "inDur": 0.28,
+  "animOut": "fade",
+  "outDur": 0.2,
+  "distance": 30,
+  "blur": 16,
+  "easeInfluence": 80
+ }
+}

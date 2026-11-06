@@ -1,0 +1,96 @@
+{
+ "schema": "noir-style/1",
+ "id": "elastre-thin",
+ "name": "Elastre Thin (тонкий широкий)",
+ "description": "Тонкий широкий гротеск Elastre Super Line: белый текст, акцент серебристо-золотой. Нужен шрифт Elastre.",
+ "layout": {
+  "reveal": "group",
+  "maxWords": 4,
+  "maxChars": 30,
+  "lineChars": 0,
+  "pauseBreak": 0.4,
+  "punctBreak": true,
+  "stripPunct": true,
+  "autoAccent": true,
+  "posX": 50,
+  "posY": 64,
+  "lineGap": 0.05,
+  "wordSpace": 0.24,
+  "accentOwnLine": true,
+  "safeWidth": 0.9,
+  "holdGap": 0.3
+ },
+ "base": {
+  "fonts": [
+   "Elastre-SuperLine",
+   "Montserrat-Bold",
+   "ArialMT"
+  ],
+  "size": 68,
+  "color": [
+   1,
+   1,
+   1
+  ],
+  "tracking": 20,
+  "caps": false,
+  "strokeWidth": 0,
+  "strokeColor": [
+   0,
+   0,
+   0
+  ],
+  "shadow": {
+   "color": [
+    0,
+    0,
+    0
+   ],
+   "opacity": 55,
+   "distance": 3,
+   "softness": 12
+  },
+  "glow": null
+ },
+ "accent": {
+  "fonts": [
+   "Elastre-SuperLine",
+   "Montserrat-Bold",
+   "ArialMT"
+  ],
+  "size": 110,
+  "color": [
+   0.96,
+   0.88,
+   0.62
+  ],
+  "tracking": 20,
+  "caps": false,
+  "strokeWidth": 0,
+  "strokeColor": [
+   0,
+   0,
+   0
+  ],
+  "shadow": {
+   "color": [
+    0,
+    0,
+    0
+   ],
+   "opacity": 55,
+   "distance": 3,
+   "softness": 12
+  },
+  "glow": null
+ },
+ "anim": {
+  "animIn": "blurRise",
+  "inDur": 0.34,
+  "animOut": "fade",
+  "outDur": 0.2,
+  "distance": 30,
+  "blur": 16,
+  "easeInfluence": 80
+ }
+}

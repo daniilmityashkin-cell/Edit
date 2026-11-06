@@ -3,3 +3,7 @@ __pycache__/
 *.pyc
 recognition/models/
 *.wav
+
+# user fonts (licenses unknown: never commit)
+fonts/user/*
+!fonts/user/.gitkeep

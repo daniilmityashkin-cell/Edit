@@ -1,0 +1,104 @@
+{
+ "schema": "noir-style/1",
+ "id": "pixel-vpch2",
+ "name": "Pixel VPCH2 (пиксельный, печать)",
+ "description": "Пиксельный шрифт VPCH2 с печатью по буквам, зелёный акцент. Нужен шрифт VPCH2.",
+ "layout": {
+  "reveal": "group",
+  "maxWords": 4,
+  "maxChars": 30,
+  "lineChars": 0,
+  "pauseBreak": 0.4,
+  "punctBreak": true,
+  "stripPunct": true,
+  "autoAccent": true,
+  "posX": 50,
+  "posY": 64,
+  "lineGap": 0.05,
+  "wordSpace": 0.24,
+  "accentOwnLine": true,
+  "safeWidth": 0.9,
+  "holdGap": 0.3
+ },
+ "base": {
+  "fonts": [
+   "VPCH2-Regular",
+   "Montserrat-Bold",
+   "ArialMT"
+  ],
+  "size": 70,
+  "color": [
+   1,
+   1,
+   1
+  ],
+  "tracking": 0,
+  "caps": false,
+  "strokeWidth": 0,
+  "strokeColor": [
+   0,
+   0,
+   0
+  ],
+  "shadow": {
+   "color": [
+    0,
+    0,
+    0
+   ],
+   "opacity": 55,
+   "distance": 3,
+   "softness": 12
+  },
+  "glow": null
+ },
+ "accent": {
+  "fonts": [
+   "VPCH2-Regular",
+   "Montserrat-Bold",
+   "ArialMT"
+  ],
+  "size": 104,
+  "color": [
+   0.45,
+   1.0,
+   0.4
+  ],
+  "tracking": 0,
+  "caps": false,
+  "strokeWidth": 0,
+  "strokeColor": [
+   0,
+   0,
+   0
+  ],
+  "shadow": {
+   "color": [
+    0,
+    0,
+    0
+   ],
+   "opacity": 55,
+   "distance": 3,
+   "softness": 12
+  },
+  "glow": {
+   "color": [
+    0.3,
+    1.0,
+    0.3
+   ],
+   "opacity": 30,
+   "softness": 14
+  }
+ },
+ "anim": {
+  "animIn": "type",
+  "inDur": 0.38,
+  "animOut": "fade",
+  "outDur": 0.2,
+  "distance": 30,
+  "blur": 16,
+  "easeInfluence": 80
+ }
+}
