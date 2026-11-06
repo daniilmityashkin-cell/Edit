@@ -1,6 +1,6 @@
 # User fonts
 
-Put your own `.ttf` / `.otf` files into `fonts/user/` (they are git-ignored: font licenses vary, never commit fonts you
+Put your own `.ttf` / `.otf` files (or `.zip` archives with fonts) into `fonts/user/` (they are git-ignored: font licenses vary, never commit fonts you
 do not have redistribution rights for) and run
 
     powershell -ExecutionPolicy Bypass -File scripts\install_fonts.ps1
@@ -17,6 +17,12 @@ Styles that expect fonts from here (they fall back to Montserrat/Arial and show 
 | Onder Wide | Onder | `Onder-Regular` | "FREE" (unclear terms) |
 | Abraxas Sci-Fi | Abraxas (Anna Drozd, ofont.ru) | `Abraxas` | none stated |
 | Pixel VPCH2 | VPCH2 | `VPCH2-Regular` | none stated |
+| Dispater Gold | DISPATER (Medium/Bold/Extrabold) + Belozerov SP | `DISPATER-Extrabold`, `BelozerovSPRegular` | SIL OFL |
+| Belcanto Cream | Belcanto Modern | `BelcantoModern` | none stated |
+| Peter Ornate | Peter Ivanowitsch + Belozerov SP | `Peter Ivanowitsch` | GPL / OFL |
+
+Not used in a style: **VF Reznovic** has Cyrillic letters only (no digits, punctuation or Latin) — numbers in subtitles would show
+placeholder glyphs. Use it only by hand for short letter-only words.
 
 If you sell a product that uses these styles, check the terms of the fonts without a clear license, or ask users to
 install their own copy (the styles only reference the names, no font is bundled).

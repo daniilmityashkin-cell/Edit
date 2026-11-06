@@ -1,0 +1,105 @@
+{
+ "schema": "noir-style/1",
+ "id": "peter-ornate",
+ "name": "Peter Ornate (орнамент, красный)",
+ "description": "Орнаментальный Peter Ivanowitsch для акцентов: белая подпись Belozerov SP и красный акцент. Нужны шрифты Peter Ivanowitsch и Belozerov SP.",
+ "layout": {
+  "reveal": "group",
+  "maxWords": 4,
+  "maxChars": 28,
+  "lineChars": 0,
+  "pauseBreak": 0.4,
+  "punctBreak": true,
+  "stripPunct": true,
+  "autoAccent": true,
+  "posX": 50,
+  "posY": 62,
+  "lineGap": 0.04,
+  "wordSpace": 0.22,
+  "accentOwnLine": true,
+  "safeWidth": 0.9,
+  "holdGap": 0.3
+ },
+ "base": {
+  "fonts": [
+   "BelozerovSPRegular",
+   "Montserrat-Bold",
+   "ArialMT"
+  ],
+  "size": 56,
+  "color": [
+   1,
+   1,
+   1
+  ],
+  "tracking": 0,
+  "caps": true,
+  "strokeWidth": 0,
+  "strokeColor": [
+   0,
+   0,
+   0
+  ],
+  "shadow": {
+   "color": [
+    0,
+    0,
+    0
+   ],
+   "opacity": 55,
+   "distance": 3,
+   "softness": 12
+  },
+  "glow": null
+ },
+ "accent": {
+  "fonts": [
+   "Peter Ivanowitsch",
+   "PeterIvanowitsch",
+   "Montserrat-Bold",
+   "ArialMT"
+  ],
+  "size": 120,
+  "color": [
+   0.9,
+   0.12,
+   0.12
+  ],
+  "tracking": 0,
+  "caps": true,
+  "strokeWidth": 0,
+  "strokeColor": [
+   0,
+   0,
+   0
+  ],
+  "shadow": {
+   "color": [
+    0.1,
+    0.04,
+    0
+   ],
+   "opacity": 60,
+   "distance": 4,
+   "softness": 14
+  },
+  "glow": {
+   "color": [
+    0.9,
+    0.1,
+    0.1
+   ],
+   "opacity": 30,
+   "softness": 16
+  }
+ },
+ "anim": {
+  "animIn": "pop",
+  "inDur": 0.36,
+  "animOut": "fade",
+  "outDur": 0.2,
+  "distance": 30,
+  "blur": 16,
+  "easeInfluence": 80
+ }
+}

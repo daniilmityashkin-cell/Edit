@@ -1,0 +1,96 @@
+{
+ "schema": "noir-style/1",
+ "id": "belcanto-cream",
+ "name": "Belcanto Cream (ар-нуво, кремовый)",
+ "description": "Ар-нуво капс Belcanto Modern: белая подпись и кремово-золотой акцент крупнее. Нужен шрифт Belcanto Modern.",
+ "layout": {
+  "reveal": "group",
+  "maxWords": 4,
+  "maxChars": 28,
+  "lineChars": 0,
+  "pauseBreak": 0.4,
+  "punctBreak": true,
+  "stripPunct": true,
+  "autoAccent": true,
+  "posX": 50,
+  "posY": 62,
+  "lineGap": 0.04,
+  "wordSpace": 0.22,
+  "accentOwnLine": true,
+  "safeWidth": 0.9,
+  "holdGap": 0.3
+ },
+ "base": {
+  "fonts": [
+   "BelcantoModern",
+   "Montserrat-Bold",
+   "ArialMT"
+  ],
+  "size": 62,
+  "color": [
+   1,
+   1,
+   1
+  ],
+  "tracking": 20,
+  "caps": true,
+  "strokeWidth": 0,
+  "strokeColor": [
+   0,
+   0,
+   0
+  ],
+  "shadow": {
+   "color": [
+    0,
+    0,
+    0
+   ],
+   "opacity": 55,
+   "distance": 3,
+   "softness": 12
+  },
+  "glow": null
+ },
+ "accent": {
+  "fonts": [
+   "BelcantoModern",
+   "Montserrat-Bold",
+   "ArialMT"
+  ],
+  "size": 120,
+  "color": [
+   0.96,
+   0.88,
+   0.64
+  ],
+  "tracking": 20,
+  "caps": true,
+  "strokeWidth": 0,
+  "strokeColor": [
+   0,
+   0,
+   0
+  ],
+  "shadow": {
+   "color": [
+    0.1,
+    0.04,
+    0
+   ],
+   "opacity": 60,
+   "distance": 4,
+   "softness": 14
+  },
+  "glow": null
+ },
+ "anim": {
+  "animIn": "blur",
+  "inDur": 0.36,
+  "animOut": "fade",
+  "outDur": 0.2,
+  "distance": 30,
+  "blur": 16,
+  "easeInfluence": 80
+ }
+}

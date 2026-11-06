@@ -1,6 +1,6 @@
 <#
  NOIR Captions: install Cyrillic fonts for subtitles (Windows, no administrator rights needed).
- Fonts are free (SIL Open Font License) from the Google Fonts repository, plus any .ttf/.otf files you put into fonts\user. They are installed for the current user
+ Fonts are free (SIL Open Font License) from the Google Fonts repository, plus any .ttf/.otf files or .zip archives you put into fonts\user. They are installed for the current user
  into %LOCALAPPDATA%\Microsoft\Windows\Fonts. Fonts that are already installed are skipped. Restart After Effects afterwards.
 
  Run from the project folder:
@@ -57,18 +57,32 @@ function Register-FontFile($path, $regName, $kind) {
   New-ItemProperty -Path $reg -Name ($regName + ' (' + $kind + ')') -Value $path -PropertyType String -Force | Out-Null
 }
 
-# 1) your own fonts from fonts\user (any .ttf / .otf)
+function Install-UserFont($file) {
+  $target = Join-Path $dir $file.Name
+  if (Test-Path $target) { $script:skipped++; return }
+  try {
+    Copy-Item -Force $file.FullName $target
+    $kind = if ($file.Extension -ieq '.otf') { 'OpenType' } else { 'TrueType' }
+    Register-FontFile $target $file.BaseName $kind
+    $script:installed++; Write-Host ("  + {0} (yours)" -f $file.Name)
+  } catch { $script:failed += ("{0}: {1}" -f $file.Name, $_.Exception.Message) }
+}
+
+# 1) your own fonts from fonts\user: loose .ttf/.otf files and .zip archives (fonts are taken out of the zip, nothing is run)
 $mine = Join-Path (Split-Path -Parent $PSScriptRoot) 'fonts\user'
 if (Test-Path $mine) {
-  Get-ChildItem -Path $mine -File | Where-Object { $_.Extension -match '^\.(ttf|otf)$' } | ForEach-Object {
-    $target = Join-Path $dir $_.Name
-    if (Test-Path $target) { $skipped++; return }
+  Get-ChildItem -Path $mine -File | Where-Object { $_.Extension -match '^\.(ttf|otf)$' } | ForEach-Object { Install-UserFont $_ }
+  Get-ChildItem -Path $mine -File -Filter *.zip | ForEach-Object {
+    $zipName = $_.Name
+    $tmpDir = Join-Path $env:TEMP ('noir_fonts_' + [Guid]::NewGuid().ToString('N'))
     try {
-      Copy-Item -Force $_.FullName $target
-      $kind = if ($_.Extension -ieq '.otf') { 'OpenType' } else { 'TrueType' }
-      Register-FontFile $target $_.BaseName $kind
-      $installed++; Write-Host ("  + {0} (yours)" -f $_.Name)
-    } catch { $failed += ("{0}: {1}" -f $_.Name, $_.Exception.Message) }
+      Expand-Archive -Path $_.FullName -DestinationPath $tmpDir -Force
+      $inside = @(Get-ChildItem -Path $tmpDir -Recurse -File | Where-Object { $_.Extension -match '^\.(ttf|otf)$' -and $_.FullName -notmatch '__MACOSX' })
+      # a variable font next to its static files duplicates the family: keep the static ones
+      if ($inside.Count -gt 1) { $inside = @($inside | Where-Object { $_.Name -notmatch 'VF\.(ttf|otf)$' }) }
+      foreach ($one in $inside) { Install-UserFont $one }
+    } catch { $script:failed += ("{0}: {1}" -f $zipName, $_.Exception.Message) }
+    finally { if (Test-Path $tmpDir) { Remove-Item -Recurse -Force $tmpDir } }
   }
 }
 
