@@ -134,6 +134,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         var rot = tr.property("Rotation");
         opts = N.withDefaults(opts);
         clearLetterAnimators(layer);
+        clearKeysOf(pos);
         pos.setValue(base);
         op.setValue(opts.opacity);
 
@@ -173,18 +174,38 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         keys(op, from.op, opts.opacity, to.op, null);
         keys(sc, [from.sc, from.sc, 100], [100, 100, 100], [to.sc, to.sc, 100],
             animIn.over ? [100 + (animIn.over - 100) * (opts.intensity === undefined ? 1 : opts.intensity), 100 + (animIn.over - 100) * (opts.intensity === undefined ? 1 : opts.intensity), 100] : null);
-        keys(pos, from.pos, base, to.pos, null);
+        // Сдвиг входа/выхода — относительным текстовым аниматором «NOIR Move», а не ключами Position слоя:
+        // слой остаётся без ключей позиции, и его можно свободно двигать мышью или панелью.
+        var dIn = [from.pos[0] - base[0], from.pos[1] - base[1], 0], dOut = [to.pos[0] - base[0], to.pos[1] - base[1], 0];
+        if ((inDur && (dIn[0] || dIn[1])) || (outDur && (dOut[0] || dOut[1]))) {
+            var moveProp = addMoveAnimator(layer);
+            if (moveProp) keys(moveProp, dIn, [0, 0, 0], dOut, null);
+            else keys(pos, from.pos, base, to.pos, null);   // AE не дал создать аниматор — как раньше
+        }
         keys(blurProp, from.blur, 0, to.blur, null);
         keys(rot, from.rot, 0, to.rot, null);
     };
 
+    function clearKeysOf(prop) { while (prop.numKeys > 0) prop.removeKey(1); }
+
+    // Убирает аниматоры NOIR (по буквам и сдвиг); свои аниматоры пользователя не трогает.
     function clearLetterAnimators(layer) {
         try {
             var an = layer.property("ADBE Text Properties").property("ADBE Text Animators");
             for (var i = an.numProperties; i >= 1; i--) {
-                if (String(an.property(i).name).indexOf("NOIR Letters") === 0) an.property(i).remove();
+                var nm = String(an.property(i).name);
+                if (nm.indexOf("NOIR Letters") === 0 || nm === "NOIR Move") an.property(i).remove();
             }
         } catch (e) {}
+    }
+
+    // Аниматор без селектора действует на весь текст: его Position — смещение относительно позиции слоя.
+    function addMoveAnimator(layer) {
+        try {
+            var an = layer.property("ADBE Text Properties").property("ADBE Text Animators").addProperty("ADBE Text Animator");
+            an.name = "NOIR Move";
+            return an.property("ADBE Text Animator Properties").addProperty("ADBE Text Position 3D");
+        } catch (e) { return null; }
     }
 
     // Анимация по буквам: текстовый аниматор (прозрачность 0 + смещение/масштаб/размытие) и диапазон-селектор.
@@ -330,11 +351,13 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
 
     N.isGenerated = function (layer) { return String(layer.comment || "").indexOf(N.LAYER_TAG) === 0; };
 
-    N.removeGenerated = function (comp) {
+    // sourceKey — убрать только субтитры этого аудиослоя (строка); без него — все слои NOIR.
+    // Слои без метки источника (старые версии) при замене по источнику не трогаются.
+    N.removeGenerated = function (comp, sourceKey) {
         var n = 0;
         for (var i = comp.numLayers; i >= 1; i--) {
             var l = comp.layer(i);
-            if (N.isGenerated(l)) {
+            if (N.isGenerated(l) && (!sourceKey || N.layerSource(l) === sourceKey)) {
                 if (l.locked) l.locked = false;
                 l.remove();
                 n++;
@@ -444,7 +467,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
                 a.opacity = styleOpacity(w.st);
                 N.applyAnimation(L, pos, tIn, tOut, a, blurProp);
                 ctx.created++;
-                ctx.made.push({ tIn: tIn, tOut: tOut, accent: !!w.accent });
+                ctx.made.push({ tIn: tIn, tOut: tOut, accent: !!w.accent, layer: L, seg: g.seg });
             }
         }
     }
@@ -499,6 +522,10 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
     function setBaseComment(layer, pos, gid, idx, lineBefore, segment, sourceKey) {
         layer.comment = N.LAYER_TAG + "|" + pos[0] + "|" + pos[1] + "|" + gid + "|" + idx + "|" + (lineBefore ? "line" : "") + "|" + (segment === undefined ? "" : segment) + "|" + (sourceKey || "");
     }
+    N.layerSource = function (layer) {
+        var gi = N.groupInfo(layer);
+        return gi ? gi.sourceKey : "";
+    };
     N.groupInfo = function (layer) {
         var c = String(layer.comment || "");
         if (c.indexOf(N.LAYER_TAG + "|") !== 0) return null;
@@ -559,10 +586,129 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         return res;
     };
 
+    // ---------- положение готовых субтитров ----------
+
+    // Сдвиг слоя на (dx, dy). Старые слои с ключами позиции — сдвигаются все ключи.
+    N.shiftLayer = function (layer, dx, dy) {
+        if (!dx && !dy) return;
+        var pos = layer.property("Transform").property("Position");
+        if (pos.numKeys > 0) {
+            for (var k = 1; k <= pos.numKeys; k++) {
+                var v = pos.keyValue(k);
+                pos.setValueAtKey(k, [v[0] + dx, v[1] + dy, v[2] || 0]);
+            }
+        } else {
+            var p = pos.value;
+            pos.setValue([p[0] + dx, p[1] + dy, p[2] || 0]);
+        }
+    };
+
+    // Позиция, куда слой поставил генератор (из метки). null — метки нет.
+    N.placedOf = function (layer) {
+        var c = String(layer.comment || "");
+        if (c.indexOf(N.LAYER_TAG + "|") !== 0) return null;
+        var p = c.split("|"), x = parseFloat(p[1]), y = parseFloat(p[2]);
+        return isNaN(x) || isNaN(y) ? null : [x, y];
+    };
+
+    // Ручной сдвиг слоя относительно места, куда его поставил генератор.
+    N.manualOffset = function (layer) {
+        var placed = N.placedOf(layer), pos = layer.property("Transform").property("Position");
+        if (!placed || pos.numKeys > 0) return [0, 0];
+        return [pos.value[0] - placed[0], pos.value[1] - placed[1]];
+    };
+
+    // Средний ручной сдвиг по фразам: { "<номер фразы>": [dx, dy] } для слоёв нужного источника.
+    N.phraseOffsets = function (comp, sourceKey) {
+        var sum = {}, out = {}, i, k;
+        for (i = 1; i <= comp.numLayers; i++) {
+            var l = comp.layer(i), gi = N.groupInfo(l);
+            if (!gi || gi.segment === null || (sourceKey && gi.sourceKey !== sourceKey)) continue;
+            var o = N.manualOffset(l), s = sum[gi.segment] || (sum[gi.segment] = [0, 0, 0]);
+            s[0] += o[0]; s[1] += o[1]; s[2]++;
+        }
+        for (k in sum) if (sum.hasOwnProperty(k)) {
+            var dx = sum[k][0] / sum[k][2], dy = sum[k][1] / sum[k][2];
+            if (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5) out[k] = [dx, dy];
+        }
+        return out;
+    };
+
+    // Переносит ручные сдвиги на новые слои (res.made из N.generate).
+    N.applyPhraseOffsets = function (made, offsets) {
+        var n = 0;
+        for (var i = 0; i < made.length; i++) {
+            var m = made[i], o = m.layer && m.seg !== undefined ? offsets[m.seg] : null;
+            if (o) { N.shiftLayer(m.layer, o[0], o[1]); n++; }
+        }
+        return n;
+    };
+
+    // Все слои фраз, к которым относятся layers (фраза двигается целиком). Слои без метки — сами по себе.
+    function phraseBlocks(comp, layers) {
+        var blocks = [], byGid = {}, i;
+        for (i = 0; i < layers.length; i++) {
+            var gi = N.groupInfo(layers[i]);
+            if (!gi) { blocks.push([layers[i]]); continue; }
+            if (byGid[gi.gid]) continue;
+            var members = [];
+            for (var j = 1; j <= comp.numLayers; j++) {
+                var inf = N.groupInfo(comp.layer(j));
+                if (inf && inf.gid === gi.gid) members.push(comp.layer(j));
+            }
+            byGid[gi.gid] = members;
+            blocks.push(members);
+        }
+        return blocks;
+    }
+
+    function blockCenter(block) {
+        var minL = 1e9, maxR = -1e9, minT = 1e9, maxB = -1e9;
+        for (var i = 0; i < block.length; i++) {
+            var l = block[i], b = N.baseOf(l), r = l.sourceRectAtTime(Math.max(0, l.inPoint), false);
+            minL = Math.min(minL, b[0] - r.width / 2); maxR = Math.max(maxR, b[0] + r.width / 2);
+            minT = Math.min(minT, b[1] - r.height / 2); maxB = Math.max(maxB, b[1] + r.height / 2);
+        }
+        return [(minL + maxR) / 2, (minT + maxB) / 2];
+    }
+
+    // Ставит центр каждой фразы в точку (xPct, yPct) кадра, в процентах. null — эту ось не менять.
+    N.moveBlocksTo = function (comp, layers, xPct, yPct) {
+        var blocks = phraseBlocks(comp, layers), moved = 0;
+        for (var i = 0; i < blocks.length; i++) {
+            var c = blockCenter(blocks[i]);
+            var dx = xPct === null || xPct === undefined ? 0 : comp.width * xPct / 100 - c[0];
+            var dy = yPct === null || yPct === undefined ? 0 : comp.height * yPct / 100 - c[1];
+            for (var j = 0; j < blocks[i].length; j++) { N.shiftLayer(blocks[i][j], dx, dy); moved++; }
+        }
+        return { phrases: blocks.length, layers: moved };
+    };
+
+    // Сдвиг на (dx, dy) пикселей; фразы целиком.
+    N.nudgeBlocks = function (comp, layers, dx, dy) {
+        var blocks = phraseBlocks(comp, layers), moved = 0;
+        for (var i = 0; i < blocks.length; i++)
+            for (var j = 0; j < blocks[i].length; j++) { N.shiftLayer(blocks[i][j], dx, dy); moved++; }
+        return { phrases: blocks.length, layers: moved };
+    };
+
+    // Вернуть слои туда, куда их поставил генератор (снять ручные сдвиги).
+    N.resetPositions = function (layers) {
+        var n = 0;
+        for (var i = 0; i < layers.length; i++) {
+            var o = N.manualOffset(layers[i]);
+            if (o[0] || o[1]) { N.shiftLayer(layers[i], -o[0], -o[1]); n++; }
+        }
+        return n;
+    };
+
     // ---------- правка готовых слоёв (выделенных пользователем) ----------
 
     // Базовая позиция слоя (куда он «встаёт» после анимации входа).
+    // Без ключей Position — текущая позиция слоя (учитывает ручной сдвиг); со старыми ключами — из метки.
     N.baseOf = function (layer) {
+        var pos0 = layer.property("Transform").property("Position");
+        if (pos0.numKeys === 0) return [pos0.value[0], pos0.value[1]];
         var c = String(layer.comment || "");
         if (c.indexOf(N.LAYER_TAG + "|") === 0 || c.indexOf("noir-captions:counter|") === 0) {
             var p = c.split("|"), x = parseFloat(p[1]), y = parseFloat(p[2]);
@@ -735,7 +881,8 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
     N.generate = function (comp, groups, style, anim, replace) {
         var ctx = { warnings: [], fontCache: {}, created: 0, made: [], run: (new Date().getTime() % 1000000).toString(36), gseq: 0, scale: comp.width / N.REF_WIDTH,
             minDur: Math.max(comp.frameDuration, 0.04) };
-        var removed = replace ? N.removeGenerated(comp) : 0;
+        // replace: строка — заменить только субтитры этого источника; true — все субтитры NOIR.
+        var removed = replace ? N.removeGenerated(comp, typeof replace === "string" ? replace : null) : 0;
         var skipped = 0, ordinal = 0, gi, wi;
         for (gi = 0; gi < groups.length; gi++)             // номер акцентного слова в порядке чтения — для палитры
             for (wi = 0; wi < groups[gi].words.length; wi++) if (groups[gi].words[wi].accent) groups[gi].words[wi].ord = ordinal++;

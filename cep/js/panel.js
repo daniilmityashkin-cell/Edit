@@ -112,6 +112,7 @@
             if (node.type === "number") { input.min = node.min; input.max = node.max; input.step = node.step || "any"; }
         } else if (node.type === "progressbar") input.value = node.value;
     }
+    var MAIN_PAGES = ["speechPage","textPage","stylePage","finishPage"];
     var roles = {}, workflow = {}, ui = {main:0, settings:false, section:"recognition", completed:0, successUntil:0}, view = {};
     function element(tag, cls, text, parent) {
         var el = document.createElement(tag); el.className = cls || "";
@@ -179,8 +180,8 @@
     function closeSettings() {ui.settings=false;renderLayout();view.more.focus();}
     function renderLayout() {
         if(!view.body)return;
-        ["speechPage","textPage","stylePage"].forEach(function(role,index){roles[role].el.hidden=ui.main!==index;});
-        if(view.heading)view.heading.textContent=["Ваше видео","Редактор текста","Галерея стилей"][ui.main];
+        MAIN_PAGES.forEach(function(role,index){if(roles[role])roles[role].el.hidden=ui.main!==index;});
+        if(view.heading)view.heading.textContent=["Ваше видео","Редактор текста","Галерея стилей","Правка субтитров"][ui.main];
         view.tabs.forEach(function(tab,index){tab.classList.toggle("tab-active",ui.main===index);tab.setAttribute("aria-selected",ui.main===index?"true":"false");});
         view.shell.classList.toggle("settings-open",ui.settings);view.drawer.hidden=!ui.settings;view.backdrop.hidden=!ui.settings;
         view.more.setAttribute("aria-expanded",String(ui.settings));
@@ -257,7 +258,7 @@
         view.heading=element("h1","workspace-heading","Ваше видео",introduction);
         var mark=element("span","brand-mark","",brand);
         var logo=element("img","","",mark);logo.src="media/noir-mark.svg";logo.alt="";mark.setAttribute("aria-hidden","true");
-        brand.title="NOIR Captions · 0.13.0";brand.setAttribute("aria-label","NOIR Captions");
+        brand.title="NOIR Captions · 0.14.0";brand.setAttribute("aria-label","NOIR Captions");
         var primaryArea=element("div","primary-area","",header);
         view.primary=button("Распознать речь","create-action",primaryArea,function(){
             action(ui.main===0 || !workflow.hasData?"recognize":workflow.canUpdate?"updatePhrase":"generate");
@@ -270,14 +271,14 @@
         place("cancel",statusRow,"text-button");
         view.progress=element("div","recognition-progress","",stage);place("progress",view.progress);
         var nav=element("nav","step-navigation tabs","",sidebar);nav.setAttribute("aria-label","Основные разделы");nav.setAttribute("role","tablist");
-        ["Видео","Текст","Стиль"].forEach(function(name,index){
+        ["Видео","Текст","Стиль","Правка"].forEach(function(name,index){
             var tab=button("","step-tab",nav,function(){selectMain(index);});
             var icon=element("span","nav-icon","",tab);icon.setAttribute("aria-hidden","true");
-            var paths=["M4 5h12v14H4z M16 9l5-3v12l-5-3", "M4 5h16 M12 5v15 M8 20h8", "M5 4h14v16H5z M8 8h8 M8 12h8 M8 16h4"];
+            var paths=["M4 5h12v14H4z M16 9l5-3v12l-5-3", "M4 5h16 M12 5v15 M8 20h8", "M5 4h14v16H5z M8 8h8 M8 12h8 M8 16h4", "M4 7h9 M17 7h3 M15 5v4 M4 17h3 M11 17h9 M9 15v4"];
             icon.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="'+paths[index]+'"/></svg>';
             element("span","nav-label",name,tab);
-            tab.setAttribute("role","tab");tab.setAttribute("aria-controls",["speechPage","textPage","stylePage"][index]);
-            tab.onkeydown=function(event){if(event.key==="ArrowRight" || event.key==="ArrowLeft"){event.preventDefault();var next=(index+(event.key==="ArrowRight"?1:2))%3;selectMain(next);view.tabs[next].focus();}};
+            tab.setAttribute("role","tab");tab.setAttribute("aria-controls",MAIN_PAGES[index]);
+            tab.onkeydown=function(event){if(event.key==="ArrowRight" || event.key==="ArrowLeft"){event.preventDefault();var count=view.tabs.length,next=(index+(event.key==="ArrowRight"?1:count-1))%count;selectMain(next);view.tabs[next].focus();}};
             view.tabs.push(tab);
         });
         view.more=button("Настройки","more-button",nav,function(){if(ui.settings)closeSettings();else openSettings();});
@@ -356,6 +357,13 @@
         var quick=element("div","form-grid quick-settings","",quickCard);
         field("quickSize","Размер, %",quick);field("quickPosition","Положение",quick);field("intensity","Интенсивность",quick);
         button("Шрифт и детали →","text-button",style.el,function(){openSettings("font");});
+        var finish=place("finishPage",view.body,"step-page");
+        if(finish){
+            finish.el.id="finishPage";var finishHead=element("div","","");
+            element("div","eyebrow","04 / ПРАВКА",finishHead);
+            sectionTitle("Правка","Положение, анимация и стиль готовых субтитров. Текст можно двигать и мышью в AE.",finishHead);
+            finish.el.insertBefore(finishHead,finish.el.firstChild);
+        }
         view.backdrop=button("","drawer-backdrop",workspace,closeSettings);view.backdrop.setAttribute("aria-label","Закрыть настройки");view.backdrop.tabIndex=-1;
         view.drawer=element("aside","settings-drawer","",workspace);view.drawer.id="settings-drawer";view.drawer.setAttribute("role","dialog");view.drawer.setAttribute("aria-labelledby","settings-title");
         var drawerHead=element("div","drawer-header","",view.drawer);element("h2","","Настройки",drawerHead).id="settings-title";

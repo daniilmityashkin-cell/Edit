@@ -238,6 +238,8 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         if (data.noirSourceKey && /^s[0-9a-f]+$/.test(data.noirSourceKey)) return data.noirSourceKey;
         var text = data.source && data.source.file ? data.source.file : N.stringify(data.segments);
         text += "|" + (link ? link.compId + ":" + link.layerName : "json");
+        // id слоя (AE 2022+) различает слои с одинаковым именем, например куски одного видео.
+        if (link && link.layerId) text += "#" + link.layerId;
         var hash = 0;
         for (var i = 0; i < text.length; i++) hash = ((hash << 5) - hash + text.charCodeAt(i)) | 0;
         return "s" + (hash >>> 0).toString(16);

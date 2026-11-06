@@ -23,27 +23,37 @@ var NOIR_CEP = (function () {
     function walk(el, parentId, result) {
         if (!el._cepId) { el._cepId = String(nodes.length + 1); nodes.push(el); }
         var id = el._cepId;
-        var type = el._scrub ? "number" : el.type;
-        var node = {id:id,parent:parentId,type:type,text:String(el.text || ""),visible:el._cepVisible !== false,
-            enabled:el.enabled !== false,orientation:el.orientation || "column",tip:el.helpTip || "",role:el._cepRole || "",preview:el._cepPreview || null,scroll:!!el._noirScrollBody,tabs:!!el._noirTabBar,tabSelected:!!el._noirTabSelected};
-        if (type === "checkbox" || type === "radiobutton") node.value = !!el.value;
-        if (type === "progressbar") node.value = el.value || 0;
-        if (type === "edittext") node.multiline = !!(el.properties && el.properties.multiline);
-        if (type === "number") { node.min = el._scrub.min; node.max = el._scrub.max; node.step = el._scrub.step; }
+        var type = el._scrub ? "number" : el.type, S1 = "\u0001", i, items = null, selected = -1;
+        // Cheap change signature: the JSON node is built and encoded only for changed controls.
+        // ExtendScript is slow, and most of the ~450 controls are unchanged between two requests.
+        var sig = type + S1 + parentId + S1 + (el.text || "") + S1 + (el._cepVisible !== false) + S1 + (el.enabled !== false) + S1 +
+            (el.orientation || "") + S1 + (el.helpTip || "") + S1 + (el._cepRole || "") + S1 + !!el._noirTabSelected + S1 +
+            (el._cepPreview ? NOIR.stringify(el._cepPreview) : "");
+        if (type === "checkbox" || type === "radiobutton") sig += S1 + !!el.value;
+        if (type === "progressbar") sig += S1 + (el.value || 0);
         if (type === "dropdownlist") {
-            node.items = [];
-            for (var i = 0; i < el.items.length; i++) node.items.push(String(el.items[i].text));
-            node.selected = el.selection ? el.selection.index : -1;
+            items = [];
+            for (i = 0; i < el.items.length; i++) items.push(String(el.items[i].text));
+            selected = el.selection ? el.selection.index : -1;
+            sig += S1 + selected + S1 + items.join("\u0002");
         }
-        var encoded = NOIR.stringify(node);
-        if (result.full || last[id] !== encoded) result.nodes.push(node);
-        last[id] = encoded;
+        if (result.full || last[id] !== sig) {
+            var node = {id:id,parent:parentId,type:type,text:String(el.text || ""),visible:el._cepVisible !== false,
+                enabled:el.enabled !== false,orientation:el.orientation || "column",tip:el.helpTip || "",role:el._cepRole || "",preview:el._cepPreview || null,scroll:!!el._noirScrollBody,tabs:!!el._noirTabBar,tabSelected:!!el._noirTabSelected};
+            if (type === "checkbox" || type === "radiobutton") node.value = !!el.value;
+            if (type === "progressbar") node.value = el.value || 0;
+            if (type === "edittext") node.multiline = !!(el.properties && el.properties.multiline);
+            if (type === "number") { node.min = el._scrub.min; node.max = el._scrub.max; node.step = el._scrub.step; }
+            if (items) { node.items = items; node.selected = selected; }
+            result.nodes.push(node);
+        }
+        last[id] = sig;
         if (el.children) for (var j = 0; j < el.children.length; j++) walk(el.children[j], id, result);
     }
     function snapshot(full) {
         // No wrapping below the main tabs. HTML supplies horizontal overflow if necessary.
         // HTML owns layout; polling must never rebuild native dropdowns or repaint tabs.
-        var result = {full:!!full,nodes:[],version:"0.13.0",workflow:win._cep.workflow()};
+        var result = {full:!!full,nodes:[],version:"0.14.0",workflow:win._cep.workflow()};
         walk(win, null, result);
         return NOIR.stringify(result);
     }

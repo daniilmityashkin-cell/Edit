@@ -300,10 +300,14 @@ const GOPTS = { maxWords: 1, maxChars: 99, pauseBreak: 0.35, punctBreak: true, s
     const anim = { animIn: "blurRise", inDur: 0.3, animOut: "blur", outDur: 0.2, distance: 60, blur: 20, easeInfluence: 80 };
     N.restyleLayers(c, [a], { style: null, accent: false, safeWidth: 0.88, anim });
     assert.ok(a.effects.some(e => e.matchName === "ADBE Gaussian Blur 2"));
-    assert.ok(a.transform.Position.keys.length >= 2);
+    assert.strictEqual(a.transform.Position.keys.length, 0, "у Position слоя не должно быть ключей — иначе слой нельзя двигать");
+    assert.deepStrictEqual(a.transform.Position.value.slice(0, 2), base);
     for (const p of Object.values(a.transform)) for (const k of p.keys) assert.ok(k.t >= a.inPoint - 1e-9 && k.t <= a.outPoint + 1e-9);
-    const ends = a.transform.Position.keys.map(k => k.v);
-    assert.ok(ends.some(v => Math.abs(v[0] - base[0]) < 1e-6 && Math.abs(v[1] - base[1]) < 1e-6), "нет ключа с базовой позицией");
+    const mv = a.textProps.property("ADBE Text Animators").kids.find(x => x.name === "NOIR Move");
+    assert.ok(mv, "нет аниматора NOIR Move");
+    const mk = mv.property("ADBE Text Animator Properties").property("ADBE Text Position 3D").keys;
+    assert.ok(mk.length >= 2 && mk.some(k => k.v[0] === 0 && k.v[1] === 0), "нет ключа с нулевым сдвигом");
+    for (const k of mk) assert.ok(k.t >= a.inPoint - 1e-9 && k.t <= a.outPoint + 1e-9);
     assert.strictEqual(JSON.stringify(b.transform.Opacity.keys), bKeys, "соседний слой изменился");
   });
   await test("повторное применение анимации не копит ключи и эффекты; «Нет» убирает всё", () => {
@@ -406,7 +410,7 @@ const GOPTS = { maxWords: 1, maxChars: 99, pauseBreak: 0.35, punctBreak: true, s
     const c = mkComp(), st = phrase(c, "kinetic-stack", "если до этого квартира"); const ls = subs(c);
     const g0 = N.groupInfo(ls[0]).gid; assert.ok(ls.every(l => N.groupInfo(l).gid === g0), "одна фраза — одна группа");
     const center = () => { const b = subs(c).map(l => ({ p: N.baseOf(l), r: l.sourceRectAtTime() })); return [(Math.min(...b.map(x => x.p[0] - x.r.width / 2)) + Math.max(...b.map(x => x.p[0] + x.r.width / 2))) / 2, (Math.min(...b.map(x => x.p[1] - x.r.height / 2)) + Math.max(...b.map(x => x.p[1] + x.r.height / 2))) / 2]; };
-    const c0 = center(), yBefore = N.baseOf(byText(c, "квартира"))[1], keysBefore = byText(c, "квартира").transform.Position.keys.map(k => k.v.slice());
+    const c0 = center(), yBefore = N.baseOf(byText(c, "квартира"))[1], keysBefore = yBefore;
     byText(c, "квартира").label = 11;
     const r = N.reflowGroups(c, [byText(c, "квартира")], st.layout);
     assert.strictEqual(r.groups, 1); assert.strictEqual(r.moved, 4);
@@ -414,8 +418,8 @@ const GOPTS = { maxWords: 1, maxChars: 99, pauseBreak: 0.35, punctBreak: true, s
     const ys = new Set(["если", "до", "этого"].map(t => Math.round(N.baseOf(byText(c, t))[1]))); assert.strictEqual(ys.size, 1, "обычные слова на одной строке");
     const c1 = center(); near(c1[0], c0[0], 1); near(c1[1], c0[1], 1);
     assert.ok(subs(c).every(l => N.groupInfo(l).gid === g0), "группа сохранилась");
-    const kq = byText(c, "квартира").transform.Position.keys; assert.ok(kq.length >= 2 && Math.abs(kq[kq.length - 1].v[1] - N.baseOf(byText(c, "квартира"))[1]) < 1e-6, "ключи позиции сдвинуты вместе с базой");
-    assert.notDeepStrictEqual(kq.map(k => k.v), keysBefore);
+    assert.strictEqual(byText(c, "квартира").transform.Position.keys.length, 0, "позиция без ключей");
+    assert.notStrictEqual(N.baseOf(byText(c, "квартира"))[1], keysBefore, "слово переложено");
   });
   await test("автоперекладка: акцент снят — слова снова в строку; без метки группы слой пропускается; в сумме слои не теряются", () => {
     const c = mkComp(), st = phrase(c, "kinetic-stack", "если до этого квартира"); byText(c, "квартира").label = 11; N.reflowGroups(c, subs(c), st.layout);
@@ -791,13 +795,14 @@ const GOPTS = { maxWords: 1, maxChars: 99, pauseBreak: 0.35, punctBreak: true, s
     const tabBtn = (t) => panel.find(e => e.type === "button" && e.text === t);
     tabBtn("3 · Стиль").onClick();
     assert.strictEqual(tabBtn("Раскладка").visible, false);
+    assert.notStrictEqual(tabBtn("4 · Правка").visible, false, "«Правка» — основной шаг, виден всегда");
     const advanced = panel.find(e => e.type === "checkbox" && e.text === "Дополнительные настройки");
     advanced.value = true; advanced.onClick();
     tabBtn("Раскладка").onClick();
     const stack = panel.find(e => e.type === "group" && e.orientation === "stack");
-    assert.deepStrictEqual(stack.children.map(c => c.visible), [false, false, false, false, true, false, false, false, false]);
+    assert.deepStrictEqual(stack.children.map(c => c.visible), [false, false, false, false, false, true, false, false, false, false]);
     tabBtn("1 · Видео").onClick();
-    assert.deepStrictEqual(stack.children.map(c => c.visible), [true, false, false, false, false, false, false, false, false]);
+    assert.deepStrictEqual(stack.children.map(c => c.visible), [true, false, false, false, false, false, false, false, false, false]);
     assert.strictEqual(typeof panel.button("Создать субтитры").onDraw, "function");
   });
   await test("без theme.jsx панель строится на обычных вкладках", () => {
@@ -1058,6 +1063,105 @@ const GOPTS = { maxWords: 1, maxChars: 99, pauseBreak: 0.35, punctBreak: true, s
     N.generate(c, prep(N.flattenWords(sample()), st.layout), st, st.anim, true);
     const keys = subs(c)[0].transform.Scale.keys;
     assert.ok(keys.some(k => Math.abs(k.v[0] - 85) < .001));
+  });
+
+  console.log("несколько аудиослоёв, свободное положение, вкладка «Правка»");
+  const genSrc = (c, key, replace, anim) => {
+    const st = styleOf("reels-glow"); st.layout.autoAccent = false;
+    const gs = prep(N.flattenWords(sample()), st.layout); gs.forEach(g => (g.sourceKey = key));
+    return N.generate(c, gs, st, anim || st.anim, replace);
+  };
+  const ofSrc = (c, key) => subs(c).filter(l => N.layerSource(l) === key);
+  await test("замена по источнику: субтитры второго аудиослоя не удаляют субтитры первого", () => {
+    const c = mkComp(); genSrc(c, "sA", "sA"); const a = ofSrc(c, "sA").length; assert.ok(a > 0);
+    const r = genSrc(c, "sB", "sB");
+    assert.strictEqual(r.removed, 0); assert.strictEqual(ofSrc(c, "sA").length, a, "субтитры первого слоя пропали");
+    assert.ok(ofSrc(c, "sB").length > 0);
+    const r2 = genSrc(c, "sA", "sA");
+    assert.strictEqual(r2.removed, a); assert.strictEqual(ofSrc(c, "sA").length, a, "повтор того же слоя не дублирует");
+    assert.ok(ofSrc(c, "sB").length > 0, "чужие субтитры не тронуты при замене");
+    const legacy = c.layers.addText("старый"); legacy.comment = N.LAYER_TAG + "|1|2|g-0|0||0|";
+    genSrc(c, "sA", "sA"); assert.ok(c._l.includes(legacy), "слой без метки источника не удаляется заменой по источнику");
+    N.removeGenerated(c); assert.strictEqual(subs(c).length, 0, "без ключа — убираются все");
+  });
+  await test("sourceKey различает слои с одинаковым именем по id слоя; старые ссылки без id дают прежний ключ", () => {
+    const d = sample(), base = { compId: 1, layerName: "clip.mp4", layerIndex: 2, startTime: 0, stretch: 100 };
+    const k1 = N.sourceKey(d, Object.assign({ layerId: 11 }, base)), k2 = N.sourceKey(d, Object.assign({ layerId: 12 }, base));
+    assert.notStrictEqual(k1, k2);
+    const old = N.sourceKey(d, base); assert.notStrictEqual(old, k1); assert.strictEqual(old, N.sourceKey(d, Object.assign({}, base)));
+  });
+  await test("анимация не ставит ключи в Position: слой можно двигать, сдвиг входа/выхода — аниматором NOIR Move", () => {
+    const c = mkComp(), anim = { animIn: "rise", inDur: 0.3, animOut: "left", outDur: 0.2, distance: 60, blur: 0, easeInfluence: 80 };
+    genSrc(c, "sA", "sA", anim);
+    for (const l of subs(c)) {
+      assert.strictEqual(l.transform.Position.keys.length, 0, l.name);
+      const mv = l.textProps.property("ADBE Text Animators").kids.filter(x => x.name === "NOIR Move");
+      assert.strictEqual(mv.length, 1);
+      const k = mv[0].property("ADBE Text Animator Properties").property("ADBE Text Position 3D").keys;
+      assert.ok(k[0].v[1] > 0 && k[k.length - 1].v[0] < 0, "вход снизу, выход влево");
+    }
+    const l = subs(c)[0]; l.transform.Position.value = [100, 200, 0];
+    assert.deepStrictEqual(N.baseOf(l), [100, 200]);
+    N.restyleLayers(c, [l], { style: null, safeWidth: 0.88, anim });
+    assert.deepStrictEqual(l.transform.Position.value.slice(0, 2), [100, 200], "смена анимации не возвращает слой на старое место");
+    assert.strictEqual(l.textProps.property("ADBE Text Animators").kids.filter(x => x.name === "NOIR Move").length, 1, "аниматор не копится");
+  });
+  await test("ручной сдвиг фразы переживает пересоздание; «исходные места» его снимает", () => {
+    const c = mkComp(); genSrc(c, "sA", "sA");
+    const ph0 = ofSrc(c, "sA").filter(l => N.groupInfo(l).segment === 0), before = ph0.map(l => N.baseOf(l));
+    ph0.forEach(l => N.shiftLayer(l, 30, -400));
+    const offsets = N.phraseOffsets(c, "sA"); assert.deepStrictEqual(Object.keys(offsets), ["0"]);
+    const r = genSrc(c, "sA", "sA"); N.applyPhraseOffsets(r.made, offsets);
+    const ph1 = ofSrc(c, "sA").filter(l => N.groupInfo(l).segment === 0);
+    ph1.forEach((l, i) => { near(N.baseOf(l)[0], before[i][0] + 30); near(N.baseOf(l)[1], before[i][1] - 400); });
+    assert.ok(ofSrc(c, "sA").filter(l => N.groupInfo(l).segment === 1).every(l => N.manualOffset(l)[1] === 0), "другая фраза не сдвинута");
+    assert.strictEqual(N.resetPositions(ph1), ph1.length);
+    ph1.forEach((l, i) => { near(N.baseOf(l)[0], before[i][0]); near(N.baseOf(l)[1], before[i][1]); });
+  });
+  await test("положение: фраза целиком ставится на высоту кадра, сдвиг и старые слои с ключами", () => {
+    const c = mkComp(); genSrc(c, "sA", "sA");
+    const one = ofSrc(c, "sA")[0], gid = N.groupInfo(one).gid, phrase = subs(c).filter(l => N.groupInfo(l).gid === gid);
+    const r = N.moveBlocksTo(c, [one], null, 75);
+    assert.strictEqual(r.phrases, 1); assert.strictEqual(r.layers, phrase.length, "двигается вся фраза");
+    const ys = phrase.map(l => { const b = N.baseOf(l), h = l.sourceRectAtTime().height; return [b[1] - h / 2, b[1] + h / 2]; });
+    near((Math.min(...ys.map(y => y[0])) + Math.max(...ys.map(y => y[1]))) / 2, c.height * 0.75, 1e-6);
+    const x0 = N.baseOf(one)[0]; N.nudgeBlocks(c, [one], -20, 0); near(N.baseOf(one)[0], x0 - 20);
+    const legacy = phrase[0]; legacy.transform.Position.keys = [{ t: 1, v: [10, 20, 0] }, { t: 2, v: [10, 30, 0] }];
+    N.shiftLayer(legacy, 5, 5); assert.deepStrictEqual(legacy.transform.Position.keys.map(k => k.v), [[15, 25, 0], [15, 35, 0]]);
+  });
+  await test("панель: второй аудиослой не стирает первый; «Обновить все фразы» сохраняет ручной сдвиг", () => {
+    const c = mkComp(); const p = editorPanel();
+    p.button("Создать субтитры").onClick();
+    const first = subs(c).slice(); assert.ok(first.length > 0);
+    first.forEach(l => N.shiftLayer(l, 0, -300));
+    const firstY = first.map(l => N.baseOf(l)[1]);
+    p.button("Создать субтитры").onClick();
+    const again = subs(c); assert.strictEqual(again.length, first.length, "повтор того же видео заменяет, а не дублирует");
+    assert.deepStrictEqual(again.map(l => N.baseOf(l)[1]).sort(), firstY.slice().sort(), "ручной сдвиг сохранён");
+    const other = sample(); other.segments[0].words[0].text = "Другое"; other.segments.forEach(sg => sg.words.forEach(w => { w.start += 10; w.end += 10; }));
+    const jf = path.join(TMP, "other.json"); fs.writeFileSync(jf, JSON.stringify(other));
+    const before = global.File.openDialog; global.File.openDialog = () => mock.File(jf);
+    p.button("Загрузить результат…").onClick(); global.File.openDialog = before;
+    p.button("Создать субтитры").onClick();
+    assert.ok(again.every(l => c._l.includes(l)), "субтитры первого видео пропали");
+    assert.ok(subs(c).length > again.length);
+  });
+  await test("вкладка «4 · Правка»: положение, сдвиг, исходные места, анимация, удаление — только субтитры этого видео", () => {
+    const c = mkComp(); const p = editorPanel();
+    p.button("Создать субтитры").onClick();
+    const mine = subs(c).slice(), foreign = c.layers.addText("Чужой"); foreign.comment = N.LAYER_TAG + "|1|1|x-0|0||0|sOther";
+    const fy = N.baseOf(foreign)[1];
+    p.button("Внизу").onClick();
+    assert.ok(mine.every(l => N.baseOf(l)[1] > c.height * 0.6), "субтитры внизу");
+    assert.strictEqual(N.baseOf(foreign)[1], fy, "субтитры другого видео не тронуты");
+    const y0 = N.baseOf(mine[0])[1]; p.button("↑").onClick(); near(N.baseOf(mine[0])[1], y0 - 20);
+    p.button("Вернуть на исходные места").onClick(); assert.ok(mine.every(l => Math.abs(N.manualOffset(l)[1]) < 1e-6));
+    const ddIn = p.find(e => e.type === "dropdownlist" && e.items.some(i => i.text === "Pop (scale + overshoot)") && e.items.length === N.ANIM_IN.length);
+    ddIn.selection = N.ANIM_IN.findIndex(a => a.id === "pop");
+    p.button("Применить анимацию").onClick();
+    assert.ok(mine.every(l => l.transform.Scale.keys.length > 0 && l.transform.Position.keys.length === 0));
+    p.button("Удалить субтитры").onClick();
+    assert.strictEqual(subs(c).filter(l => l !== foreign).length, 0); assert.ok(c._l.includes(foreign));
   });
 
   console.log("галерея и проверка перед созданием");

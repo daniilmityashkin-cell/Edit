@@ -139,7 +139,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
                     if (!this._lock && this.selection && this.selection.index > 0) api.select(this._indices[this.selection.index - 1]);
                 };
             }
-            var count = advanced ? api.buttons.length : Math.min(3, api.buttons.length), total = 0, i;
+            var count = advanced ? api.buttons.length : Math.min(api.mainCount || 3, api.buttons.length), total = 0, i;
             for (i = 0; i < count; i++) total += api.buttons[i]._tabWidth + 2;
             var needsOverflow = total > lastWidth, available = lastWidth - (needsOverflow ? 104 : 0), used = 0;
             overflow._lock = true; overflow.removeAll(); overflow.add("item", "Ещё…"); overflow._indices = [];

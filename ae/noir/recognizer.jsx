@@ -110,11 +110,13 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
 
         // Распознаём только видимую на таймлайне часть слоя (в секундах файла).
         var tIn = Math.max(layer.inPoint, 0), tOut = Math.min(layer.outPoint, comp.duration);
+        var layerId = 0;
+        try { layerId = layer.id || 0; } catch (eId) {}   // Layer.id есть с AE 2022
         return {
             comp: comp, layer: layer, file: src.mainSource.file,
             srcStart: Math.max(0, N.compToSource(tIn, layer.startTime, layer.stretch)),
             srcEnd: N.compToSource(tOut, layer.startTime, layer.stretch),
-            link: { compId: comp.id, layerName: layer.name, layerIndex: layer.index,
+            link: { compId: comp.id, layerName: layer.name, layerIndex: layer.index, layerId: layerId,
                 startTime: layer.startTime, stretch: layer.stretch }
         };
     };

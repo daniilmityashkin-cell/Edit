@@ -7,7 +7,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
 (function (N) {
     var SECTION = "NOIR Captions";
     var SETTINGS_KEY = "settings.v2";
-    var VERSION = "0.13.0";
+    var VERSION = "0.14.0";
 
     function clone(o) { return N.parseJSON(N.stringify(o)); }
 
@@ -300,13 +300,16 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         var tSpeech = tabs.add("tab", undefined, "1 · Видео");
         var tText = tabs.add("tab", undefined, "2 · Текст");
         var tStyle = tabs.add("tab", undefined, "3 · Стиль");
+        var tFinish = tabs.add("tab", undefined, "4 · Правка");
         var tView = tabs.add("tab", undefined, "Вид");
         var tLayout = tabs.add("tab", undefined, "Раскладка");
         var tAnim = tabs.add("tab", undefined, "Анимация");
         var tLayers = tabs.add("tab", undefined, "Слои");
         var tTools = tabs.add("tab", undefined, "Функции");
         var tSfx = tabs.add("tab", undefined, "SFX");
-        var all = [tSpeech, tText, tStyle, tView, tLayout, tAnim, tLayers, tTools, tSfx];
+        var MAIN_TABS = 4;   // основные шаги видны всегда, остальные — в «Дополнительных настройках»
+        tabs.mainCount = MAIN_TABS;
+        var all = [tSpeech, tText, tStyle, tFinish, tView, tLayout, tAnim, tLayers, tTools, tSfx];
         for (var ti = 0; ti < all.length; ti++) {
             all[ti].orientation = "column";
             all[ti].alignChildren = ["fill", "top"];
@@ -317,10 +320,10 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         function showAdvanced() {
             if (tabs.buttons) {
                 if (tabs.setAdvanced) tabs.setAdvanced(cbAdvanced.value);
-                for (var ai = 3; ai < tabs.buttons.length; ai++) tabs.buttons[ai].visible = !!cbAdvanced.value;
-                if (!cbAdvanced.value && tabs.current > 2) tabs.select(0);
+                for (var ai = MAIN_TABS; ai < tabs.buttons.length; ai++) tabs.buttons[ai].visible = !!cbAdvanced.value;
+                if (!cbAdvanced.value && tabs.current >= MAIN_TABS) tabs.select(0);
             } else {
-                for (var ai = 3; ai < all.length; ai++) all[ai].enabled = !!cbAdvanced.value;
+                for (var ai = MAIN_TABS; ai < all.length; ai++) all[ai].enabled = !!cbAdvanced.value;
             }
             if (!options.headless) win.layout.layout(true);
             scroller.refresh(true);
@@ -705,6 +708,44 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         var btnApply = pnlApply.add("button", undefined, "Применить к выделенным");
         btnApply.helpTip = "Позиция и тайминг слоя не меняются. Регистр букв (КАПС) вернуть назад нельзя";
 
+        // ================= 4 · Правка: готовые субтитры =================
+        var FIN_SCOPES = [{ id: "source", label: "Субтитры этого видео" }, { id: "selected", label: "Выделенные слои" },
+            { id: "all", label: "Все субтитры NOIR в композиции" }];
+        var stFinHint = tFinish.add("statictext", undefined, "Правка уже созданных субтитров. Текст можно двигать и мышью — анимация не мешает.", { multiline: true });
+        stFinHint.preferredSize = [260, 30];
+        if (options.headless) stFinHint._cepVisible = false;   // в HTML свой подзаголовок
+        var ddFinScope = dropdown(row(tFinish, "Что менять", 70), FIN_SCOPES, "source");
+        ddFinScope.helpTip = "«Этого видео» — субтитры аудиослоя, текст которого сейчас открыт в панели. Субтитры других слоёв не меняются";
+        var pnlFinPos = tFinish.add("panel", undefined, "Положение");
+        pnlFinPos.alignChildren = ["fill", "top"]; pnlFinPos.margins = [6, 12, 6, 6]; pnlFinPos.spacing = 3;
+        var rFinPlace = pnlFinPos.add("group");
+        var btnFinTop = rFinPlace.add("button", undefined, "Вверху");
+        var btnFinMid = rFinPlace.add("button", undefined, "По центру");
+        var btnFinBottom = rFinPlace.add("button", undefined, "Внизу");
+        var rFinNudge = row(pnlFinPos, "Сдвиг, px", 60);
+        var etFinStep = field(rFinNudge, 20, 3, { min: 1, max: 2000, step: 1, dec: 0, name: "Шаг сдвига, px" });
+        var btnFinUp = rFinNudge.add("button", undefined, "↑");
+        var btnFinDown = rFinNudge.add("button", undefined, "↓");
+        var btnFinLeft = rFinNudge.add("button", undefined, "←");
+        var btnFinRight = rFinNudge.add("button", undefined, "→");
+        var finArrows = [btnFinUp, btnFinDown, btnFinLeft, btnFinRight];
+        for (var fa = 0; fa < finArrows.length; fa++) finArrows[fa].preferredSize = [30, 22];
+        var btnFinReset = pnlFinPos.add("button", undefined, "Вернуть на исходные места");
+        var pnlFinAnim = tFinish.add("panel", undefined, "Анимация");
+        pnlFinAnim.alignChildren = ["fill", "top"]; pnlFinAnim.margins = [6, 12, 6, 6]; pnlFinAnim.spacing = 3;
+        var ddFinIn = dropdown(row(pnlFinAnim, "Появление", 70), N.ANIM_IN, S.style.anim.animIn);
+        var ddFinOut = dropdown(row(pnlFinAnim, "Исчезание", 70), N.ANIM_OUT, S.style.anim.animOut);
+        var btnFinAnim = pnlFinAnim.add("button", undefined, "Применить анимацию");
+        var pnlFinLook = tFinish.add("panel", undefined, "Вид и слои");
+        pnlFinLook.alignChildren = ["fill", "top"]; pnlFinLook.margins = [6, 12, 6, 6]; pnlFinLook.spacing = 3;
+        var btnFinStyle = pnlFinLook.add("button", undefined, "Применить текущий стиль");
+        var btnFinDelete = pnlFinLook.add("button", undefined, "Удалить субтитры");
+        btnFinTop.helpTip = btnFinMid.helpTip = btnFinBottom.helpTip = "Ставит каждую фразу целиком на эту высоту кадра. Анимация сохраняется";
+        btnFinReset.helpTip = "Снимает ручные сдвиги: фразы встают туда, куда их поставило создание субтитров";
+        btnFinAnim.helpTip = "Заменяет появление и исчезание у выбранных субтитров. Положение и тайминг не меняются";
+        btnFinStyle.helpTip = "Шрифт, размер, цвет, обводка и эффекты текущего стиля: обычным словам — «Обычные», акцентам — «Акцент»";
+        btnFinDelete.helpTip = "Удаляет выбранные субтитры NOIR. Отмена — Ctrl+Z";
+
         // ================= Функции: счётчик, зачёркивание, маска =================
         var TL = S.tools;
         var STRIKE_DIRS = [{ id: "ltr", label: "Слева направо" }, { id: "rtl", label: "Справа налево" }, { id: "center", label: "От центра" }];
@@ -898,7 +939,8 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         if (TH && !options.headless) {
             var primary = [btnRecognize, btnGenerate, btnMakeAccent, btnCounter, btnStrike, btnMask];
             var ghost = [btnCancel, btnLoad, btnSave, btnReset, btnSavePreset, btnFromLayer, btnFontToLayers,
-                btnColor, btnStrokeColor, btnMakeBase, btnApply, btnInvert, btnReflow, btnAnimApply, btnStrikeColor, btnStrikeRemove, btnMaskRemove, btnSfxSelected, btnSfxRemove, btnSfxHere, btnSfxRescan, btnSfxFolder];
+                btnColor, btnStrokeColor, btnMakeBase, btnApply, btnInvert, btnReflow, btnAnimApply, btnStrikeColor, btnStrikeRemove, btnMaskRemove, btnSfxSelected, btnSfxRemove, btnSfxHere, btnSfxRescan, btnSfxFolder,
+                btnFinTop, btnFinMid, btnFinBottom, btnFinUp, btnFinDown, btnFinLeft, btnFinRight, btnFinReset, btnFinAnim, btnFinStyle, btnFinDelete];
             for (var bi = 0; bi < primary.length; bi++) TH.button(primary[bi], "primary");
             for (var gi = 0; gi < ghost.length; gi++) TH.button(ghost[gi], "ghost");
             btnGenerate.preferredSize.height = 32;
@@ -936,7 +978,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         etCoIvl.helpTip = "Как часто меняется число, с (0 — каждый кадр). Например 0.1 — десять смен в секунду";
         btnStrike.helpTip = "На каждый выделенный текстовый слой — полоса, которая «вытирается» поверх слова";
         btnMask.helpTip = "Выделите текстовые слои и (для режима «видео внутри букв») ещё один видео/фото слой. Текст станет маской";
-        cbReplace.helpTip = "Перед созданием удалить слои NOIR из прошлого запуска. Ваши слои не трогаются";
+        cbReplace.helpTip = "Перед созданием удалить прежние субтитры NOIR этого же аудиослоя. Субтитры других слоёв и ваши слои не трогаются";
         rbBase.helpTip = rbBase2.helpTip = "Настройки ниже относятся к обычным словам";
         rbAccent.helpTip = rbAccent2.helpTip = "Настройки ниже относятся к словам, которые вы выделили *звёздочками* на вкладке «Текст»";
 
@@ -1550,7 +1592,8 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
                     note: "Генерация в другую композицию: использовано время аудиослоя из исходной." };
             }
             var layer = null;
-            if (L.layerIndex <= comp.numLayers && comp.layer(L.layerIndex).name === L.layerName)
+            if (L.layerId) try { layer = comp.layerByID ? comp.layerByID(L.layerId) : null; } catch (eId) { layer = null; }
+            if (!layer && L.layerIndex <= comp.numLayers && comp.layer(L.layerIndex).name === L.layerName)
                 layer = comp.layer(L.layerIndex);
             for (var i = 1; !layer && i <= comp.numLayers; i++)
                 if (comp.layer(i).name === L.layerName) layer = comp.layer(i);
@@ -1605,6 +1648,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             var A = S.style.anim, i;
             for (i = 0; i < chipsIn.length; i++) { if (TH && !options.headless) TH.setChip(chipsIn[i], chipsIn[i]._id === A.animIn); }
             for (i = 0; i < chipsOut.length; i++) { if (TH && !options.headless) TH.setChip(chipsOut[i], chipsOut[i]._id === A.animOut); }
+            syncFinishAnim();
             stAnimCur.text = "Вход: " + N.findAnim(N.ANIM_IN, A.animIn).abbr + "   ·   Выход: " +
                 N.findAnim(N.ANIM_OUT, A.animOut).abbr;
         }
@@ -1687,6 +1731,105 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
 
         btnFontAll.onClick = function () {
             applyToLayers(state.target, {font: true}, false, "NOIR Captions: шрифт всем субтитрам", true);
+        };
+
+        // ----- 4 · Правка -----
+        function finishLayers() {
+            var comp = activeComp(), id = idOf(ddFinScope, FIN_SCOPES), out = [], i;
+            if (id === "selected") {
+                var sel = comp.selectedLayers;
+                for (i = 0; i < sel.length; i++) if (sel[i] instanceof TextLayer) out.push(sel[i]);
+                if (!out.length) throw new Error("Выделите в таймлайне текстовые слои или выберите «Субтитры этого видео».");
+                return { comp: comp, layers: out };
+            }
+            var key = null;
+            if (id === "source") {
+                if (!state.data) throw new Error("Панель не знает, какое это видео: распознайте речь или загрузите текст. Либо выберите «Выделенные слои».");
+                key = N.sourceKey(state.data, state.link);
+            }
+            for (i = 1; i <= comp.numLayers; i++) {
+                var l = comp.layer(i);
+                if (l instanceof TextLayer && N.isGenerated(l) && (!key || N.layerSource(l) === key)) out.push(l);
+            }
+            if (!out.length) throw new Error(key ? "В этой композиции нет субтитров этого видео." : "В композиции нет субтитров NOIR.");
+            return { comp: comp, layers: out };
+        }
+        function finishAction(undoName, fn) {
+            readUI();
+            var sel;
+            try { sel = finishLayers(); } catch (e) { alert(e.message, "NOIR Captions"); return; }
+            app.beginUndoGroup(undoName);
+            try { setStatus(fn(sel)); }
+            catch (e2) { alert("Ошибка: " + e2.toString() + (e2.line ? " (строка " + e2.line + ")" : ""), "NOIR Captions"); }
+            finally { app.endUndoGroup(); }
+        }
+        function finishPlace(yPct) {
+            finishAction("NOIR Captions: положение субтитров", function (sel) {
+                var r = N.moveBlocksTo(sel.comp, sel.layers, null, yPct);
+                return "Фраз перемещено: " + r.phrases;
+            });
+        }
+        btnFinTop.onClick = function () { finishPlace(25); };
+        btnFinMid.onClick = function () { finishPlace(50); };
+        btnFinBottom.onClick = function () { finishPlace(75); };
+        function finishNudge(kx, ky) {
+            var step = num(etFinStep.text, 20, 1, 2000);
+            finishAction("NOIR Captions: сдвиг субтитров", function (sel) {
+                var r = N.nudgeBlocks(sel.comp, sel.layers, kx * step, ky * step);
+                return "Сдвинуто фраз: " + r.phrases + " на " + step + " px";
+            });
+        }
+        btnFinUp.onClick = function () { finishNudge(0, -1); };
+        btnFinDown.onClick = function () { finishNudge(0, 1); };
+        btnFinLeft.onClick = function () { finishNudge(-1, 0); };
+        btnFinRight.onClick = function () { finishNudge(1, 0); };
+        btnFinReset.onClick = function () {
+            finishAction("NOIR Captions: исходные места", function (sel) {
+                return "Возвращено на исходные места слоёв: " + N.resetPositions(sel.layers);
+            });
+        };
+        var finSyncing = false;
+        function syncFinishAnim() {
+            finSyncing = true;
+            try {
+                selectId(ddFinIn, N.ANIM_IN, S.style.anim.animIn);
+                selectId(ddFinOut, N.ANIM_OUT, S.style.anim.animOut);
+            } finally { finSyncing = false; }
+        }
+        ddFinIn.onChange = ddFinOut.onChange = function () {
+            if (finSyncing) return;
+            S.style.anim.animIn = idOf(ddFinIn, N.ANIM_IN);
+            S.style.anim.animOut = idOf(ddFinOut, N.ANIM_OUT);
+            markCustom(); refreshChips(); saveSettings(S);
+        };
+        btnFinAnim.onClick = function () {
+            finishAction("NOIR Captions: анимация субтитров", function (sel) {
+                var r = N.restyleLayers(sel.comp, sel.layers, { style: null, safeWidth: S.style.layout.safeWidth, anim: S.style.anim });
+                return "Анимация применена к слоям: " + r.changed + " (" + N.findAnim(N.ANIM_IN, S.style.anim.animIn).abbr +
+                    " / " + N.findAnim(N.ANIM_OUT, S.style.anim.animOut).abbr + ")";
+            });
+        };
+        btnFinStyle.onClick = function () {
+            finishAction("NOIR Captions: стиль субтитров", function (sel) {
+                var acc = [], base = [], warnings = [], i;
+                for (i = 0; i < sel.layers.length; i++) (sel.layers[i].label === 11 ? acc : base).push(sel.layers[i]);
+                if (base.length) warnings = warnings.concat(N.restyleLayers(sel.comp, base, { style: S.style.base, accent: false, safeWidth: S.style.layout.safeWidth, anim: null }).warnings);
+                if (acc.length) warnings = warnings.concat(N.restyleLayers(sel.comp, acc, { style: S.style.accent, accent: true, safeWidth: S.style.layout.safeWidth, anim: null }).warnings);
+                var rf = S.reflow ? N.reflowGroups(sel.comp, sel.layers, S.style.layout) : { groups: 0 };
+                return "Стиль применён к слоям: " + sel.layers.length + (rf.groups ? ", фраз переложено: " + rf.groups : "") +
+                    (warnings.length ? "\n" + warnings.join("\n") : "");
+            });
+        };
+        btnFinDelete.onClick = function () {
+            var sel;
+            readUI();
+            try { sel = finishLayers(); } catch (e) { alert(e.message, "NOIR Captions"); return; }
+            if (!confirm("Удалить субтитры: " + sel.layers.length + " слоёв? Отмена — Ctrl+Z.", true, "NOIR Captions")) return;
+            app.beginUndoGroup("NOIR Captions: удалить субтитры");
+            try {
+                for (var i = 0; i < sel.layers.length; i++) { if (sel.layers[i].locked) sel.layers[i].locked = false; sel.layers[i].remove(); }
+                setStatus("Удалено слоёв: " + sel.layers.length);
+            } finally { app.endUndoGroup(); }
         };
 
         // ----- SFX -----
@@ -1906,7 +2049,11 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
                     var layer = comp.layer(oi), inf = N.groupInfo(layer);
                     if (inf && inf.sourceKey === N.sourceKey(state.data, state.link) && inf.segment === phraseIndex()) oldPhrase.push(layer);
                 }
-                var res = N.generate(comp, groups, outputStyle, outputStyle.anim, preview ? true : (phraseOnly ? false : S.replace));
+                // Ручные сдвиги фраз (мышью или вкладкой «Правка») переносятся на пересозданные слои.
+                var keepOffsets = !preview && (phraseOnly || S.replace) ? N.phraseOffsets(comp, N.sourceKey(state.data, state.link)) : {};
+                var res = N.generate(comp, groups, outputStyle, outputStyle.anim,
+                    preview ? true : (phraseOnly ? false : (S.replace ? N.sourceKey(state.data, state.link) : false)));
+                N.applyPhraseOffsets(res.made, keepOffsets);
                 if (phraseOnly) for (var ri = 0; ri < oldPhrase.length; ri++) oldPhrase[ri].remove();
                 if (preview) { comp.openInViewer(); setStatus("Превью создано отдельно. Пробел / Num 0 — воспроизведение. Ctrl+Z — убрать превью."); return; }
                 if (phraseOnly) state.cleanLines[phraseIndex()] = etText.text.replace(/\r\n?/g, "\n").split("\n")[phraseIndex()];
@@ -1963,7 +2110,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         win.minimumSize = [300, 200];
         win.onResizing = win.onResize = function () { this.layout.resize(); scroller.refresh(false); };
         var cepControls = {generate:btnGenerate,replace:cbReplace,status:stLine,advanced:cbAdvanced,
-            speechPage:tSpeech,textPage:tText,stylePage:tStyle,viewPage:tView,layoutPage:tLayout,animationPage:tAnim,layersPage:tLayers,toolsPage:tTools,sfxPage:tSfx,
+            speechPage:tSpeech,textPage:tText,stylePage:tStyle,finishPage:tFinish,viewPage:tView,layoutPage:tLayout,animationPage:tAnim,layersPage:tLayers,toolsPage:tTools,sfxPage:tSfx,
             language:ddLang,model:ddModel,device:ddDev,prompt:etPrompt,recognize:btnRecognize,cancel:btnCancel,load:btnLoad,progress:progress,
             editor:etText,save:btnSave,reset:btnReset,phrase:ddPhrase,prevPhrase:btnPrevPhrase,nextPhrase:btnNextPhrase,seek:btnSeekPhrase,updatePhrase:btnUpdatePhrase,
             wordsPrev:btnWordsBack,wordsNext:btnWordsNext,lineBreak:btnLineBreak,phraseBreak:btnPhraseBreak,editWord:btnEditWord,undoEdit:btnUndoEdit,listen:btnListen,
