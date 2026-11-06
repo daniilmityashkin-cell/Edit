@@ -181,6 +181,7 @@
     function renderLayout() {
         if(!view.body)return;
         MAIN_PAGES.forEach(function(role,index){if(roles[role])roles[role].el.hidden=ui.main!==index;});
+        if(view.stepName)view.stepName.textContent=["Видео","Текст","Стиль","Правка"][ui.main]+" · "+(ui.main+1)+"/4";
         if(view.heading)view.heading.textContent=["Ваше видео","Редактор текста","Галерея стилей","Правка субтитров"][ui.main];
         view.tabs.forEach(function(tab,index){tab.classList.toggle("tab-active",ui.main===index);tab.setAttribute("aria-selected",ui.main===index?"true":"false");});
         view.shell.classList.toggle("settings-open",ui.settings);view.drawer.hidden=!ui.settings;view.backdrop.hidden=!ui.settings;
@@ -258,7 +259,7 @@
         view.heading=element("h1","workspace-heading","Ваше видео",introduction);
         var mark=element("span","brand-mark","",brand);
         var logo=element("img","","",mark);logo.src="media/noir-mark.svg";logo.alt="";mark.setAttribute("aria-hidden","true");
-        brand.title="NOIR Captions · 0.14.0";brand.setAttribute("aria-label","NOIR Captions");
+        brand.title="NOIR Captions · 0.15.0";brand.setAttribute("aria-label","NOIR Captions");
         var primaryArea=element("div","primary-area","",header);
         view.primary=button("Распознать речь","create-action",primaryArea,function(){
             action(ui.main===0 || !workflow.hasData?"recognize":workflow.canUpdate?"updatePhrase":"generate");
@@ -270,7 +271,7 @@
         view.status=element("div","workflow-status","",statusRow);view.status.setAttribute("role","status");view.status.setAttribute("aria-live","polite");
         place("cancel",statusRow,"text-button");
         view.progress=element("div","recognition-progress","",stage);place("progress",view.progress);
-        var nav=element("nav","step-navigation tabs","",sidebar);nav.setAttribute("aria-label","Основные разделы");nav.setAttribute("role","tablist");
+        var nav=element("nav","step-navigation tabs dial","",sidebar);nav.setAttribute("aria-label","Основные разделы");nav.setAttribute("role","tablist");
         ["Видео","Текст","Стиль","Правка"].forEach(function(name,index){
             var tab=button("","step-tab",nav,function(){selectMain(index);});
             var icon=element("span","nav-icon","",tab);icon.setAttribute("aria-hidden","true");
@@ -281,7 +282,10 @@
             tab.onkeydown=function(event){if(event.key==="ArrowRight" || event.key==="ArrowLeft"){event.preventDefault();var count=view.tabs.length,next=(index+(event.key==="ArrowRight"?1:count-1))%count;selectMain(next);view.tabs[next].focus();}};
             view.tabs.push(tab);
         });
-        view.more=button("Настройки","more-button",nav,function(){if(ui.settings)closeSettings();else openSettings();});
+        mark.classList.add("dial-core");nav.appendChild(mark);
+        var dialFoot=element("div","dial-foot","",sidebar);
+        view.stepName=element("div","step-name","",dialFoot);view.stepName.setAttribute("aria-hidden","true");
+        view.more=button("Настройки","more-button",dialFoot,function(){if(ui.settings)closeSettings();else openSettings();});
         view.more.setAttribute("aria-controls","settings-drawer");view.more.setAttribute("aria-label","Настройки");
         var settingsIcon=element("span","nav-icon","");settingsIcon.setAttribute("aria-hidden","true");
         settingsIcon.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><path d="m9 3-.7 2.6-2.6.7L4 8.7l1.8 2L5 13.4l-1 1 1.8 3.1 2.5-.5 1.8 2H13l1.8-2 2.5.5 1.8-3.1-1.7-2.2.6-2.6-1.8-3.1-2.6.1L12 3H9Z"/><circle cx="11.5" cy="11.4" r="3"/></svg>';

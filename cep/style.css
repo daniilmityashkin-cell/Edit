@@ -1,5 +1,6 @@
+@font-face { font-family: 'Unbounded'; src: url('fonts/Unbounded.woff2') format('woff2'); font-weight: 200 900; font-display: swap; }
 @font-face { font-family: 'Open Sans'; src: url('fonts/OpenSans.woff2') format('woff2'); font-weight: 300 800; font-display: swap; }
-:root { color-scheme: dark; font: 12px 'Open Sans', 'Segoe UI', sans-serif; color: #f2edf1; background: #0d0a0e; --muted: #c0b6bf; --line: #d9c8d82b; --accent: #c49bbc; }
+:root { color-scheme: dark; font: 12px 'Open Sans', 'Segoe UI', sans-serif; color: #f2edf1; background: #0d0a0e; --muted: #c0b6bf; --line: #d9c8d82b; --accent: #c49bbc; --display: 'Unbounded', 'Open Sans', 'Segoe UI', sans-serif; }
 * { box-sizing: border-box; }
 html, body { height: 100%; margin: 0; overflow: hidden; }
 body { padding: 4px; background: #030304; }
@@ -98,3 +99,38 @@ button.create-action:hover { background: linear-gradient(115deg,#bd94b5,#96718f)
     .step-tab { min-height: 28px; padding-top: 4px; padding-bottom: 4px; }
     .more-button { margin-top: 4px; padding-top: 5px; padding-bottom: 5px; }
 }
+
+/* 0.15 — Unbounded for display text; круговая навигация (dial). Body text and fields stay Open Sans for density. */
+.workspace-heading,.card-heading,.step-name,button.create-action,.more-button,.settings-drawer h2,.eyebrow { font-family: var(--display); }
+.workspace-heading { font-size: 15px; font-weight: 500; letter-spacing: -.2px; }
+.card-heading { font-size: 11px; font-weight: 500; }
+button.create-action { font-size: 10px; font-weight: 500; letter-spacing: .2px; }
+.brand { display: none; }
+.sidebar { align-items: center; }
+.dial-foot { display: flex; flex-direction: column; align-items: center; gap: 4px; margin-top: 6px; }
+.step-name { font-size: 10px; font-weight: 500; letter-spacing: .6px; text-transform: uppercase; color: #efe3ee; white-space: nowrap; }
+.more-button { margin: 0; padding: 7px 12px; font-size: 9px; font-weight: 400; border: 1px solid #d9c8d82b; border-radius: 20px; justify-content: center; }
+.more-button .nav-icon { width: 13px; height: 13px; }
+.step-navigation.dial { --dial: 124px; --node: 36px; position: relative; display: block; flex: none; width: var(--dial); height: var(--dial); margin: 10px auto 0; padding: 0; border-radius: 50%; }
+.dial::before { content: ''; position: absolute; inset: 0; border-radius: 50%; background: repeating-conic-gradient(from -1deg, #d6c4d4b0 0 1.8deg, transparent 1.6deg 6deg); -webkit-mask: radial-gradient(circle, transparent 0 77%, #000 78%); mask: radial-gradient(circle, transparent 0 77%, #000 78%); pointer-events: none; }
+.dial::after { content: ''; position: absolute; inset: 17%; border-radius: 50%; border: 1px solid #d9c8d822; background: radial-gradient(circle at 50% 40%, #2a1b2b99, #0c090d00 70%), conic-gradient(from 45deg, #4ade8010, #a855f712, #facc1510, #3b82f612, #4ade8010); box-shadow: inset 0 0 18px #0009; pointer-events: none; }
+.dial .dial-core { position: absolute; z-index: 1; left: 50%; top: 50%; width: 38%; height: 38%; transform: translate(-50%,-50%); display: flex; align-items: center; justify-content: center; border-radius: 50%; background: radial-gradient(circle at 35% 28%, #ffffff26, #ffffff07 60%); border: 1px solid #ffffff22; box-shadow: 0 6px 18px #000a; }
+.dial .dial-core img { width: 62%; height: auto; }
+.dial .step-tab { --c: #4ade80; position: absolute; z-index: 2; translate: -50% -50%; width: var(--node); height: var(--node); min-height: 0; padding: 0; justify-content: center; gap: 0; border-radius: 50%; border: 1px solid #ffffff24; background: radial-gradient(circle at 35% 28%, #ffffff22, #ffffff08 62%), #14101a; color: #cfc2cf; box-shadow: 0 3px 10px #0008; transition: box-shadow 160ms, border-color 160ms, color 160ms, transform 160ms; }
+.dial .step-tab:nth-of-type(1) { left: 14.6%; top: 14.6%; --c: #4ade80; }
+.dial .step-tab:nth-of-type(2) { left: 85.4%; top: 14.6%; --c: #a855f7; }
+.dial .step-tab:nth-of-type(3) { left: 85.4%; top: 85.4%; --c: #facc15; }
+.dial .step-tab:nth-of-type(4) { left: 14.6%; top: 85.4%; --c: #3b82f6; }
+.dial .step-tab:hover { background-color: #14101a; border-color: var(--c); color: #fff; transform: scale(1.06); }
+.dial .step-tab.tab-active { color: var(--c); border-color: var(--c); background: radial-gradient(circle at 35% 28%, #ffffff30, #ffffff0c 62%), #181220; box-shadow: 0 0 16px color-mix(in srgb, var(--c) 55%, transparent), 0 3px 10px #0008; }
+.dial .nav-icon { display: block; width: 46%; height: 46%; }
+.dial .nav-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+@media(max-width:599px) {
+    .sidebar { gap: 12px; justify-content: flex-start; }
+    .step-navigation.dial { --dial: 84px; --node: 28px; margin: 0; }
+    .dial-foot { align-items: flex-start; margin: 0; gap: 7px; }
+    .step-name { font-size: 11px; }
+    .more-button { margin: 0; padding: 6px 11px; font-size: 9px; }
+    .workspace-heading { font-size: 14px; }
+}
+@media(min-width:600px) and (max-height:520px) { .step-navigation.dial { --dial: 92px; --node: 30px; margin-top: 4px; } }

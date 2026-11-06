@@ -53,7 +53,7 @@ var NOIR_CEP = (function () {
     function snapshot(full) {
         // No wrapping below the main tabs. HTML supplies horizontal overflow if necessary.
         // HTML owns layout; polling must never rebuild native dropdowns or repaint tabs.
-        var result = {full:!!full,nodes:[],version:"0.14.0",workflow:win._cep.workflow()};
+        var result = {full:!!full,nodes:[],version:"0.15.0",workflow:win._cep.workflow()};
         walk(win, null, result);
         return NOIR.stringify(result);
     }

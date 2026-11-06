@@ -1,14 +1,11 @@
-# Open Sans
+# Interface fonts
 
-`OpenSans.woff2` is bundled locally for the HTML interface. It contains the full
-character map (including Cyrillic) and the original variable font axes; subtitle
-fonts in After Effects are selected separately by the user's style settings.
+Both fonts are bundled locally for the HTML interface (no runtime download).
 
-Source: Google Fonts, `ofl/opensans/OpenSans[wdth,wght].ttf`:
-https://github.com/google/fonts/tree/main/ofl/opensans
+- `Unbounded.woff2` — display font (headings, step name, main buttons). Source: Google Fonts
+  `ofl/unbounded/Unbounded[wght].ttf`, subset to Latin + Cyrillic + punctuation/arrows and repackaged
+  as WOFF2 with fontTools (variable `wght` axis kept). License: SIL OFL 1.1, `OFL-Unbounded.txt`.
+- `OpenSans.woff2` — body text and form fields. Source: `ofl/opensans/OpenSans[wdth,wght].ttf`. License: `OFL.txt`.
 
-License: SIL Open Font License 1.1, included as `OFL.txt`.
-
-The source TTF (532,636 bytes) was losslessly repackaged to WOFF2 (280,520 bytes)
-with fontTools and Brotli. Glyph mappings were compared before and after packing.
-There is no runtime font download or conversion step.
+Subtitle fonts in After Effects are selected separately by the user's style settings.
+To use Unbounded for all interface text, set `font-family: var(--display)` on `:root` in `style.css`.
