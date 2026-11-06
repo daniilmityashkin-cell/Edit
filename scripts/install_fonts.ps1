@@ -1,48 +1,49 @@
 <#
- NOIR Captions: установка кириллических шрифтов для субтитров (Windows, без прав администратора).
- Шрифты — свободные (SIL Open Font License) из репозитория Google Fonts. Ставятся для текущего пользователя
- в %LOCALAPPDATA%\Microsoft\Windows\Fonts. Уже установленные пропускаются. После установки перезапустите After Effects.
+ NOIR Captions: install Cyrillic fonts for subtitles (Windows, no administrator rights needed).
+ Fonts are free (SIL Open Font License) from the Google Fonts repository. They are installed for the current user
+ into %LOCALAPPDATA%\Microsoft\Windows\Fonts. Fonts that are already installed are skipped. Restart After Effects afterwards.
 
- Запуск из папки проекта:
+ Run from the project folder:
    powershell -ExecutionPolicy Bypass -File scripts\install_fonts.ps1
- Только показать список, ничего не скачивая:
+ Only list the fonts, download nothing:
    powershell -ExecutionPolicy Bypass -File scripts\install_fonts.ps1 -List
+ (This file is ASCII-only on purpose: Windows PowerShell 5 reads files without BOM as ANSI.)
 #>
 param([switch]$List)
 $ErrorActionPreference = 'Stop'
 $base = 'https://raw.githubusercontent.com/google/fonts/main/ofl'
-# папка | файл | подпись в реестре | для чего
+# folder | file | registry name | purpose
 $fonts = @(
-  @('montserrat','Montserrat[wght].ttf','Montserrat','основной гротеск, подписи'),
-  @('montserrat','Montserrat-Italic[wght].ttf','Montserrat Italic','курсивный гротеск'),
-  @('playfairdisplay','PlayfairDisplay[wght].ttf','Playfair Display','антиква, заголовки'),
-  @('playfairdisplay','PlayfairDisplay-Italic[wght].ttf','Playfair Display Italic','золотой/серебряный курсив'),
-  @('inter','Inter[opsz,wght].ttf','Inter','нейтральный гротеск'),
-  @('roboto','Roboto[wdth,wght].ttf','Roboto','нейтральный гротеск'),
-  @('opensans','OpenSans[wdth,wght].ttf','Open Sans','нейтральный гротеск'),
-  @('manrope','Manrope[wght].ttf','Manrope','современный гротеск'),
-  @('onest','Onest[wght].ttf','Onest','современный гротеск'),
-  @('raleway','Raleway[wght].ttf','Raleway','элегантный гротеск'),
-  @('rubik','Rubik[wght].ttf','Rubik','округлый гротеск'),
-  @('oswald','Oswald[wght].ttf','Oswald','узкий, плакатный'),
-  @('bebasneue','BebasNeue-Regular.ttf','Bebas Neue','узкий капс'),
-  @('russoone','RussoOne-Regular.ttf','Russo One','техно, жирный'),
-  @('exo2','Exo2[wght].ttf','Exo 2','техно'),
-  @('unbounded','Unbounded[wght].ttf','Unbounded','широкий дисплейный'),
-  @('comfortaa','Comfortaa[wght].ttf','Comfortaa','округлый'),
-  @('lora','Lora[wght].ttf','Lora','книжная антиква'),
-  @('lora','Lora-Italic[wght].ttf','Lora Italic','книжный курсив'),
-  @('cormorant','Cormorant[wght].ttf','Cormorant','изящная антиква'),
-  @('cormorant','Cormorant-Italic[wght].ttf','Cormorant Italic','изящный курсив'),
-  @('notoserifdisplay','NotoSerifDisplay[wdth,wght].ttf','Noto Serif Display','контрастная антиква'),
-  @('philosopher','Philosopher-Regular.ttf','Philosopher','антиква с характером'),
-  @('philosopher','Philosopher-BoldItalic.ttf','Philosopher Bold Italic','жирный курсив'),
-  @('ptserif','PT_Serif-Web-Regular.ttf','PT Serif','антиква'),
-  @('ptsans','PT_Sans-Web-Regular.ttf','PT Sans','гротеск'),
-  @('lobster','Lobster-Regular.ttf','Lobster','рукописный'),
-  @('pacifico','Pacifico-Regular.ttf','Pacifico','рукописный'),
-  @('caveat','Caveat[wght].ttf','Caveat','рукописный'),
-  @('marckscript','MarckScript-Regular.ttf','Marck Script','каллиграфия')
+  @('montserrat','Montserrat[wght].ttf','Montserrat','main sans, captions'),
+  @('montserrat','Montserrat-Italic[wght].ttf','Montserrat Italic','italic sans'),
+  @('playfairdisplay','PlayfairDisplay[wght].ttf','Playfair Display','serif, headlines'),
+  @('playfairdisplay','PlayfairDisplay-Italic[wght].ttf','Playfair Display Italic','gold/silver italic accents'),
+  @('inter','Inter[opsz,wght].ttf','Inter','neutral sans'),
+  @('roboto','Roboto[wdth,wght].ttf','Roboto','neutral sans'),
+  @('opensans','OpenSans[wdth,wght].ttf','Open Sans','neutral sans'),
+  @('manrope','Manrope[wght].ttf','Manrope','modern sans'),
+  @('onest','Onest[wght].ttf','Onest','modern sans'),
+  @('raleway','Raleway[wght].ttf','Raleway','elegant sans'),
+  @('rubik','Rubik[wght].ttf','Rubik','rounded sans'),
+  @('oswald','Oswald[wght].ttf','Oswald','condensed, poster'),
+  @('bebasneue','BebasNeue-Regular.ttf','Bebas Neue','condensed caps'),
+  @('russoone','RussoOne-Regular.ttf','Russo One','tech, bold'),
+  @('exo2','Exo2[wght].ttf','Exo 2','tech'),
+  @('unbounded','Unbounded[wght].ttf','Unbounded','wide display'),
+  @('comfortaa','Comfortaa[wght].ttf','Comfortaa','rounded'),
+  @('lora','Lora[wght].ttf','Lora','book serif'),
+  @('lora','Lora-Italic[wght].ttf','Lora Italic','book italic'),
+  @('cormorant','Cormorant[wght].ttf','Cormorant','elegant serif'),
+  @('cormorant','Cormorant-Italic[wght].ttf','Cormorant Italic','elegant italic'),
+  @('notoserifdisplay','NotoSerifDisplay[wdth,wght].ttf','Noto Serif Display','high-contrast serif'),
+  @('philosopher','Philosopher-Regular.ttf','Philosopher','characterful serif'),
+  @('philosopher','Philosopher-BoldItalic.ttf','Philosopher Bold Italic','bold italic'),
+  @('ptserif','PT_Serif-Web-Regular.ttf','PT Serif','serif'),
+  @('ptsans','PT_Sans-Web-Regular.ttf','PT Sans','sans'),
+  @('lobster','Lobster-Regular.ttf','Lobster','handwritten'),
+  @('pacifico','Pacifico-Regular.ttf','Pacifico','handwritten'),
+  @('caveat','Caveat[wght].ttf','Caveat','handwritten'),
+  @('marckscript','MarckScript-Regular.ttf','Marck Script','calligraphy')
 )
 if ($List) { $fonts | ForEach-Object { '{0,-26} {1}' -f $_[2], $_[3] }; return }
 
@@ -52,7 +53,7 @@ $reg = 'HKCU:\Software\Microsoft\Windows NT\CurrentVersion\Fonts'
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 $installed = 0; $skipped = 0; $failed = @()
 foreach ($f in $fonts) {
-  $name = $f[1] -replace '[\[\],]', '_'      # безопасное имя файла: Montserrat[wght].ttf -> Montserrat_wght_.ttf
+  $name = $f[1] -replace '[\[\],]', '_'      # safe file name: Montserrat[wght].ttf -> Montserrat_wght_.ttf
   $target = Join-Path $dir $name
   if (Test-Path $target) { $skipped++; continue }
   $url = "$base/$($f[0])/" + [Uri]::EscapeDataString($f[1])
@@ -61,7 +62,7 @@ foreach ($f in $fonts) {
     Invoke-WebRequest -Uri $url -OutFile $tmp -UseBasicParsing
     $bytes = [IO.File]::ReadAllBytes($tmp)
     $magic = ($bytes[0..3] | ForEach-Object { $_.ToString('X2') }) -join ''
-    if ($bytes.Length -lt 20000 -or ($magic -ne '00010000' -and $magic -ne '74727565')) { throw "не похоже на шрифт TrueType ($($bytes.Length) байт)" }
+    if ($bytes.Length -lt 20000 -or ($magic -ne '00010000' -and $magic -ne '74727565')) { throw "not a TrueType font ($($bytes.Length) bytes)" }
     Move-Item -Force $tmp $target
     New-ItemProperty -Path $reg -Name ($f[2] + ' (TrueType)') -Value $target -PropertyType String -Force | Out-Null
     $installed++
@@ -72,7 +73,7 @@ foreach ($f in $fonts) {
   }
 }
 Write-Host ''
-Write-Host ("Установлено: {0}, уже было: {1}, ошибок: {2}" -f $installed, $skipped, $failed.Count)
+Write-Host ("Installed: {0}, already present: {1}, errors: {2}" -f $installed, $skipped, $failed.Count)
 $failed | ForEach-Object { Write-Host ("  ! " + $_) }
-Write-Host 'Перезапустите After Effects, чтобы шрифты появились в списках.'
-Write-Host 'Лицензия шрифтов: SIL Open Font License 1.1 (авторские права принадлежат авторам шрифтов, см. github.com/google/fonts).'
+Write-Host 'Restart After Effects so the fonts appear in its lists.'
+Write-Host 'Font license: SIL Open Font License 1.1 (see github.com/google/fonts).'
