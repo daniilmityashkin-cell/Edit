@@ -10,6 +10,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
 
 (function (N) {
     N.LAYER_TAG = "noir-captions:generated";
+    N.PIVOT_BASELINE = true;   // true: аниматор вращает/масштабирует вокруг базовой линии текста — компенсируем (см. withPivotComp)
     N.REF_WIDTH = 1080; // размеры в стилях заданы для кадра шириной 1080
 
     // Анимации описаны состоянием «вне кадра»: op — прозрачность (0 = невидим),
@@ -136,6 +137,9 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         clearLetterAnimators(layer);
         clearKeysOf(pos);
         pos.setValue(base);
+        if (sc.numKeys > 0) { clearKeysOf(sc); sc.setValue([100, 100, 100]); }       // слои старых версий хранили анимацию ключами
+        if (rot.numKeys > 0) { clearKeysOf(rot); rot.setValue(0); }
+        clearKeysOf(op);
         op.setValue(opts.opacity);
 
         var inDur = animIn.id === "none" ? 0 : opts.inDur;
@@ -153,38 +157,106 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         var from = stateValues(animIn, base, opts);
         var to = stateValues(animOut, base, opts);
         var t1 = t0 + inDur, t2 = t3 - outDur;
+        var inten = opts.intensity === undefined ? 1 : opts.intensity;
 
-        function keys(prop, vFrom, vNorm, vTo, overshoot) {
-            if (!prop) return;
+        // План ключей: список [время, значение] или null, если свойство не меняется.
+        function plan(vFrom, vNorm, vTo, overshoot) {
             var changesIn = inDur && String(vFrom) !== String(vNorm);
             var changesOut = outDur && String(vTo) !== String(vNorm);
-            if (!changesIn && !changesOut && !(inDur && overshoot)) return;
+            if (!changesIn && !changesOut && !(inDur && overshoot)) return null;
+            var list = [];
             if (inDur && (changesIn || overshoot)) {
-                prop.setValueAtTime(t0, vFrom);
-                if (overshoot) prop.setValueAtTime(t0 + inDur * 0.6, overshoot);
-                prop.setValueAtTime(t1, vNorm);
+                list.push([t0, vFrom]);
+                if (overshoot) list.push([t0 + inDur * 0.6, overshoot]);
+                list.push([t1, vNorm]);
             }
-            if (changesOut) {
-                prop.setValueAtTime(t2, vNorm);
-                prop.setValueAtTime(t3, vTo);
-            }
+            if (changesOut) { list.push([t2, vNorm]); list.push([t3, vTo]); }
+            return list;
+        }
+        function put(prop, list) {
+            if (!prop || !list) return;
+            for (var i = 0; i < list.length; i++) prop.setValueAtTime(list[i][0], list[i][1]);
             easeAll(prop, opts.easeInfluence);
         }
-
-        keys(op, from.op, opts.opacity, to.op, null);
-        keys(sc, [from.sc, from.sc, 100], [100, 100, 100], [to.sc, to.sc, 100],
-            animIn.over ? [100 + (animIn.over - 100) * (opts.intensity === undefined ? 1 : opts.intensity), 100 + (animIn.over - 100) * (opts.intensity === undefined ? 1 : opts.intensity), 100] : null);
-        // Сдвиг входа/выхода — относительным текстовым аниматором «NOIR Move», а не ключами Position слоя:
-        // слой остаётся без ключей позиции, и его можно свободно двигать мышью или панелью.
+        var over = animIn.over ? 100 + (animIn.over - 100) * inten : null;
         var dIn = [from.pos[0] - base[0], from.pos[1] - base[1], 0], dOut = [to.pos[0] - base[0], to.pos[1] - base[1], 0];
-        if ((inDur && (dIn[0] || dIn[1])) || (outDur && (dOut[0] || dOut[1]))) {
-            var moveProp = addMoveAnimator(layer);
-            if (moveProp) keys(moveProp, dIn, [0, 0, 0], dOut, null);
-            else keys(pos, from.pos, base, to.pos, null);   // AE не дал создать аниматор — как раньше
+
+        // Масштаб, поворот, прозрачность и сдвиг входа/выхода живут в текстовом аниматоре «NOIR Move», а не в ключах слоя:
+        // у Position/Scale/Rotation/Opacity слоя ключей нет, и их можно свободно менять в окне композиции.
+        // Относительные значения аниматора: прозрачность 100 = как у слоя, масштаб 100 = без изменения.
+        var rel = {
+            op: plan(animIn.op === undefined ? 100 : animIn.op, 100, animOut.op === undefined ? 100 : animOut.op, null),
+            sc: plan([from.sc, from.sc, 100], [100, 100, 100], [to.sc, to.sc, 100], over ? [over, over, 100] : null),
+            pos: plan(dIn, [0, 0, 0], dOut, null),
+            rot: plan(from.rot, 0, to.rot, null)
+        };
+        var holder = (rel.op || rel.sc || rel.pos || rel.rot) ? addMoveAnimator(layer) : null;
+        if (holder) {
+            if (rel.sc || rel.rot) setAnchorGrouping(layer);
+            // Аниматор вращает/масштабирует вокруг базовой линии текста, а слой — вокруг центра рамки текста.
+            // Разницу гасит вертикальный сдвиг в ключах позиции аниматора (N.PIVOT_BASELINE = false отключает).
+            var pivotDy = 0;
+            if (N.PIVOT_BASELINE && (rel.sc || rel.rot)) {
+                var rect = layer.sourceRectAtTime(Math.max(0, t0), false);
+                pivotDy = -(rect.top + rect.height / 2);
+            }
+            var posList = rel.pos;
+            if (pivotDy && (rel.sc || rel.rot)) posList = withPivotComp(rel.pos, rel.sc, rel.rot, pivotDy);
+            if (rel.op) put(holder.addProperty("ADBE Text Opacity"), rel.op);
+            if (rel.sc) put(holder.addProperty("ADBE Text Scale 3D"), rel.sc);
+            if (rel.rot) put(holder.addProperty("ADBE Text Rotation"), rel.rot);
+            if (posList) put(holder.addProperty("ADBE Text Position 3D"), posList);
+        } else if (rel.op || rel.sc || rel.pos || rel.rot) {
+            // AE не дал создать аниматор — прежний способ: ключи самого слоя.
+            put(op, plan(from.op, opts.opacity, to.op, null));
+            put(sc, plan([from.sc, from.sc, 100], [100, 100, 100], [to.sc, to.sc, 100], over ? [over, over, 100] : null));
+            put(pos, plan(from.pos, base, to.pos, null));
+            put(rot, plan(from.rot, 0, to.rot, null));
         }
-        keys(blurProp, from.blur, 0, to.blur, null);
-        keys(rot, from.rot, 0, to.rot, null);
+        put(blurProp, plan(from.blur, 0, to.blur, null));
     };
+
+    // Значение списка ключей [[t, v], ...] в момент t: линейная интерполяция; v — число или массив.
+    function listAt(list, t, fallback) {
+        if (!list || !list.length) return fallback;
+        if (t <= list[0][0]) return list[0][1];
+        for (var i = 1; i < list.length; i++) {
+            if (t <= list[i][0]) {
+                var a = list[i - 1], b = list[i], f = b[0] === a[0] ? 1 : (t - a[0]) / (b[0] - a[0]);
+                if (typeof a[1] === "number") return a[1] + (b[1] - a[1]) * f;
+                var out = [];
+                for (var k = 0; k < a[1].length; k++) out.push(a[1][k] + (b[1][k] - a[1][k]) * f);
+                return out;
+            }
+        }
+        return list[list.length - 1][1];
+    }
+
+    // Ключи позиции аниматора = собственный сдвиг + компенсация смещения центра при масштабе/повороте вокруг базовой линии.
+    // v — вектор от точки вращения (базовая линия) к центру рамки; после масштаба k и поворота θ центр смещается на (R·S − I)·v.
+    function withPivotComp(posList, scList, rotList, dy) {
+        var times = [], i, j, all = [posList, scList, rotList];
+        for (i = 0; i < all.length; i++) if (all[i]) for (j = 0; j < all[i].length; j++) times.push(all[i][j][0]);
+        times.sort(function (x, y) { return x - y; });
+        var out = [], vy = -dy, last = null;
+        for (i = 0; i < times.length; i++) {
+            var t = times[i];
+            if (last !== null && Math.abs(t - last) < 1e-9) continue;
+            last = t;
+            var p = listAt(posList, t, [0, 0, 0]), k = listAt(scList, t, [100, 100, 100])[0] / 100, th = listAt(rotList, t, 0) * Math.PI / 180;
+            out.push([t, [p[0] + k * vy * Math.sin(th), p[1] + vy * (1 - k * Math.cos(th)), 0]]);
+        }
+        return out;
+    }
+
+    // Масштаб и поворот аниматора считаются вокруг якоря группы: «All» с выравниванием 0,0 — вся надпись как одно целое.
+    function setAnchorGrouping(layer) {
+        try {
+            var more = layer.property("ADBE Text Properties").property("ADBE Text More Options");
+            more.property("ADBE Text Anchor Point Option").setValue(4);
+            more.property("ADBE Text Anchor Point Align").setValue([0, 0]);
+        } catch (e) {}
+    }
 
     function clearKeysOf(prop) { while (prop.numKeys > 0) prop.removeKey(1); }
 
@@ -204,7 +276,8 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         try {
             var an = layer.property("ADBE Text Properties").property("ADBE Text Animators").addProperty("ADBE Text Animator");
             an.name = "NOIR Move";
-            return an.property("ADBE Text Animator Properties").addProperty("ADBE Text Position 3D");
+            try { an.property("ADBE Text Selectors").addProperty("ADBE Text Selector"); } catch (eSel) {}   // диапазон 0–100% = весь текст
+            return an.property("ADBE Text Animator Properties");
         } catch (e) { return null; }
     }
 
@@ -714,6 +787,68 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         return { changed: n, phrases: rf.groups };
     };
 
+    // ---------- время: сдвиг и подрезка слоёв вместе с их анимацией ----------
+
+    // Обходит все свойства группы (аниматоры, эффекты, трансформ) и вызывает fn для каждого свойства с ключами.
+    function walkProps(group, fn, depth) {
+        if (!group || (depth || 0) > 6) return;
+        var n = typeof group.numProperties === "number" ? group.numProperties : 0, i;
+        for (i = 1; i <= n; i++) {
+            var p = group.property(i);
+            if (!p) continue;
+            if (typeof p.numProperties === "number" && p.numProperties > 0) walkProps(p, fn, (depth || 0) + 1);
+            else if (p.numKeys > 0) fn(p);
+        }
+    }
+
+    // Ключи в первой половине жизни слоя — вход (сдвигаются за началом), во второй — выход (за концом).
+    function shiftKeys(prop, mid, dIn, dOut, influence) {
+        var list = [], i;
+        for (i = 1; i <= prop.numKeys; i++) list.push([prop.keyTime(i), prop.keyValue(i)]);
+        while (prop.numKeys > 0) prop.removeKey(1);
+        for (i = 0; i < list.length; i++) prop.setValueAtTime(list[i][0] + (list[i][0] < mid ? dIn : dOut), list[i][1]);
+        easeAll(prop, influence || 80);
+    }
+
+    // Новое начало/конец слоя (в секундах композиции). Анимация входа едет за началом, выхода — за концом;
+    // слой не делается короче, чем нужно для обеих анимаций. Возвращает {inPoint, outPoint}.
+    N.retimeLayer = function (layer, comp, dIn, dOut) {
+        var oldIn = layer.inPoint, oldOut = layer.outPoint, minDur = Math.max(comp.frameDuration * 2, 0.04);
+        var tmid = (oldIn + oldOut) / 2 - layer.startTime, inSpan = 0, outSpan = 0;
+        walkProps(layer, function (prop) {
+            for (var i = 1; i <= prop.numKeys; i++) {
+                var t = prop.keyTime(i);
+                if (t < tmid) inSpan = Math.max(inSpan, t + layer.startTime - oldIn); else outSpan = Math.max(outSpan, oldOut - (t + layer.startTime));
+            }
+        });
+        var need = inSpan + outSpan + minDur, pure = Math.abs(dIn - dOut) < 1e-12;
+        var newIn = Math.max(0, oldIn + dIn), newOut = Math.min(comp.duration, oldOut + dOut);
+        if (pure) {          // чистый сдвиг: длительность не меняется, величина ограничивается краями композиции
+            var d = Math.max(-oldIn, Math.min(comp.duration - oldOut, dIn));
+            newIn = oldIn + d; newOut = oldOut + d;
+        } else if (newOut - newIn < need) {
+            if (dIn && !dOut) newIn = newOut - need; else if (dOut && !dIn) newOut = newIn + need;
+            else { var c = (newIn + newOut) / 2; newIn = c - need / 2; newOut = c + need / 2; }
+        }
+        if (!pure) { newIn = Math.max(0, newIn); newOut = Math.min(comp.duration, Math.max(newOut, newIn + minDur)); }
+        var eIn = newIn - oldIn, eOut = newOut - oldOut;
+        if (Math.abs(eIn) < 1e-9 && Math.abs(eOut) < 1e-9) return { inPoint: oldIn, outPoint: oldOut };
+        walkProps(layer, function (prop) { shiftKeys(prop, tmid, eIn, eOut, 80); });
+        if (newIn >= layer.outPoint) { layer.outPoint = newOut; layer.inPoint = newIn; }
+        else { layer.inPoint = newIn; layer.outPoint = newOut; }
+        return { inPoint: layer.inPoint, outPoint: layer.outPoint };
+    };
+
+    // spec: { shift, dIn, dOut } в секундах. Сдвиг = и начало, и конец на одну величину.
+    N.retimeLayers = function (comp, layers, spec) {
+        var n = 0;
+        for (var i = 0; i < layers.length; i++) {
+            if (layers[i].locked) continue;
+            N.retimeLayer(layers[i], comp, (spec.shift || 0) + (spec.dIn || 0), (spec.shift || 0) + (spec.dOut || 0)); n++;
+        }
+        return { changed: n };
+    };
+
     // Вернуть слои туда, куда их поставил генератор (снять ручные сдвиги).
     N.resetPositions = function (layers) {
         var n = 0;
@@ -842,11 +977,12 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             if (op.numKeys === 0) restOpacity = op.value;
             else for (ki = 1; ki <= op.numKeys; ki++) if (op.keyValue(ki) > restOpacity) restOpacity = op.keyValue(ki);
             if (restOpacity <= 0) restOpacity = 100;
+            var hadSc = sc.numKeys > 0, hadRot = rot.numKeys > 0;      // ручной Scale/Rotation без ключей не трогаем
             clearKeys(pos); clearKeys(sc); clearKeys(op); clearKeys(rot);
             pos.setValue(base);
-            sc.setValue([100, 100, 100]);
+            if (hadSc) sc.setValue([100, 100, 100]);
             op.setValue(restOpacity);
-            rot.setValue(0);
+            if (hadRot) rot.setValue(0);
             clearEffect(layer, "NOIR Blur");
             var a = {};
             for (var k in spec.anim) a[k] = spec.anim[k];

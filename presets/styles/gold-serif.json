@@ -1,0 +1,109 @@
+{
+ "schema": "noir-style/1",
+ "id": "gold-serif",
+ "name": "Gold Serif (золотой курсив + мелкая подпись)",
+ "description": "Крупное слово-акцент золотой курсивной антиквой и мелкая белая подпись над/под ним. Главное слово фразы выбирается автоматически.",
+ "layout": {
+  "reveal": "group",
+  "maxWords": 5,
+  "maxChars": 34,
+  "lineChars": 0,
+  "pauseBreak": 0.4,
+  "punctBreak": true,
+  "stripPunct": true,
+  "autoAccent": true,
+  "posX": 50,
+  "posY": 64,
+  "lineGap": 0.03,
+  "wordSpace": 0.24,
+  "accentOwnLine": true,
+  "safeWidth": 0.9,
+  "holdGap": 0.3
+ },
+ "base": {
+  "fonts": [
+   "Montserrat-SemiBold",
+   "Montserrat-Bold",
+   "Inter-SemiBold",
+   "Roboto-Medium",
+   "SegoeUI-Semibold",
+   "ArialMT"
+  ],
+  "size": 50,
+  "color": [
+   1,
+   1,
+   1
+  ],
+  "tracking": 0,
+  "caps": false,
+  "strokeWidth": 0,
+  "strokeColor": [
+   0,
+   0,
+   0
+  ],
+  "shadow": {
+   "color": [
+    0,
+    0,
+    0
+   ],
+   "opacity": 55,
+   "distance": 3,
+   "softness": 14
+  },
+  "glow": null
+ },
+ "accent": {
+  "fonts": [
+   "PlayfairDisplay-BoldItalic",
+   "PlayfairDisplay-Italic",
+   "BodoniModa-BoldItalic",
+   "Georgia-BoldItalic",
+   "TimesNewRomanPS-BoldItalicMT"
+  ],
+  "size": 170,
+  "color": [
+   0.93,
+   0.72,
+   0.16
+  ],
+  "tracking": -6,
+  "caps": false,
+  "strokeWidth": 0,
+  "strokeColor": [
+   0,
+   0,
+   0
+  ],
+  "shadow": {
+   "color": [
+    0.1,
+    0.05,
+    0
+   ],
+   "opacity": 60,
+   "distance": 5,
+   "softness": 16
+  },
+  "glow": {
+   "color": [
+    0.95,
+    0.7,
+    0.1
+   ],
+   "opacity": 35,
+   "softness": 22
+  }
+ },
+ "anim": {
+  "animIn": "blurRise",
+  "inDur": 0.36,
+  "animOut": "fade",
+  "outDur": 0.2,
+  "distance": 36,
+  "blur": 14,
+  "easeInfluence": 80
+ }
+}

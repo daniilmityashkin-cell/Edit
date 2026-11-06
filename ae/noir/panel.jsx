@@ -7,7 +7,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
 (function (N) {
     var SECTION = "NOIR Captions";
     var SETTINGS_KEY = "settings.v2";
-    var VERSION = "0.15.1";
+    var VERSION = "0.16.0";
 
     function clone(o) { return N.parseJSON(N.stringify(o)); }
 
@@ -737,6 +737,26 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         var btnFinBigger = rFinSize.add("button", undefined, "A+");
         btnFinSmaller.preferredSize = btnFinBigger.preferredSize = [36, 22];
         btnFinSmaller.helpTip = btnFinBigger.helpTip = "Меняет размер шрифта (не Scale слоя), поэтому ключевые кадры не создаются. Фразы перекладываются вокруг прежнего центра";
+        var pnlFinTime = tFinish.add("panel", undefined, "Время");
+        pnlFinTime.alignChildren = ["fill", "top"]; pnlFinTime.margins = [6, 12, 6, 6]; pnlFinTime.spacing = 3;
+        var rFinTimeStep = row(pnlFinTime, "Шаг, с", 60);
+        var etFinTimeStep = field(rFinTimeStep, 0.1, 4, { min: 0.01, max: 30, step: 0.01, dec: 2, name: "Шаг времени, с" });
+        var rFinShift = row(pnlFinTime, "Сдвиг", 60);
+        var btnFinEarlier = rFinShift.add("button", undefined, "◀ раньше");
+        var btnFinLater = rFinShift.add("button", undefined, "позже ▶");
+        var rFinStart = row(pnlFinTime, "Начало", 60);
+        var btnFinStartEarlier = rFinStart.add("button", undefined, "−");
+        var btnFinStartLater = rFinStart.add("button", undefined, "+");
+        var rFinEnd = row(pnlFinTime, "Конец", 60);
+        var btnFinEndEarlier = rFinEnd.add("button", undefined, "−");
+        var btnFinEndLater = rFinEnd.add("button", undefined, "+");
+        var finTimeButtons = [btnFinStartEarlier, btnFinStartLater, btnFinEndEarlier, btnFinEndLater];
+        for (var ft = 0; ft < finTimeButtons.length; ft++) finTimeButtons[ft].preferredSize = [40, 22];
+        btnFinEarlier.helpTip = btnFinLater.helpTip = "Двигает выбранные субтитры по времени целиком вместе с анимацией";
+        btnFinStartEarlier.helpTip = "Субтитр появляется раньше. Анимация входа едет за началом";
+        btnFinStartLater.helpTip = "Субтитр появляется позже";
+        btnFinEndEarlier.helpTip = "Субтитр исчезает раньше. Анимация выхода едет за концом";
+        btnFinEndLater.helpTip = "Субтитр держится дольше";
         var pnlFinAnim = tFinish.add("panel", undefined, "Анимация");
         pnlFinAnim.alignChildren = ["fill", "top"]; pnlFinAnim.margins = [6, 12, 6, 6]; pnlFinAnim.spacing = 3;
         var ddFinIn = dropdown(row(pnlFinAnim, "Появление", 70), N.ANIM_IN, S.style.anim.animIn);
@@ -946,7 +966,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             var primary = [btnRecognize, btnGenerate, btnMakeAccent, btnCounter, btnStrike, btnMask];
             var ghost = [btnCancel, btnLoad, btnSave, btnReset, btnSavePreset, btnFromLayer, btnFontToLayers,
                 btnColor, btnStrokeColor, btnMakeBase, btnApply, btnInvert, btnReflow, btnAnimApply, btnStrikeColor, btnStrikeRemove, btnMaskRemove, btnSfxSelected, btnSfxRemove, btnSfxHere, btnSfxRescan, btnSfxFolder,
-                btnFinTop, btnFinMid, btnFinBottom, btnFinUp, btnFinDown, btnFinLeft, btnFinRight, btnFinSmaller, btnFinBigger, btnFinReset, btnFinAnim, btnFinStyle, btnFinDelete];
+                btnFinTop, btnFinMid, btnFinBottom, btnFinUp, btnFinDown, btnFinLeft, btnFinRight, btnFinSmaller, btnFinBigger, btnFinEarlier, btnFinLater, btnFinStartEarlier, btnFinStartLater, btnFinEndEarlier, btnFinEndLater, btnFinReset, btnFinAnim, btnFinStyle, btnFinDelete];
             for (var bi = 0; bi < primary.length; bi++) TH.button(primary[bi], "primary");
             for (var gi = 0; gi < ghost.length; gi++) TH.button(ghost[gi], "ghost");
             btnGenerate.preferredSize.height = 32;
@@ -994,7 +1014,9 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
                 p.graphics.backgroundColor = p.graphics.newBrush(p.graphics.BrushType.SOLID_COLOR, [c[0], c[1], c[2], 1]);
             } catch (e) {}
         }
+        var lastStatus = "";
         function setStatus(text, pct) {
+            lastStatus = String(text);
             stStatus.text = text;
             stLine.helpTip = text;
             var phase = state.recognizing ? "Распознавание" : (state.data ? (textDirty() ? "Текст изменён — обновите фразу" : "Можно редактировать") : "Выберите видео или загрузите результат");
@@ -1797,6 +1819,61 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
                 return "Размер " + (sign > 0 ? "увеличен" : "уменьшен") + ": слоёв " + r.changed + (r.phrases ? ", фраз переложено: " + r.phrases : "");
             });
         }
+        // Единая точка входа для радиального меню и ассистента: одна команда = одно действие над субтитрами.
+        function runCommand(cmd) {
+            var id;
+            if (cmd.op === "place") finishPlace(Number(cmd.y));
+            else if (cmd.op === "nudge") {
+                var px = Number(cmd.px) || num(etFinStep.text, 20, 1, 2000);
+                finishAction("NOIR Captions: сдвиг субтитров", function (sel) {
+                    var r = N.nudgeBlocks(sel.comp, sel.layers, (Number(cmd.kx) || 0) * px, (Number(cmd.ky) || 0) * px);
+                    return "Сдвинуто фраз: " + r.phrases + " на " + px + " px";
+                });
+            }
+            else if (cmd.op === "size") {
+                var pct = Number(cmd.pct) || num(etFinSizeStep.text, 10, 1, 100);
+                var factor = cmd.sign > 0 ? 1 + pct / 100 : 1 / (1 + pct / 100);
+                finishAction("NOIR Captions: размер текста", function (sel) {
+                    var r = N.scaleFont(sel.comp, sel.layers, factor, S.style.layout);
+                    return "Размер " + (cmd.sign > 0 ? "увеличен" : "уменьшен") + " на " + pct + "%: слоёв " + r.changed;
+                });
+            }
+            else if (cmd.op === "animIn" || cmd.op === "animOut") {
+                id = String(cmd.id);
+                var list = cmd.op === "animIn" ? N.ANIM_IN : N.ANIM_OUT, found = false, k;
+                for (k = 0; k < list.length; k++) if (list[k].id === id) found = true;
+                if (!found) throw new Error("Нет такой анимации: " + id);
+                if (cmd.op === "animIn") S.style.anim.animIn = id; else S.style.anim.animOut = id;
+                markCustom(); refreshChips(); saveSettings(S);
+                btnFinAnim.onClick();
+            }
+            else if (cmd.op === "time") {
+                // frames: значения в кадрах композиции; иначе секунды. Без числа берётся шаг из панели.
+                finishAction("NOIR Captions: время субтитров", function (sel) {
+                    var unit = cmd.frames ? sel.comp.frameDuration : 1, amount = Number(cmd.amount), step = (isFinite(amount) && amount > 0 ? amount : (cmd.frames ? Math.max(1, Math.round(num(etFinTimeStep.text, 0.1, 0.01, 30) / sel.comp.frameDuration)) : num(etFinTimeStep.text, 0.1, 0.01, 30))) * unit;
+                    var spec = { shift: (Number(cmd.shift) || 0) * step, dIn: (Number(cmd.dIn) || 0) * step, dOut: (Number(cmd.dOut) || 0) * step };
+                    var r = N.retimeLayers(sel.comp, sel.layers, spec);
+                    return "Время изменено у слоёв: " + r.changed + " (шаг " + (Math.round(step * 100) / 100) + " с)";
+                });
+            }
+            else if (cmd.op === "resetPos") btnFinReset.onClick();
+            else if (cmd.op === "applyStyle") btnFinStyle.onClick();
+            else if (cmd.op === "delete") finishDelete(!!cmd.confirmed);
+            else if (cmd.op === "scope") {
+                var sc = String(cmd.id), sidx = -1, q;
+                for (q = 0; q < FIN_SCOPES.length; q++) if (FIN_SCOPES[q].id === sc) sidx = q;
+                if (sidx < 0) throw new Error("Нет такой области: " + sc);
+                ddFinScope.selection = sidx; setStatus("Область: " + FIN_SCOPES[sidx].label);
+            }
+            else throw new Error("Неизвестная команда: " + cmd.op);
+            return lastStatus;
+        }
+        btnFinEarlier.onClick = function () { runCommand({ op: "time", shift: -1 }); };
+        btnFinLater.onClick = function () { runCommand({ op: "time", shift: 1 }); };
+        btnFinStartEarlier.onClick = function () { runCommand({ op: "time", dIn: -1 }); };
+        btnFinStartLater.onClick = function () { runCommand({ op: "time", dIn: 1 }); };
+        btnFinEndEarlier.onClick = function () { runCommand({ op: "time", dOut: -1 }); };
+        btnFinEndLater.onClick = function () { runCommand({ op: "time", dOut: 1 }); };
         btnFinSmaller.onClick = function () { finishSize(-1); };
         btnFinBigger.onClick = function () { finishSize(1); };
         btnFinReset.onClick = function () {
@@ -1836,17 +1913,18 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
                     (warnings.length ? "\n" + warnings.join("\n") : "");
             });
         };
-        btnFinDelete.onClick = function () {
+        function finishDelete(confirmed) {
             var sel;
             readUI();
             try { sel = finishLayers(); } catch (e) { alert(e.message, "NOIR Captions"); return; }
-            if (!confirm("Удалить субтитры: " + sel.layers.length + " слоёв? Отмена — Ctrl+Z.", true, "NOIR Captions")) return;
+            if (!confirmed && !confirm("Удалить субтитры: " + sel.layers.length + " слоёв? Отмена — Ctrl+Z.", true, "NOIR Captions")) return;
             app.beginUndoGroup("NOIR Captions: удалить субтитры");
             try {
                 for (var i = 0; i < sel.layers.length; i++) { if (sel.layers[i].locked) sel.layers[i].locked = false; sel.layers[i].remove(); }
                 setStatus("Удалено слоёв: " + sel.layers.length);
             } finally { app.endUndoGroup(); }
-        };
+        }
+        btnFinDelete.onClick = function () { finishDelete(false); };
 
         // ----- SFX -----
         function sfxChoice(id) {
@@ -2141,6 +2219,8 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         if (tabs.buttons) for (var tabRole = 0; tabRole < tabs.buttons.length; tabRole++) tabs.buttons[tabRole]._cepRole = "tab" + tabRole;
         for (var wordRole = 0; wordRole < wordButtons.length; wordRole++) wordButtons[wordRole]._cepRole = "word" + wordRole;
         win._cep = {
+            run: runCommand,
+            status: function () { return lastStatus; },
             clearIssues: function () { cepIssues = []; pendingCheck = null; },
             selectTextPhrase: function (index) {
                 if (!state.data || index < 0 || index >= state.data.segments.length || index !== Math.floor(index)) throw new Error("Нет такой фразы.");

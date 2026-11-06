@@ -15,6 +15,7 @@ class Prop {
   constructor(type, value) { this.propertyValueType = type; this.value = value; this.keys = []; }
   get numKeys() { return this.keys.length; }
   setValue(v) { this.value = v; }
+  keyTime(i) { if (i < 1 || i > this.keys.length) throw new Error("keyTime out of range"); return this.keys[i - 1].t; }
   keyValue(i) { if (i < 1 || i > this.keys.length) throw new Error("keyValue out of range"); return this.keys[i - 1].v; }
   setValueAtKey(i, v) { if (i < 1 || i > this.keys.length) throw new Error("setValueAtKey out of range"); this.keys[i - 1].v = v; }
   removeKey(i) { if (i < 1 || i > this.keys.length) throw new Error("removeKey out of range"); this.keys.splice(i - 1, 1); }
@@ -56,7 +57,9 @@ class Effect {
     this.matchName = matchName; this.name = matchName; this.props = {};
   }
   remove() { const a = this.layer.effects; a.splice(a.indexOf(this), 1); }
+  get numProperties() { return Object.keys(this.props).length; }
   property(mn) {
+    if (typeof mn === "number") return this.props[Object.keys(this.props)[mn - 1]];
     if (!this.props[mn]) {
       const p = new Prop(PropertyValueType.OneD, 0);
       // как в AE: у Drop Shadow непрозрачность 0..255
@@ -86,7 +89,11 @@ class Layer {
   get outPoint() { return this._out; }
   set outPoint(v) { if (v <= this._in) throw new Error("outPoint <= inPoint"); this._out = v; }
   get index() { return this.comp._l.indexOf(this) + 1; }
+  _transformGroup() { const t = this.transform, names = Object.keys(t); return { numProperties: names.length, property: k => typeof k === "number" ? t[names[k - 1]] : t[k] }; }
+  _effectsGroup() { const self = this; self.effects = self.effects || []; return { get numProperties() { return self.effects.length; }, property: (i) => self.effects[i - 1] }; }
+  get numProperties() { return this.textProps ? 3 : 2; }
   property(n) {
+    if (typeof n === "number") return [this._transformGroup(), this._effectsGroup(), this.textProps][n - 1];
     if (n === "Transform") return { property: k => this.transform[k] };
     if (this.src && n === "Source Text") return this.src;
     if (n === "ADBE Root Vectors Group") { this.vectors = this.vectors || new PG("ADBE Root Vectors Group"); return this.vectors; }

@@ -157,6 +157,9 @@ const GOPTS = { maxWords: 1, maxChars: 99, pauseBreak: 0.35, punctBreak: true, s
     g.compStart = g.start; g.compOut = g.outTime; g.words.forEach(w => (w.compStart = w.start)); return g;
   });
   const subs = (c) => c._l.filter(l => N.isGenerated(l));
+  // Масштаб, поворот, прозрачность и сдвиг входа/выхода хранятся в текстовом аниматоре «NOIR Move», а не в ключах слоя.
+  const moveGroup = (l) => l.textProps ? l.textProps.property("ADBE Text Animators").kids.find(x => x.name === "NOIR Move") : null;
+  const mk = (l, kind) => { const g = moveGroup(l); if (!g) return []; const mn = { Opacity: "ADBE Text Opacity", Scale: "ADBE Text Scale 3D", Rotation: "ADBE Text Rotation", Position: "ADBE Text Position 3D" }[kind]; const q = g.property("ADBE Text Animator Properties").kids.find(k => k.matchName === mn); return q ? q.keys : []; };
   const allKeysInside = (c) => { for (const l of subs(c)) for (const p of Object.values(l.transform).concat((l.effects || []).flatMap(e => Object.values(e.props)))) for (let i = 0; i < p.keys.length; i++) {
     assert.ok(p.keys[i].t >= l.inPoint - 1e-9 && p.keys[i].t <= l.outPoint + 1e-9, "key outside layer " + l.name);
     if (i) assert.ok(p.keys[i].t > p.keys[i - 1].t, "keys not increasing");
@@ -355,7 +358,8 @@ const GOPTS = { maxWords: 1, maxChars: 99, pauseBreak: 0.35, punctBreak: true, s
     N.generate(c, prep(N.flattenWords(sample()), st.layout), st, st.anim, true);
     subs(c).forEach(l => {
       assert.strictEqual(l.blendingMode, BlendingMode.DIFFERENCE);
-      const vals = l.transform.Opacity.keys.map(k => k.v); assert.ok(Math.max(...vals) === 60 && Math.min(...vals) === 0, JSON.stringify(vals));
+      const vals = mk(l, "Opacity").map(k => k.v); assert.ok(Math.max(...vals) === 100 && Math.min(...vals) === 0, JSON.stringify(vals));
+      assert.strictEqual(l.transform.Opacity.value, 60); assert.strictEqual(l.transform.Opacity.keys.length, 0, "прозрачность слоя без ключей");
     });
   });
   await test("без анимации прозрачность — просто значение слоя", () => {
@@ -366,15 +370,15 @@ const GOPTS = { maxWords: 1, maxChars: 99, pauseBreak: 0.35, punctBreak: true, s
   await test("новые вылеты: rotate даёт ключи поворота, whip/slam — blur; Rotation возвращается в 0", () => {
     const c = mkComp(), st = styleOf("invert"); gen(c, "invert"); const a = subs(c)[0];
     N.restyleLayers(c, [a], { style: null, safeWidth: 0.88, anim: { animIn: "rotate", inDur: 0.25, animOut: "rotate", outDur: 0.2, distance: 40, blur: 20, easeInfluence: 80 } });
-    const rk = a.transform.Rotation.keys; assert.ok(rk.length >= 3 && rk[0].v === -14 && rk[rk.length - 1].v === 14 && rk.some(k => k.v === 0));
+    const rk = mk(a, "Rotation"); assert.strictEqual(a.transform.Rotation.keys.length, 0); assert.ok(rk.length >= 3 && rk[0].v === -14 && rk[rk.length - 1].v === 14 && rk.some(k => k.v === 0));
     N.restyleLayers(c, [a], { style: null, safeWidth: 0.88, anim: { animIn: "slam", inDur: 0.2, animOut: "whipR", outDur: 0.2, distance: 40, blur: 20, easeInfluence: 80 } });
-    assert.strictEqual(a.transform.Rotation.keys.length, 0); assert.ok(a.effects.some(e => e.matchName === "ADBE Gaussian Blur 2"));
-    assert.strictEqual(a.transform.Scale.keys[0].v[0], 260);
+    assert.strictEqual(mk(a, "Rotation").length, 0); assert.ok(a.effects.some(e => e.matchName === "ADBE Gaussian Blur 2"));
+    assert.strictEqual(mk(a, "Scale")[0].v[0], 260); assert.strictEqual(a.transform.Scale.keys.length, 0, "Scale слоя свободен");
   });
   await test("анимация выделенного слоя сохраняет его прозрачность (60%)", () => {
     const c = mkComp(); gen(c, "reels-glow", NOANIM); const a = subs(c)[0]; a.transform.Opacity.value = 60;
     N.restyleLayers(c, [a], { style: null, safeWidth: 0.88, anim: { animIn: "fade", inDur: 0.2, animOut: "none", outDur: 0, distance: 0, blur: 0, easeInfluence: 80 } });
-    assert.strictEqual(Math.max(...a.transform.Opacity.keys.map(k => k.v)), 60);
+    assert.strictEqual(a.transform.Opacity.value, 60); assert.strictEqual(Math.max(...mk(a, "Opacity").map(k => k.v)), 100);
   });
   await test("только режим наложения: Difference + прозрачность, остальное не меняется; «Инверсия» вкл/выкл", () => {
     const c = mkComp(), st = styleOf("invert"); gen(c, "reels-glow", NOANIM); const [a, b] = subs(c); const font0 = a.src.value.font, col0 = JSON.stringify(a.src.value.fillColor);
@@ -429,7 +433,7 @@ const GOPTS = { maxWords: 1, maxChars: 99, pauseBreak: 0.35, punctBreak: true, s
     const user = new mock.TextLayer(c, "свой", c._fonts); c._l.push(user); const n = c.numLayers;
     const r = N.reflowGroups(c, [user], st.layout); assert.strictEqual(r.groups, 0); assert.strictEqual(r.skipped, 1); assert.strictEqual(c.numLayers, n);
   });
-  const animators = (l) => l.textProps ? l.textProps.property("ADBE Text Animators").kids : [];
+  const animators = (l) => l.textProps ? l.textProps.property("ADBE Text Animators").kids.filter(x => x.name !== "NOIR Move") : [];
   const selOf = (an) => an.property("ADBE Text Selectors").kids[0];
   const ANI = (inn, out, o) => Object.assign({ animIn: inn, animOut: out, inDur: 0.4, outDur: 0.3, distance: 60, blur: 20, easeInfluence: 80 }, o || {});
   await test("по буквам (вход): аниматор с прозрачностью 0 и диапазоном 0→100% за inDur, слева направо; ключи слоя не создаются", () => {
@@ -447,7 +451,7 @@ const GOPTS = { maxWords: 1, maxChars: 99, pauseBreak: 0.35, punctBreak: true, s
     const c = mkComp(), st = styleOf("noir-red"); st.anim = ANI("pop", "letFade"); N.generate(c, prep(N.flattenWords(sample()), st.layout), st, st.anim, true);
     const l = subs(c)[0], an = animators(l); assert.strictEqual(an.length, 1); assert.strictEqual(an[0].name, "NOIR Letters Out");
     const end = selOf(an[0]).property("ADBE Text Percent End").keys; assert.deepStrictEqual(end.map(k => k.v), [0, 100]); near(end[1].t, l.outPoint);
-    assert.ok(l.transform.Scale.keys.length >= 2, "вход Pop остался ключами слоя"); assert.ok(l.transform.Scale.keys.every(k => k.t <= end[0].t + 1e-9), "вход не должен залезать на выход");
+    assert.ok(mk(l, "Scale").length >= 2, "вход Pop записан в аниматор NOIR Move"); assert.ok(mk(l, "Scale").every(k => k.t <= end[0].t + 1e-9), "вход не должен залезать на выход");
     const c2 = mkComp(); const st2 = styleOf("noir-red"); st2.anim = ANI("letRise", "letType"); N.generate(c2, prep(N.flattenWords(sample()), st2.layout), st2, st2.anim, true);
     assert.deepStrictEqual(animators(subs(c2)[0]).map(a => a.name), ["NOIR Letters In", "NOIR Letters Out"]);
   });
@@ -499,8 +503,8 @@ const GOPTS = { maxWords: 1, maxChars: 99, pauseBreak: 0.35, punctBreak: true, s
     assert.ok(l.comment.indexOf(N.COUNTER_TAG + "|") === 0); near(l.inPoint, 2); near(l.outPoint, 6);
     assert.ok(/time - inPoint/.test(l.src.expression)); assert.ok(l.src.value.text.length >= 2, "размер считается по самой длинной записи");
     const b = N.baseOf(l); near(b[0], c.width / 2); near(b[1], c.height * 0.4);
-    assert.ok(l.transform.Scale.keys.length >= 2 && l.transform.Opacity.keys.length >= 2, "вход Pop и выход Fade записаны ключами");
-    assert.ok(l.transform.Opacity.keys.every(k => k.t >= 2 - 1e-9 && k.t <= 6 + 1e-9), "ключи в пределах слоя");
+    assert.ok(mk(l, "Scale").length >= 2 && mk(l, "Opacity").length >= 2, "вход Pop и выход Fade записаны ключами"); assert.strictEqual(l.transform.Scale.keys.length + l.transform.Opacity.keys.length, 0);
+    assert.ok(mk(l, "Opacity").every(k => k.t >= 2 - 1e-9 && k.t <= 6 + 1e-9), "ключи в пределах слоя");
   });
   await test("createCounter: настройки не мутируются; обычная сторона; старт вне композиции — понятная ошибка", () => {
     const c = mkComp(), st = styleOf("kinetic-stack"), snap = JSON.stringify(st), an = ANIN({ animIn: "rise" }), asnap = JSON.stringify(an);
@@ -905,7 +909,7 @@ const GOPTS = { maxWords: 1, maxChars: 99, pauseBreak: 0.35, punctBreak: true, s
     ls[0].selected = true; ls[1].selected = true; env.log.alerts.length = 0;
     chip("Slam", "in").onClick();
     assert.strictEqual(env.log.alerts.length, 0, env.log.alerts.join("|"));
-    assert.strictEqual(ls[0].transform.Scale.keys[0].v[0], 260); assert.strictEqual(ls[1].transform.Scale.keys[0].v[0], 260);
+    assert.strictEqual(mk(ls[0], "Scale")[0].v[0], 260); assert.strictEqual(mk(ls[1], "Scale")[0].v[0], 260);
     const stack = panel.find(e => e.type === "group" && e.orientation === "stack" && e.children.length === 2 && e.children[0].orientation === "column" && e.children[0].children.some(r => r.children && r.children.some(b => b._which)));
     const rbOut = panel.find(e => e.type === "radiobutton" && e.text === "Выход"); rbOut.onClick();
     assert.deepStrictEqual(stack.children.map(g => g.visible), [false, true]);
@@ -1061,7 +1065,7 @@ const GOPTS = { maxWords: 1, maxChars: 99, pauseBreak: 0.35, punctBreak: true, s
     const c = mkComp(), st = styleOf("reels-glow");
     st.anim.intensity = .5;
     N.generate(c, prep(N.flattenWords(sample()), st.layout), st, st.anim, true);
-    const keys = subs(c)[0].transform.Scale.keys;
+    const keys = mk(subs(c)[0], "Scale");
     assert.ok(keys.some(k => Math.abs(k.v[0] - 85) < .001));
   });
 
@@ -1105,6 +1109,82 @@ const GOPTS = { maxWords: 1, maxChars: 99, pauseBreak: 0.35, punctBreak: true, s
     N.restyleLayers(c, [l], { style: null, safeWidth: 0.88, anim });
     assert.deepStrictEqual(l.transform.Position.value.slice(0, 2), [100, 200], "смена анимации не возвращает слой на старое место");
     assert.strictEqual(l.textProps.property("ADBE Text Animators").kids.filter(x => x.name === "NOIR Move").length, 1, "аниматор не копится");
+  });
+  await test("Scale, Rotation и Opacity слоя без ключей: Pop/Rotate/Slam идут аниматором; якорь группы «All»; центр не уезжает по вертикали", () => {
+    for (const id of ["pop", "punch", "zoom", "slam", "grow", "rotate", "blurPop", "rise", "fade"]) {
+      const c = mkComp(), anim = { animIn: id, inDur: 0.3, animOut: id === "rise" ? "up" : "shrink", outDur: 0.2, distance: 60, blur: 10, easeInfluence: 80 };
+      genSrc(c, "sA", "sA", anim);
+      for (const l of subs(c)) {
+        for (const k of ["Scale", "Rotation", "Opacity", "Position"]) assert.strictEqual(l.transform[k].keys.length, 0, id + " " + k);
+        assert.ok(moveGroup(l), id + ": нет NOIR Move");
+      }
+    }
+    const c = mkComp(); genSrc(c, "sA", "sA", { animIn: "pop", inDur: 0.3, animOut: "none", outDur: 0, distance: 0, blur: 0, easeInfluence: 80 });
+    const l = subs(c)[0], more = l.textProps.property("ADBE Text More Options");
+    assert.strictEqual(more.property("ADBE Text Anchor Point Option").value, 4);
+    const dy = -(l.sourceRectAtTime().top + l.sourceRectAtTime().height / 2), sc = mk(l, "Scale"), ps = mk(l, "Position");
+    assert.ok(ps.length >= sc.length, "позиция компенсируется на тех же кадрах, что и масштаб");
+    sc.forEach(k => { const p = ps.find(q => Math.abs(q.t - k.t) < 1e-9); near(p.v[1], (-dy) * (1 - k.v[0] / 100), 1e-6); near(p.v[0], 0, 1e-9); });
+    const before = N.PIVOT_BASELINE; N.PIVOT_BASELINE = false;
+    try { const c2 = mkComp(); genSrc(c2, "sA", "sA", { animIn: "pop", inDur: 0.3, animOut: "none", outDur: 0, distance: 0, blur: 0, easeInfluence: 80 }); assert.strictEqual(mk(subs(c2)[0], "Position").length, 0, "без компенсации позиция не трогается"); } finally { N.PIVOT_BASELINE = before; }
+  });
+  await test("Scale слоя можно менять вручную: значение не создаёт ключей, регенерация его не ломает; старые слои с ключами переводятся на аниматор", () => {
+    const c = mkComp(), anim = { animIn: "pop", inDur: 0.3, animOut: "none", outDur: 0, distance: 0, blur: 0, easeInfluence: 80 };
+    genSrc(c, "sA", "sA", anim); const l = subs(c)[0]; l.transform.Scale.value = [130, 130, 100];
+    N.restyleLayers(c, [l], { style: null, safeWidth: 0.88, anim });
+    assert.deepStrictEqual(l.transform.Scale.value, [130, 130, 100], "ручной Scale сохранён"); assert.strictEqual(l.transform.Scale.keys.length, 0);
+    const old = c.layers.addText("старый"); old.comment = N.LAYER_TAG + "|10|10|g-9|0||0|sZ"; old.transform.Scale.keys = [{ t: 0, v: [70, 70, 100] }, { t: 0.3, v: [100, 100, 100] }];
+    N.restyleLayers(c, [old], { style: null, safeWidth: 0.88, anim });
+    assert.strictEqual(old.transform.Scale.keys.length, 0, "старые ключи убраны"); assert.ok(mk(old, "Scale").length >= 2);
+  });
+  await test("аниматор не создан AE — запасной путь: ключи слоя как раньше", () => {
+    const c = mkComp(), st = styleOf("reels-glow"), orig = mock.TextLayer.prototype.property;
+    mock.TextLayer.prototype.property = function (n) { if (n === "ADBE Text Properties") throw new Error("нет"); return orig.call(this, n); };
+    try { const gs = prep(N.flattenWords(sample()), st.layout); N.generate(c, gs, st, { animIn: "pop", inDur: 0.3, animOut: "fade", outDur: 0.2, distance: 40, blur: 0, easeInfluence: 80 }, true);
+      assert.ok(subs(c).every(l => l.transform.Scale.keys.length >= 2 && l.transform.Opacity.keys.length >= 2), "слой остаётся анимированным"); } finally { mock.TextLayer.prototype.property = orig; }
+  });
+  const allKeyTimes = (l) => { const t = []; const g = moveGroup(l); const walk = (n) => { if (n.keys) n.keys.forEach(k => t.push(k.t)); if (n.kids) n.kids.forEach(walk); }; if (g) walk(g); return t; };
+  await test("время: сдвиг переносит слой и ключи анимации на ту же величину", () => {
+    const c = mkComp(), anim = { animIn: "pop", inDur: 0.3, animOut: "fade", outDur: 0.2, distance: 40, blur: 0, easeInfluence: 80 };
+    genSrc(c, "sA", "sA", anim); const l = subs(c)[0], in0 = l.inPoint, out0 = l.outPoint, k0 = allKeyTimes(l); assert.ok(k0.length >= 4, "в тесте должны быть ключи анимации");
+    N.retimeLayers(c, [l], { shift: 0.5 });
+    near(l.inPoint, in0 + 0.5); near(l.outPoint, out0 + 0.5);
+    allKeyTimes(l).forEach((t, i) => near(t, k0[i] + 0.5, 1e-9));
+    N.retimeLayers(c, [l], { shift: -0.5 }); near(l.inPoint, in0); allKeyTimes(l).forEach((t, i) => near(t, k0[i], 1e-9));
+  });
+  await test("время: начало двигает только вход, конец — только выход; ключи остаются внутри слоя", () => {
+    const c = mkComp(), anim = { animIn: "pop", inDur: 0.3, animOut: "fade", outDur: 0.2, distance: 40, blur: 0, easeInfluence: 80 };
+    genSrc(c, "sA", "sA", anim); const l = subs(c)[0]; l.inPoint = 1; l.outPoint = 4;
+    const before = allKeyTimes(l); N.applyAnimation(l, N.baseOf(l), 1, 4, Object.assign({ opacity: 100 }, anim));
+    const k1 = allKeyTimes(l);
+    N.retimeLayers(c, [l], { dIn: -0.4 }); near(l.inPoint, 0.6); near(l.outPoint, 4);
+    const k2 = allKeyTimes(l); assert.strictEqual(k2.length, k1.length);
+    k1.forEach((t, i) => near(k2[i], t < 2.5 ? t - 0.4 : t, 1e-9));
+    N.retimeLayers(c, [l], { dOut: 0.7 }); near(l.outPoint, 4.7);
+    allKeyTimes(l).forEach(t => assert.ok(t >= l.inPoint - 1e-9 && t <= l.outPoint + 1e-9, "ключ вне слоя"));
+    assert.ok(Math.max(...allKeyTimes(l)) > 4.4, "выход уехал за концом");
+  });
+  await test("время: слой нельзя сделать короче, чем нужно для входа и выхода; границы композиции соблюдаются", () => {
+    const c = mkComp({ duration: 10 }), anim = { animIn: "pop", inDur: 0.3, animOut: "fade", outDur: 0.2, distance: 40, blur: 0, easeInfluence: 80 };
+    genSrc(c, "sA", "sA", anim); const l = subs(c)[0]; l.inPoint = 1; l.outPoint = 3; N.applyAnimation(l, N.baseOf(l), 1, 3, Object.assign({ opacity: 100 }, anim));
+    N.retimeLayers(c, [l], { dIn: 5 });
+    assert.ok(l.outPoint - l.inPoint >= 0.5 - 1e-9, "минимум = вход + выход"); allKeyTimes(l).forEach(t => assert.ok(t >= l.inPoint - 1e-9 && t <= l.outPoint + 1e-9));
+    N.retimeLayers(c, [l], { shift: -50 }); assert.ok(l.inPoint >= 0);
+    N.retimeLayers(c, [l], { shift: 50 }); assert.ok(l.outPoint <= 10 + 1e-9);
+    const locked = subs(c)[1]; locked.locked = true; const li = locked.inPoint; N.retimeLayers(c, [locked], { shift: 1 }); assert.strictEqual(locked.inPoint, li, "заблокированный слой не меняется");
+  });
+  await test("панель: кнопки «Время» и команда run; шаг в кадрах; другое видео не затронуто", () => {
+    const c = mkComp(); const p = editorPanel(); p.button("Создать субтитры").onClick();
+    const mine = subs(c).slice(), foreign = c.layers.addText("Чужой"); foreign.comment = N.LAYER_TAG + "|1|1|x-0|0||0|sOther"; foreign.inPoint = 0.2; foreign.outPoint = 1;
+    const in0 = mine.map(l => l.inPoint), out0 = mine.map(l => l.outPoint);
+    p.button("позже ▶").onClick(); mine.forEach((l, i) => { near(l.inPoint, in0[i] + 0.1); near(l.outPoint, out0[i] + 0.1); });
+    p.button("◀ раньше").onClick(); mine.forEach((l, i) => near(l.inPoint, in0[i]));
+    const plus = p.findAll ? p.findAll(e => e.type === "button" && e.text === "+") : null;
+    const ends = p.find(e => e.type === "group" && e.children.some(x => x.type === "statictext" && x.text === "Конец"));
+    ends.children.find(x => x.text === "+").onClick(); mine.forEach((l, i) => near(l.outPoint, Math.min(c.duration, out0[i] + 0.1))); mine.forEach((l, i) => near(l.inPoint, in0[i]));
+    ends.children.find(x => x.text === "−").onClick(); mine.forEach((l, i) => near(l.outPoint, out0[i]));
+    assert.strictEqual(foreign.inPoint, 0.2);
+    p.run && 0;
   });
   await test("ручной сдвиг фразы переживает пересоздание; «исходные места» его снимает", () => {
     const c = mkComp(); genSrc(c, "sA", "sA");
@@ -1179,7 +1259,7 @@ const GOPTS = { maxWords: 1, maxChars: 99, pauseBreak: 0.35, punctBreak: true, s
     const ddIn = p.find(e => e.type === "dropdownlist" && e.items.some(i => i.text === "Pop (scale + overshoot)") && e.items.length === N.ANIM_IN.length);
     ddIn.selection = N.ANIM_IN.findIndex(a => a.id === "pop");
     p.button("Применить анимацию").onClick();
-    assert.ok(mine.every(l => l.transform.Scale.keys.length > 0 && l.transform.Position.keys.length === 0));
+    assert.ok(mine.every(l => mk(l, "Scale").length > 0 && l.transform.Scale.keys.length === 0 && l.transform.Position.keys.length === 0));
     p.button("Удалить субтитры").onClick();
     assert.strictEqual(subs(c).filter(l => l !== foreign).length, 0); assert.ok(c._l.includes(foreign));
   });
@@ -1286,7 +1366,7 @@ const GOPTS = { maxWords: 1, maxChars: 99, pauseBreak: 0.35, punctBreak: true, s
       const shown = [presets["expert-clean"], presets["reels-punch"]];
       N.styleExamples(shown);
       assert.strictEqual(original.numLayers, 0); assert.strictEqual(demo.duration, 3); assert.ok(demo.opened);
-      assert.ok(subs(demo).some(l => l.transform.Opacity.numKeys > 0 || l.transform.Scale.numKeys > 0));
+      assert.ok(subs(demo).some(l => mk(l, "Opacity").length > 0 || mk(l, "Scale").length > 0));
       allKeysInside(demo);
     } finally { app.project.items.addComp = oldAdd; }
   });

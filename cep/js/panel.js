@@ -156,7 +156,7 @@
         record.hasReference=reference;record.tile.classList.toggle("has-reference",reference);video.hidden=!reference;
         if(reference && record.source!=="noir") {video.src="media/noir.mp4";video.poster="media/noir.jpg";record.source="noir";}
         else if(!reference && record.source){video.pause();video.removeAttribute("src");video.removeAttribute("poster");video.load();record.source=null;}
-        var names={"mix-colors":"Mix Colors","editorial-italic":"Editorial Italic","kinetic-stack":"Kinetic Blue","noir-red":"NOIR Red","editorial":"Editorial","pop-words":"Pop Words","kinetic-orange":"Kinetic Orange","invert":"Invert","reels-glow":"Reels Glow"};
+        var names={"mix-colors":"Mix Colors","editorial-italic":"Editorial Italic","kinetic-stack":"Kinetic Blue","noir-red":"NOIR Red","editorial":"Editorial","pop-words":"Pop Words","kinetic-orange":"Kinetic Orange","invert":"Invert","reels-glow":"Reels Glow","gold-serif":"Gold Serif","silver-italic":"Silver Italic"};
         var name=names[meta.id] || meta.name;
         record.caption.hidden=reference;record.caption.textContent=name;
         record.shortText=name;record.el.textContent=name;
@@ -259,7 +259,7 @@
         view.heading=element("h1","workspace-heading","Ваше видео",introduction);
         var mark=element("span","brand-mark","",brand);
         var logo=element("img","","",mark);logo.src="media/noir-mark.svg";logo.alt="";mark.setAttribute("aria-hidden","true");
-        brand.title="NOIR Captions · 0.15.1";brand.setAttribute("aria-label","NOIR Captions");
+        brand.title="NOIR Captions · 0.16.0";brand.setAttribute("aria-label","NOIR Captions");
         var primaryArea=element("div","primary-area","",header);
         view.primary=button("Распознать речь","create-action",primaryArea,function(){
             action(ui.main===0 || !workflow.hasData?"recognize":workflow.canUpdate?"updatePhrase":"generate");
@@ -283,6 +283,12 @@
             view.tabs.push(tab);
         });
         mark.classList.add("dial-core");nav.appendChild(mark);
+        if(window.NoirWheel)NoirWheel.init({hub:mark,roles:function(){return roles;},
+            click:function(role){if(roles[role])send({action:"click",id:roles[role].id});},
+            run:function(command){send({action:"run",command:command});},
+            page:function(index){ui.settings=false;selectMain(index);},
+            settings:function(section){openSettings(section);},
+            notify:function(text,time){showError(text,time);}});
         var dialFoot=element("div","dial-foot","",sidebar);
         view.stepName=element("div","step-name","",dialFoot);view.stepName.setAttribute("aria-hidden","true");
         view.more=button("Настройки","more-button",dialFoot,function(){if(ui.settings)closeSettings();else openSettings();});
