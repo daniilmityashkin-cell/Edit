@@ -7,7 +7,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
 (function (N) {
     var SECTION = "NOIR Captions";
     var SETTINGS_KEY = "settings.v2";
-    var VERSION = "0.15.0";
+    var VERSION = "0.15.1";
 
     function clone(o) { return N.parseJSON(N.stringify(o)); }
 
@@ -731,6 +731,12 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         var finArrows = [btnFinUp, btnFinDown, btnFinLeft, btnFinRight];
         for (var fa = 0; fa < finArrows.length; fa++) finArrows[fa].preferredSize = [30, 22];
         var btnFinReset = pnlFinPos.add("button", undefined, "Вернуть на исходные места");
+        var rFinSize = row(pnlFinPos, "Размер, %", 60);
+        var etFinSizeStep = field(rFinSize, 10, 3, { min: 1, max: 100, step: 1, dec: 0, name: "Шаг размера, %" });
+        var btnFinSmaller = rFinSize.add("button", undefined, "A−");
+        var btnFinBigger = rFinSize.add("button", undefined, "A+");
+        btnFinSmaller.preferredSize = btnFinBigger.preferredSize = [36, 22];
+        btnFinSmaller.helpTip = btnFinBigger.helpTip = "Меняет размер шрифта (не Scale слоя), поэтому ключевые кадры не создаются. Фразы перекладываются вокруг прежнего центра";
         var pnlFinAnim = tFinish.add("panel", undefined, "Анимация");
         pnlFinAnim.alignChildren = ["fill", "top"]; pnlFinAnim.margins = [6, 12, 6, 6]; pnlFinAnim.spacing = 3;
         var ddFinIn = dropdown(row(pnlFinAnim, "Появление", 70), N.ANIM_IN, S.style.anim.animIn);
@@ -940,7 +946,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             var primary = [btnRecognize, btnGenerate, btnMakeAccent, btnCounter, btnStrike, btnMask];
             var ghost = [btnCancel, btnLoad, btnSave, btnReset, btnSavePreset, btnFromLayer, btnFontToLayers,
                 btnColor, btnStrokeColor, btnMakeBase, btnApply, btnInvert, btnReflow, btnAnimApply, btnStrikeColor, btnStrikeRemove, btnMaskRemove, btnSfxSelected, btnSfxRemove, btnSfxHere, btnSfxRescan, btnSfxFolder,
-                btnFinTop, btnFinMid, btnFinBottom, btnFinUp, btnFinDown, btnFinLeft, btnFinRight, btnFinReset, btnFinAnim, btnFinStyle, btnFinDelete];
+                btnFinTop, btnFinMid, btnFinBottom, btnFinUp, btnFinDown, btnFinLeft, btnFinRight, btnFinSmaller, btnFinBigger, btnFinReset, btnFinAnim, btnFinStyle, btnFinDelete];
             for (var bi = 0; bi < primary.length; bi++) TH.button(primary[bi], "primary");
             for (var gi = 0; gi < ghost.length; gi++) TH.button(ghost[gi], "ghost");
             btnGenerate.preferredSize.height = 32;
@@ -1783,6 +1789,16 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         btnFinDown.onClick = function () { finishNudge(0, 1); };
         btnFinLeft.onClick = function () { finishNudge(-1, 0); };
         btnFinRight.onClick = function () { finishNudge(1, 0); };
+        function finishSize(sign) {
+            var pct = num(etFinSizeStep.text, 10, 1, 100);
+            var factor = sign > 0 ? 1 + pct / 100 : 1 / (1 + pct / 100);
+            finishAction("NOIR Captions: размер текста", function (sel) {
+                var r = N.scaleFont(sel.comp, sel.layers, factor, S.style.layout);
+                return "Размер " + (sign > 0 ? "увеличен" : "уменьшен") + ": слоёв " + r.changed + (r.phrases ? ", фраз переложено: " + r.phrases : "");
+            });
+        }
+        btnFinSmaller.onClick = function () { finishSize(-1); };
+        btnFinBigger.onClick = function () { finishSize(1); };
         btnFinReset.onClick = function () {
             finishAction("NOIR Captions: исходные места", function (sel) {
                 return "Возвращено на исходные места слоёв: " + N.resetPositions(sel.layers);

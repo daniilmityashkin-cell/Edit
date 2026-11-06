@@ -1129,6 +1129,26 @@ const GOPTS = { maxWords: 1, maxChars: 99, pauseBreak: 0.35, punctBreak: true, s
     const legacy = phrase[0]; legacy.transform.Position.keys = [{ t: 1, v: [10, 20, 0] }, { t: 2, v: [10, 30, 0] }];
     N.shiftLayer(legacy, 5, 5); assert.deepStrictEqual(legacy.transform.Position.keys.map(k => k.v), [[15, 25, 0], [15, 35, 0]]);
   });
+  await test("размер текста: меняется размер шрифта, Scale и ключи слоя не затронуты; фраза остаётся вокруг прежнего центра", () => {
+    const c = mkComp(), st = styleOf("reels-glow"); st.layout.autoAccent = false;
+    const gs = prep(N.flattenWords(sample()), st.layout); gs.forEach(g => (g.sourceKey = "sA"));
+    N.generate(c, gs, st, Object.assign({}, st.anim, { animIn: "fade", animOut: "none" }), true);
+    const ls = subs(c).filter(l => N.groupInfo(l).segment === 0);
+    const sizes = ls.map(l => l.src.value.fontSize), scaleKeys = ls.map(l => l.transform.Scale.keys.length);
+    const centre = () => { const b = ls.map(l => ({ p: N.baseOf(l), r: l.sourceRectAtTime() })); return (Math.min(...b.map(x => x.p[0] - x.r.width / 2)) + Math.max(...b.map(x => x.p[0] + x.r.width / 2))) / 2; };
+    const c0 = centre();
+    const r = N.scaleFont(c, ls, 1.2, st.layout);
+    assert.strictEqual(r.changed, ls.length);
+    ls.forEach((l, i) => { near(l.src.value.fontSize, sizes[i] * 1.2, 1e-6); assert.strictEqual(l.transform.Scale.keys.length, scaleKeys[i]); assert.deepStrictEqual(l.transform.Scale.value, [100, 100, 100]); });
+    near(centre(), c0, 1e-6);
+    N.scaleFont(c, ls, 1 / 1.2, st.layout); ls.forEach((l, i) => near(l.src.value.fontSize, sizes[i], 1e-6));
+  });
+  await test("вкладка «Правка»: A+ / A− меняют размер шрифта субтитров этого видео", () => {
+    const c = mkComp(); const p = editorPanel(); p.button("Создать субтитры").onClick();
+    const mine = subs(c).slice(), s0 = mine.map(l => l.src.value.fontSize);
+    p.button("A+").onClick(); mine.forEach((l, i) => assert.ok(l.src.value.fontSize > s0[i] * 1.05 || l.src.value.fontSize > s0[i]));
+    p.button("A−").onClick(); mine.forEach((l, i) => near(l.src.value.fontSize, s0[i], 1e-6));
+  });
   await test("панель: второй аудиослой не стирает первый; «Обновить все фразы» сохраняет ручной сдвиг", () => {
     const c = mkComp(); const p = editorPanel();
     p.button("Создать субтитры").onClick();

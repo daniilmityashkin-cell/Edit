@@ -692,6 +692,28 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         return { phrases: blocks.length, layers: moved };
     };
 
+    // Размер текста в разы (factor 1.1 = на 10% крупнее): меняется размер шрифта, а не Scale слоя — ключи не появляются.
+    // Фразы затем перекладываются вокруг прежнего центра, чтобы слова не наезжали друг на друга.
+    N.scaleFont = function (comp, layers, factor, layout) {
+        var n = 0, i, j, blocks = phraseBlocks(comp, layers), centers = [];
+        for (i = 0; i < blocks.length; i++) centers.push(blockCenter(blocks[i]));
+        for (i = 0; i < layers.length; i++) {
+            var prop = layers[i].property("Source Text"), d = prop.value;
+            d.fontSize = Math.max(4, d.fontSize * factor);
+            if (d.applyStroke && d.strokeWidth) d.strokeWidth = d.strokeWidth * factor;
+            prop.setValue(d);
+            var r = layers[i].sourceRectAtTime(Math.max(0, layers[i].inPoint), false);
+            layers[i].property("Transform").property("Anchor Point").setValue([r.left + r.width / 2, r.top + r.height / 2]);
+            n++;
+        }
+        var rf = N.reflowGroups(comp, layers, layout);
+        for (i = 0; i < blocks.length; i++) {      // центр фразы — тот же, что был до изменения размера
+            var c1 = blockCenter(blocks[i]);
+            for (j = 0; j < blocks[i].length; j++) N.shiftLayer(blocks[i][j], centers[i][0] - c1[0], centers[i][1] - c1[1]);
+        }
+        return { changed: n, phrases: rf.groups };
+    };
+
     // Вернуть слои туда, куда их поставил генератор (снять ручные сдвиги).
     N.resetPositions = function (layers) {
         var n = 0;
