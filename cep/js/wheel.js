@@ -1,13 +1,25 @@
 /* NOIR radial menu ("wheel") and local assistant. Pure view layer: every action goes through the same
    host commands as the buttons (click by role / "run" command), so nothing is duplicated in AE code.
    Gestures: press-and-drag-release (marking menu), or click to open and click an item (sticky).
-   Opened by the hub in the dial, or by the right / middle mouse button anywhere in the panel. */
+   Home screen = an embedded, always-open wheel (mount). The overlay wheel opens with the right / middle mouse button anywhere in the panel. */
 (function () {
     "use strict";
     var NS = "http://www.w3.org/2000/svg";
-    var R0 = 36, R1 = 106, RT = 214, SECTORS = 11, STEP = 360 / SECTORS;
+    var SECTORS = 11, STEP = 360 / SECTORS;
+    // Two geometries: the pop-up wheel and the larger home screen. R0 orb, R1 tile zone, TILE tile size, TILE_R tile ring, SUB item rings, RT half-size of the drawing.
+    var GEO_O = { R0: 36, R1: 106, TILE: 38, TILE_R: 90, SUB: [150, 188], RT: 214 }, GEO_H = { R0: 50, R1: 146, TILE: 52, TILE_R: 120, SUB: [178, 214], RT: 252 };
+    var R0 = 36, R1 = 106, TILE = 38, TILE_R = 90, SUBR = [150, 188], RT = 214;
+    function geo(g) { R0 = g.R0; R1 = g.R1; TILE = g.TILE; TILE_R = g.TILE_R; SUBR = g.SUB; RT = g.RT; }
     var api = null, st = null, overlay = null, assistant = null, bound = false;
 
+    // Shades are computed here: the CEP browser in older After Effects has no color-mix().
+    function rgbOf(hex) { return [parseInt(hex.substr(1, 2), 16), parseInt(hex.substr(3, 2), 16), parseInt(hex.substr(5, 2), 16)]; }
+    function mixTo(hex, base, t) { var c = rgbOf(hex); return "rgb(" + [0, 1, 2].map(function (i) { return Math.round(c[i] * t + base[i] * (1 - t)); }).join(",") + ")"; }
+    function paint(node, hex) {
+        var c = rgbOf(hex), dark = [13, 18, 36], style = node.style;
+        style.setProperty("--c", hex); style.setProperty("--cf", mixTo(hex, dark, .22)); style.setProperty("--cf2", mixTo(hex, dark, .4));
+        style.setProperty("--cs", "rgba(" + c.join(",") + ",.6)");
+    }
     function svg(tag, attrs, parent) {
         var e = document.createElementNS(NS, tag);
         for (var k in attrs) if (attrs.hasOwnProperty(k)) e.setAttribute(k, attrs[k]);
@@ -42,12 +54,12 @@
         }
         return [
             { id: "video", label: "Видео", color: "#4ade80", icon: ICONS.video, items: [
-                { t: "Распознать", run: click("recognize", 0) }, { t: "Загрузить JSON", run: click("load", 0) }, { t: "Отмена", run: click("cancel") }] },
+                { t: "Открыть ▸", run: function () { api.page(0); } }, { t: "Распознать", run: click("recognize", 0) }, { t: "Загрузить JSON", run: click("load", 0) }, { t: "Отмена", run: click("cancel") }] },
             { id: "text", label: "Текст", color: "#a855f7", icon: ICONS.text, items: [
-                { t: "▷ Слушать", run: click("listen", 1) }, { t: "← Фраза", keep: true, run: click("prevPhrase", 1) }, { t: "Фраза →", keep: true, run: click("nextPhrase", 1) },
+                { t: "Открыть ▸", run: function () { api.page(1); } }, { t: "▷ Слушать", run: click("listen", 1) }, { t: "← Фраза", keep: true, run: click("prevPhrase", 1) }, { t: "Фраза →", keep: true, run: click("nextPhrase", 1) },
                 { t: "Отменить правку", run: click("undoEdit", 1) }, { t: "Сохранить JSON", run: click("save", 1) }, { t: "Сбросить текст", run: click("reset", 1) }] },
             { id: "style", label: "Стиль", color: "#facc15", icon: ICONS.style, items:
-                [{ t: "←", keep: true, run: click("galleryPrev", 2) }].concat(names, [{ t: "→", keep: true, run: click("galleryNext", 2) }]) },
+                [{ t: "Открыть ▸", run: function () { api.page(2); } }, { t: "←", keep: true, run: click("galleryPrev", 2) }].concat(names, [{ t: "→", keep: true, run: click("galleryNext", 2) }]) },
             { id: "place", label: "Позиция", color: "#3b82f6", icon: ICONS.place, items: [
                 { t: "Вверху", run: place(25) }, { t: "По центру", run: place(50) }, { t: "Внизу", run: place(75) }, { t: "Исходное", run: function () { api.run({ op: "resetPos" }); } }] },
             { id: "move", label: "Сдвиг", color: "#22d3ee", icon: ICONS.move, items: [
@@ -66,7 +78,7 @@
             { id: "make", label: "Создать", color: "#e879f9", icon: ICONS.create, items: [
                 { t: "Создать все", run: click("generate", 1) }, { t: "Обновить фразу", run: click("updatePhrase", 1) }, { t: "Проверить", run: click("check", 1) }] },
             { id: "fix", label: "Правка", color: "#a3e635", icon: ICONS.fix, items: [
-                { t: "Этого видео", run: function () { api.run({ op: "scope", id: "source" }); } }, { t: "Выделенные", run: function () { api.run({ op: "scope", id: "selected" }); } },
+                { t: "Открыть ▸", run: function () { api.page(3); } }, { t: "Этого видео", run: function () { api.run({ op: "scope", id: "source" }); } }, { t: "Выделенные", run: function () { api.run({ op: "scope", id: "selected" }); } },
                 { t: "Все NOIR", run: function () { api.run({ op: "scope", id: "all" }); } }, { t: "Применить стиль", run: function () { api.run({ op: "applyStyle" }); } },
                 { t: "Удалить", run: function () { if (window.confirm("Удалить выбранные субтитры? Отмена — Ctrl+Z в AE.")) api.run({ op: "delete", confirmed: true }); } }] },
             { id: "more", label: "Ещё", color: "#94a3b8", icon: ICONS.more, items: [
@@ -77,17 +89,17 @@
 
     // ---- layout of the sub-items of the active sector (staggered rows keep labels apart) ----
     function layoutItems(sector, index) {
+        geo(st.g);
         var items = sector.items, n = items.length, base = index * STEP, step = n <= 4 ? 26 : n <= 6 ? 17 : 14, out = [];
         for (var i = 0; i < n; i++) {
-            var deg = base + (i - (n - 1) / 2) * step, r = n > 4 && i % 2 ? 188 : 150;
-            var w = Math.max(30, items[i].t.length * 5.8 + 16), p = pt(r, deg);
+            var deg = base + (i - (n - 1) / 2) * step, r = n > 4 && i % 2 ? SUBR[1] : SUBR[0];
+            var w = Math.max(30, items[i].t.length * 5.8 + 16), p = pt(r, deg); p[0] = Math.max(-(RT - w / 2 - 2), Math.min(RT - w / 2 - 2, p[0]));
             out.push({ x: p[0], y: p[1], w: w, h: 22, item: items[i] });
         }
         return out;
     }
 
     // Orb, glass tiles and curved light lines (after the Neuron reference). Geometry for hit-testing is unchanged.
-    var TILE = 38, TILE_R = 90;
     function defs(root) {
         var d = svg("defs", {}, root), g = svg("radialGradient", { id: "wh-orb", cx: "38%", cy: "30%", r: "75%" }, d);
         [["0", "#bfe0ff"], ["35%", "#3b82f6"], ["75%", "#1e3a8a"], ["100%", "#0b1330"]].forEach(function (x) { svg("stop", { offset: x[0], "stop-color": x[1] }, g); });
@@ -102,14 +114,15 @@
         svg("feGaussianBlur", { stdDeviation: "3.2" }, f);
     }
     function render() {
-        var g = st.layer;
+        geo(st.g);
+        var g = st.layer, k = RT / 214;
         while (g.firstChild) g.removeChild(g.firstChild);
-        svg("circle", { r: 200, fill: "url(#wh-halo)", opacity: ".5" }, g);
-        svg("rect", { x: -168, y: -168, width: 336, height: 336, fill: "url(#wh-grid)", "clip-path": "url(#wh-clip)", opacity: ".8" }, g);
-        [104, 160, 205].forEach(function (r, i) { svg("circle", { r: r, fill: "none", stroke: "#ffffff", "stroke-opacity": .1 - i * .02, "stroke-width": 1 }, g); });
+        svg("circle", { r: 200 * k, fill: "url(#wh-halo)", opacity: ".5" }, g);
+        svg("rect", { x: -168 * k, y: -168 * k, width: 336 * k, height: 336 * k, fill: "url(#wh-grid)", "clip-path": "url(#wh-clip)", opacity: ".8" }, g);
+        [104, 160, 205].forEach(function (r, i) { svg("circle", { r: r * k, fill: "none", stroke: "#ffffff", "stroke-opacity": .1 - i * .02, "stroke-width": 1 }, g); });
         st.sectors.forEach(function (s, i) {
             var node = svg("g", { "class": "wh-sector" + (i === st.sector ? " active" : "") + (st.level === 0 && i === st.kb ? " kb" : "") }, g);
-            node.style.setProperty("--c", s.color);
+            paint(node, s.color);
             var a = i * STEP, p0 = pt(R0 - 1, a), p1 = pt(TILE_R - TILE / 2 - 1, a), side = pt(1, a + 90), bend = (i % 2 ? 1 : -1) * 22;
             var c1 = [p0[0] * 1.35 + side[0] * bend, p0[1] * 1.35 + side[1] * bend], c2 = [p1[0] * .8 + side[0] * bend * .4, p1[1] * .8 + side[1] * bend * .4];
             svg("path", { d: "M" + p0 + " C" + c1 + " " + c2 + " " + p1, "class": "wh-line" }, node);
@@ -132,7 +145,7 @@
             st.pills = layoutItems(sector, st.sector);
             st.pills.forEach(function (pill, j) {
                 var node = svg("g", { "class": "wh-pill" + (j === st.item ? " hover" : "") + (st.level === 1 && j === st.kb ? " kb" : "") }, g);
-                node.style.setProperty("--c", sector.color);
+                paint(node, sector.color);
                 svg("rect", { x: pill.x - pill.w / 2, y: pill.y - pill.h / 2, width: pill.w, height: pill.h, rx: 11 }, node);
                 var tx = svg("text", { x: pill.x, y: pill.y + 3.6, "text-anchor": "middle" }, node);
                 tx.textContent = pill.item.t;
@@ -140,24 +153,38 @@
         } else st.pills = [];
     }
 
-    function pointer(e) { return { x: (e.clientX - st.cx) / st.scale, y: (e.clientY - st.cy) / st.scale }; }
+    function pointer(e) {
+        if (st.persistent) { var r = st.root.getBoundingClientRect(); st.cx = r.left + r.width / 2; st.cy = r.top + r.height / 2; st.scale = r.width / (st.g.RT * 2) || 1; }
+        return { x: (e.clientX - st.cx) / st.scale, y: (e.clientY - st.cy) / st.scale };
+    }
     function sectorAt(p) {
         var deg = Math.atan2(p.x, -p.y) * 180 / Math.PI; if (deg < 0) deg += 360;
         return Math.round(deg / STEP) % SECTORS;
     }
     function hit(p) {
+        geo(st.g);
         for (var j = 0; j < st.pills.length; j++) {
             var q = st.pills[j];
             if (Math.abs(p.x - q.x) <= q.w / 2 + 3 && Math.abs(p.y - q.y) <= q.h / 2 + 3) return { type: "item", index: j };
         }
         var d = Math.sqrt(p.x * p.x + p.y * p.y);
         if (d < R0) return { type: "center" };
+        if (st.persistent) {
+            // home screen: a tile is chosen by being near the tile itself, so a path from a tile to its items does not hop to a neighbour
+            if (d > TILE_R + TILE * 0.6) return null;        // out among the items: the open tile stays
+            var best = -1, bestD = TILE * 0.95;
+            for (var i = 0; i < st.sectors.length; i++) {
+                var c = pt(TILE_R, i * STEP), dd = Math.sqrt((p.x - c[0]) * (p.x - c[0]) + (p.y - c[1]) * (p.y - c[1]));
+                if (dd < bestD) { bestD = dd; best = i; }
+            }
+            return best >= 0 ? { type: "sector", index: best } : null;
+        }
         if (d < R1 + 4) return { type: "sector", index: sectorAt(p) };
         return null;
     }
     function hover(e) {
         var h = hit(pointer(e)), changed = false;
-        if (h && h.type === "sector" && h.index !== st.sector) { st.sector = h.index; st.item = -1; changed = true; }
+        if (h && h.type === "sector" && h.index !== st.sector && !st.locked) { st.sector = h.index; st.item = -1; changed = true; }
         var item = h && h.type === "item" ? h.index : -1, center = h && h.type === "center" ? "center" : "";
         if (item !== st.item || center !== st.hover) { st.item = item; st.hover = center; changed = true; }
         if (changed) { st.kb = -1; render(); }
@@ -165,7 +192,7 @@
     }
 
     function close() {
-        if (!st) return;
+        if (!st || st.persistent) return;
         document.removeEventListener("pointermove", onMove, true); document.removeEventListener("pointerup", onUp, true);
         document.removeEventListener("keydown", onKey, true); window.removeEventListener("blur", close);
         if (overlay && overlay.parentNode) overlay.parentNode.removeChild(overlay);
@@ -175,7 +202,7 @@
         if (!h) return false;
         if (h.type === "center") { close(); openAssistant(); return true; }
         if (h.type !== "item") return false;
-        var pill = st.pills[h.index], keep = pill.item.keep && st.mode === "sticky";
+        var pill = st.pills[h.index], keep = st.persistent || (pill.item.keep && st.mode === "sticky");
         if (!keep) close();
         try { pill.item.run(); } catch (err) { api.notify(String(err && err.message || err), 6000); }
         return true;
@@ -216,6 +243,7 @@
     }
 
     function open(x, y, mode, keyboard) {
+        var RT = GEO_O.RT;      // local: the module-level RT follows whichever wheel rendered last
         close(); closeAssistant();
         var vw = window.innerWidth, vh = window.innerHeight, scale = Math.max(.5, Math.min(1, (Math.min(vw, vh) / 2 - 6) / RT));
         var half = RT * scale + 3;
@@ -225,13 +253,40 @@
         var size = RT * 2 * scale, root = svg("svg", { viewBox: -RT + " " + -RT + " " + RT * 2 + " " + RT * 2, width: size, height: size }, overlay);
         root.style.left = (cx - size / 2) + "px"; root.style.top = (cy - size / 2) + "px";
         defs(root); var layer = svg("g", {}, root);
-        st = { cx: cx, cy: cy, scale: scale, mode: mode, x0: x, y0: y, moved: false, sector: -1, item: -1, hover: "", kb: -1, level: 0, pills: [], sectors: buildSectors(), layer: layer };
+        st = { g: GEO_O, cx: cx, cy: cy, scale: scale, mode: mode, x0: x, y0: y, moved: false, sector: -1, item: -1, hover: "", kb: -1, level: 0, pills: [], sectors: buildSectors(), layer: layer };
         document.body.appendChild(overlay);
         document.addEventListener("pointermove", onMove, true); document.addEventListener("pointerup", onUp, true);
         document.addEventListener("keydown", onKey, true); window.addEventListener("blur", close);
         overlay.addEventListener("contextmenu", function (ev) { ev.preventDefault(); });
         if (keyboard) { st.mode = "sticky"; st.kb = 0; st.sector = 0; }
         render();
+    }
+
+    // ---- embedded, always-open wheel: the home screen of the panel ----
+    var home = null, homeObserver = null;
+    function mount(host, options) {
+        if (options) api = options;
+        if (homeObserver) { homeObserver.disconnect(); homeObserver = null; }
+        host.textContent = ""; home = null;
+        var wrap = document.createElement("div"); wrap.className = "noir-home"; host.appendChild(wrap);
+        var HR = GEO_H.RT, root = svg("svg", { viewBox: -HR + " " + -HR + " " + HR * 2 + " " + HR * 2, tabindex: 0, role: "application", "aria-label": "Главное меню NOIR: плитки действий вокруг помощника" }, wrap);
+        defs(root); var layer = svg("g", {}, root);
+        home = { g: GEO_H, persistent: true, root: root, cx: 0, cy: 0, scale: 1, mode: "sticky", x0: 0, y0: 0, moved: true, sector: -1, item: -1, hover: "", kb: -1, level: 0, pills: [], sectors: buildSectors(), layer: layer };
+        function fit() {
+            var w = host.clientWidth, h = host.clientHeight, side = Math.max(160, Math.min(w, h));
+            root.setAttribute("width", side); root.setAttribute("height", side);
+        }
+        fit();
+        if (window.ResizeObserver) { homeObserver = new ResizeObserver(fit); homeObserver.observe(host); } else window.addEventListener("resize", fit);
+        // Handlers temporarily make the home state current, then restore the previous one (an overlay wheel may be open above).
+        function inHome(fn) { return function (e) { if (!home) return; var prev = st; st = home; try { fn(e); } finally { st = prev; } }; }
+        root.addEventListener("pointermove", inHome(function (e) { hover(e); }));
+        root.addEventListener("pointerdown", inHome(function (e) { if (e.button === 0) { hover(e); st.locked = st.sector >= 0; } }));   // a press-and-drag keeps its tile
+        root.addEventListener("pointerup", inHome(function (e) { if (e.button !== 0) return; st.locked = false; var h = hover(e); if (h) execute(h); }));
+        window.addEventListener("pointerup", function () { if (home) home.locked = false; }, true);
+        root.addEventListener("keydown", inHome(function (e) { onKey(e); }));
+        root.addEventListener("contextmenu", function (e) { e.preventDefault(); });
+        (function () { var prev = st; st = home; render(); st = prev; })();
     }
 
     // ---- local assistant: understands plain commands offline; the same command objects a language model would produce ----
@@ -323,6 +378,6 @@
             });
             document.addEventListener("contextmenu", function (e) { if (!(e.target.closest && e.target.closest("input,textarea,select"))) e.preventDefault(); });
         },
-        open: open, close: close, understand: understand, openAssistant: openAssistant
+        mount: mount, open: open, close: close, understand: understand, openAssistant: openAssistant
     };
 })();

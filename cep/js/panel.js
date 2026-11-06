@@ -113,7 +113,7 @@
         } else if (node.type === "progressbar") input.value = node.value;
     }
     var MAIN_PAGES = ["speechPage","textPage","stylePage","finishPage"];
-    var roles = {}, workflow = {}, ui = {main:0, settings:false, section:"recognition", completed:0, successUntil:0}, view = {};
+    var roles = {}, workflow = {}, ui = {main:0, home:true, settings:false, section:"recognition", completed:0, successUntil:0}, view = {};
     function element(tag, cls, text, parent) {
         var el = document.createElement(tag); el.className = cls || "";
         if (text) el.textContent = text;
@@ -168,8 +168,11 @@
         record.caption.style.textTransform=meta.base.caps?"uppercase":"none";
         record.tile.classList.toggle("selected",meta.id===workflow.preset);
     }
+    function goHome() {
+        ui.home=true;ui.settings=false;stopVideos();flushInputs();pump();renderLayout();
+    }
     function selectMain(index) {
-        ui.main=index;view.body.scrollTop=0;view.tools.hidden=true;stopVideos();
+        ui.home=false;ui.main=index;view.body.scrollTop=0;view.tools.hidden=true;stopVideos();
         flushInputs();pump();
         renderLayout();
     }
@@ -180,18 +183,19 @@
     function closeSettings() {ui.settings=false;renderLayout();view.more.focus();}
     function renderLayout() {
         if(!view.body)return;
-        MAIN_PAGES.forEach(function(role,index){if(roles[role])roles[role].el.hidden=ui.main!==index;});
-        if(view.stepName)view.stepName.textContent=["Видео","Текст","Стиль","Правка"][ui.main]+" · "+(ui.main+1)+"/4";
-        if(view.heading)view.heading.textContent=["Ваше видео","Редактор текста","Галерея стилей","Правка субтитров"][ui.main];
-        view.tabs.forEach(function(tab,index){tab.classList.toggle("tab-active",ui.main===index);tab.setAttribute("aria-selected",ui.main===index?"true":"false");});
+        var onHome=ui.home, onVideo=!onHome && ui.main===0;
+        MAIN_PAGES.forEach(function(role,index){if(roles[role])roles[role].el.hidden=onHome || ui.main!==index;});
+        view.body.hidden=onHome;view.homeHost.hidden=!onHome;view.brandButton.classList.toggle("tab-active",onHome);view.brandButton.setAttribute("aria-pressed",String(onHome));
+        if(view.heading)view.heading.textContent=onHome?"NOIR Captions":["Ваше видео","Редактор текста","Галерея стилей","Правка субтитров"][ui.main];
+        view.tabs.forEach(function(tab,index){var on=!onHome && ui.main===index;tab.classList.toggle("tab-active",on);tab.setAttribute("aria-selected",on?"true":"false");});
         view.shell.classList.toggle("settings-open",ui.settings);view.drawer.hidden=!ui.settings;view.backdrop.hidden=!ui.settings;
         view.more.setAttribute("aria-expanded",String(ui.settings));
         Object.keys(view.sections).forEach(function(key){view.sections[key].hidden=key!==ui.section;});
         view.drawer.setAttribute("aria-modal",String(window.innerWidth<760));
         view.body.setAttribute("aria-hidden",String(ui.settings && window.innerWidth<760));
-        view.primary.textContent=workflow.recognizing?"Распознавание…":ui.main===0 || !workflow.hasData?"Распознать речь":workflow.canUpdate?"Обновить фразу":"Создать субтитры";
+        view.primary.textContent=workflow.recognizing?"Распознавание…":onVideo || !workflow.hasData?"Распознать речь":workflow.canUpdate?"Обновить фразу":"Создать субтитры";
         view.primary.disabled=!!workflow.recognizing;
-        view.all.hidden=!workflow.canUpdate || ui.main===0;
+        view.all.hidden=!workflow.canUpdate || onVideo;
         view.status.textContent=workflow.recognizing?"Распознавание":workflow.pending?"Есть замечания перед созданием":!workflow.hasData?"Выберите слой со звуком в AE":workflow.dirty?"Текст изменён — обновите фразу":"Можно редактировать";
         view.status.dataset.state=workflow.recognizing?"busy":workflow.dirty || workflow.pending?"dirty":workflow.hasData?"ready":"idle";
         if(Date.now()<ui.successUntil && !workflow.dirty && !workflow.pending)view.status.textContent="✓ Субтитры обновлены";
@@ -253,16 +257,16 @@
         if(previewObserver)previewObserver.disconnect();
         app.textContent="";view={};view.sections={};view.tabs=[];videoRecords=[];
         view.shell=element("div","shell","",app);
-        var sidebar=element("aside","sidebar","",view.shell),brand=element("div","brand","",sidebar);
+        var sidebar=element("aside","sidebar","",view.shell),brand=button("","brand home-button",sidebar,function(){goHome();});view.brandButton=brand;
         var stage=element("div","stage","",view.shell),header=element("header","app-header","",stage);
         var introduction=element("div","introduction","",header);
         view.heading=element("h1","workspace-heading","Ваше видео",introduction);
         var mark=element("span","brand-mark","",brand);
         var logo=element("img","","",mark);logo.src="media/noir-mark.svg";logo.alt="";mark.setAttribute("aria-hidden","true");
-        brand.title="NOIR Captions · 0.16.2";brand.setAttribute("aria-label","NOIR Captions");
+        brand.title="NOIR Captions · 0.17.0 — главный экран";brand.setAttribute("aria-label","Главный экран NOIR Captions");
         var primaryArea=element("div","primary-area","",header);
         view.primary=button("Распознать речь","create-action",primaryArea,function(){
-            action(ui.main===0 || !workflow.hasData?"recognize":workflow.canUpdate?"updatePhrase":"generate");
+            action((!ui.home && ui.main===0) || !workflow.hasData?"recognize":workflow.canUpdate?"updatePhrase":"generate");
         });
         view.all=element("details","action-menu","",primaryArea);element("summary","","⋯",view.all).setAttribute("aria-label","Другие действия создания");
         var allMenu=element("div","popover","",view.all);
@@ -271,33 +275,33 @@
         view.status=element("div","workflow-status","",statusRow);view.status.setAttribute("role","status");view.status.setAttribute("aria-live","polite");
         place("cancel",statusRow,"text-button");
         view.progress=element("div","recognition-progress","",stage);place("progress",view.progress);
-        var nav=element("nav","step-navigation tabs dial","",sidebar);nav.setAttribute("aria-label","Основные разделы");nav.setAttribute("role","tablist");
+        var nav=element("nav","step-navigation tabs","",sidebar);nav.setAttribute("aria-label","Основные разделы");nav.setAttribute("role","tablist");
         ["Видео","Текст","Стиль","Правка"].forEach(function(name,index){
             var tab=button("","step-tab",nav,function(){selectMain(index);});
             var icon=element("span","nav-icon","",tab);icon.setAttribute("aria-hidden","true");
             var paths=["M4 5h12v14H4z M16 9l5-3v12l-5-3", "M4 5h16 M12 5v15 M8 20h8", "M5 4h14v16H5z M8 8h8 M8 12h8 M8 16h4", "M4 7h9 M17 7h3 M15 5v4 M4 17h3 M11 17h9 M9 15v4"];
             icon.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="'+paths[index]+'"/></svg>';
             element("span","nav-label",name,tab);
-            tab.setAttribute("role","tab");tab.setAttribute("aria-controls",MAIN_PAGES[index]);
+            tab.setAttribute("role","tab");tab.setAttribute("aria-label",name);tab.title=name;tab.setAttribute("aria-controls",MAIN_PAGES[index]);
             tab.onkeydown=function(event){if(event.key==="ArrowRight" || event.key==="ArrowLeft"){event.preventDefault();var count=view.tabs.length,next=(index+(event.key==="ArrowRight"?1:count-1))%count;selectMain(next);view.tabs[next].focus();}};
             view.tabs.push(tab);
         });
-        mark.classList.add("dial-core");nav.appendChild(mark);
-        if(window.NoirWheel)NoirWheel.init({hub:mark,roles:function(){return roles;},
+        var wheelApi={roles:function(){return roles;},
             click:function(role){if(roles[role])send({action:"click",id:roles[role].id});},
             run:function(command){send({action:"run",command:command});},
             page:function(index){ui.settings=false;selectMain(index);},
             settings:function(section){openSettings(section);},
-            notify:function(text,time){showError(text,time);}});
-        var dialFoot=element("div","dial-foot","",sidebar);
-        view.stepName=element("div","step-name","",dialFoot);view.stepName.setAttribute("aria-hidden","true");
-        view.more=button("Настройки","more-button",dialFoot,function(){if(ui.settings)closeSettings();else openSettings();});
+            notify:function(text,time){showError(text,time);}};
+        if(window.NoirWheel)NoirWheel.init(wheelApi);
+        view.more=button("Настройки","more-button",sidebar,function(){if(ui.settings)closeSettings();else openSettings();});
         view.more.setAttribute("aria-controls","settings-drawer");view.more.setAttribute("aria-label","Настройки");
         var settingsIcon=element("span","nav-icon","");settingsIcon.setAttribute("aria-hidden","true");
         settingsIcon.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><path d="m9 3-.7 2.6-2.6.7L4 8.7l1.8 2L5 13.4l-1 1 1.8 3.1 2.5-.5 1.8 2H13l1.8-2 2.5.5 1.8-3.1-1.7-2.2.6-2.6-1.8-3.1-2.6.1L12 3H9Z"/><circle cx="11.5" cy="11.4" r="3"/></svg>';
         view.more.insertBefore(settingsIcon,view.more.firstChild);
         var workspace=element("div","workspace-layout","",stage);
+        view.homeHost=element("section","home-host","",workspace);
         view.body=element("main","scroll-body workspace","",workspace);
+        if(window.NoirWheel)NoirWheel.mount(view.homeHost,wheelApi);
         if(window.IntersectionObserver)previewObserver=new IntersectionObserver(function(entries){
             entries.forEach(function(entry){if(!entry.isIntersecting){var r=entry.target._previewRecord;if(r && !r.video.paused){r.video.pause();r.tile.classList.remove("playing");}}});
         },{root:view.body});
@@ -410,7 +414,7 @@
         }
         data.nodes.forEach(function(node){if(!records[node.id])records[node.id]=create(node);apply(records[node.id],node);});
         if(data.full)curated();
-        if(workflow.hasData && workflow.dataRevision!==previousDataRevision){ui.main=1;if(view.body)view.body.scrollTop=0;}
+        if(workflow.hasData && workflow.dataRevision!==previousDataRevision){ui.home=false;ui.main=1;if(view.body)view.body.scrollTop=0;}
         // Legacy pages supply controls, while HTML owns independent main and inspector navigation.
         ["viewPage","layoutPage","animationPage","layersPage","toolsPage","sfxPage"].forEach(function(role){if(roles[role])roles[role].el.hidden=false;});
         if(previousPhrase!==workflow.phrase && roles.editor && document.activeElement!==roles.editor.input){
