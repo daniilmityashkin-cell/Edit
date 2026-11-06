@@ -1186,6 +1186,68 @@ const GOPTS = { maxWords: 1, maxChars: 99, pauseBreak: 0.35, punctBreak: true, s
     assert.strictEqual(foreign.inPoint, 0.2);
     p.run && 0;
   });
+  const omPhrase = (words) => ({ segments: [{ words: words.map((w, i) => ({ text: w.t, start: i * 0.35, end: i * 0.35 + 0.3, accent: w.a })) }] });
+  const omGen = (c, d, tweak) => { const st = styleOf("old-money"); st.layout.autoAccent = false; if (tweak) tweak(st); const words = N.applyEdits(d, d.segments[0].words.map(w => (w.accent ? "*" + w.text + "*" : w.text)).join(" "), []); const gs = prep(words, st.layout); gs.forEach(g => (g.sourceKey = "sOM")); return { st, r: N.generate(c, gs, st, st.anim, true) }; };
+  await test("OLD MONEY: акценты — в верхней зоне, мелкие слова — на уровне груди; два блока по центру", () => {
+    const c = mkComp(); const { st } = omGen(c, omPhrase([{ t: "let" }, { t: "me", a: true }, { t: "be" }, { t: "the" }, { t: "first", a: true }, { t: "to" }, { t: "say" }]));
+    const accent = subs(c).filter(l => l.label === 11), base = subs(c).filter(l => l.label !== 11);
+    assert.ok(accent.length === 2 && base.length === 5, accent.length + "/" + base.length);
+    const cy = (ls) => { const b = ls.map(l => ({ y: N.baseOf(l)[1], h: l.sourceRectAtTime().height })); return (Math.min(...b.map(x => x.y - x.h / 2)) + Math.max(...b.map(x => x.y + x.h / 2))) / 2; };
+    near(cy(accent), c.height * st.layout.accentPosY / 100, 1e-6); near(cy(base), c.height * st.layout.posY / 100, 1e-6);
+    assert.ok(cy(accent) < cy(base), "акценты выше");
+    const cx = (ls) => { const b = ls.map(l => ({ x: N.baseOf(l)[0], w: l.sourceRectAtTime().width })); return (Math.min(...b.map(x => x.x - x.w / 2)) + Math.max(...b.map(x => x.x + x.w / 2))) / 2; };
+    near(cx(accent), c.width / 2, 1); near(cx(base), c.width / 2, 1);
+  });
+  await test("OLD MONEY: разные анимации — blurPop у акцентов, blurRise у мелких; палитра акцентов; без акцента — как обычно", () => {
+    const c = mkComp(); omGen(c, omPhrase([{ t: "let" }, { t: "me", a: true }, { t: "property", a: true }, { t: "be" }]));
+    const acc = subs(c).filter(l => l.label === 11), base = subs(c).filter(l => l.label !== 11);
+    acc.forEach(l => { assert.ok(mk(l, "Scale").length >= 3, "blurPop: масштаб с перелётом"); assert.strictEqual(l.transform.Scale.keys.length, 0); });
+    base.forEach(l => { assert.strictEqual(mk(l, "Scale").length, 0, "blurRise без масштаба"); assert.ok(mk(l, "Position").length >= 2, "подъём"); });
+    const inDur = (l) => { const t = mk(l, "Scale").map(k => k.t); return t.length ? Math.max(...t.filter(x => x <= l.inPoint + 0.5)) - l.inPoint : 0; };
+    assert.ok(Math.abs(inDur(acc[0]) - 0.24) < 0.02, "accentInDur = 0.24");
+    const colours = acc.map(l => JSON.stringify(l.src.value.fillColor)); assert.strictEqual(new Set(colours).size, 2, "акценты разных цветов из палитры");
+    const c2 = mkComp(); omGen(c2, omPhrase([{ t: "a" }, { t: "b" }, { t: "c" }])); assert.strictEqual(subs(c2).length, 3);
+  });
+  await test("OLD MONEY: слова копятся (reveal word), старые слои без accentPosY ведут себя как раньше", () => {
+    const c = mkComp(); omGen(c, omPhrase([{ t: "let" }, { t: "me", a: true }, { t: "be" }]));
+    const ls = subs(c); const ins = ls.map(l => l.inPoint).sort((a, b) => a - b); assert.ok(ins[2] > ins[0], "появляются по очереди");
+    assert.ok(ls.every(l => Math.abs(l.outPoint - ls[0].outPoint) < 1e-9), "держатся до конца фразы");
+    const c3 = mkComp(); omGen(c3, omPhrase([{ t: "let" }, { t: "me", a: true }]), st => { delete st.layout.accentPosY; });
+    const ys = new Set(subs(c3).map(l => Math.round(N.baseOf(l)[1]))); assert.ok(ys.size >= 1);
+  });
+  await test("автоперекладка при зонах: акценты и мелкие слова перекладываются каждый вокруг своего центра", () => {
+    const c = mkComp(); const { st } = omGen(c, omPhrase([{ t: "let" }, { t: "me", a: true }, { t: "be" }, { t: "first", a: true }]));
+    const acc = subs(c).filter(l => l.label === 11), yA = acc.map(l => N.baseOf(l)[1]);
+    const r = N.reflowGroups(c, subs(c), st.layout); assert.strictEqual(r.groups, 1);
+    acc.forEach((l, i) => near(N.baseOf(l)[1], yA[i], 1e-6));
+    const base = subs(c).filter(l => l.label !== 11); assert.ok(Math.abs(N.baseOf(base[0])[1] - c.height * st.layout.posY / 100) < c.height * 0.05);
+  });
+  await test("«за человеком»: слои NOIR встают под выбранный слой, порядок сохраняется, чужие и заблокированные не трогаются", () => {
+    const c = mkComp(); const { r } = omGen(c, omPhrase([{ t: "let" }, { t: "me", a: true }, { t: "be" }]));
+    const video = c.layers.addText("видео без человека"); video.comment = ""; c._l.splice(c._l.indexOf(video), 1); c._l.unshift(video);
+    const mine = subs(c).slice(), before = mine.map(l => l.index);
+    const res = N.placeBehind(c, mine, video); assert.strictEqual(res.moved, mine.length);
+    assert.ok(mine.every(l => l.index > video.index), "все ниже выбранного слоя");
+    assert.deepStrictEqual(mine.map(l => l.index).sort((a, b) => a - b), mine.map(l => l.index).slice().sort((a, b) => a - b));
+    assert.deepStrictEqual(mine.slice().sort((a, b) => a.index - b.index), mine.slice().sort((a, b) => before[mine.indexOf(a)] - before[mine.indexOf(b)]), "порядок слоёв сохранён");
+    const p = editorPanel(); p.button("Создать субтитры").onClick();
+    const c2 = global.app.project.activeItem; const vid = c2.layers.addText("видео"); vid.selected = true;
+    p.button("Поместить под выделенный слой").onClick();
+    assert.ok(subs(c2).every(l => l.index > vid.index), "кнопка панели");
+  });
+  await test("панель: «акценты отдельно по высоте» читается и пишется в раскладку; выбор вылета вручную сбрасывает анимацию акцентов", () => {
+    const keySettings = "NOIR Captions/settings.v2", savedBefore = env.settings[keySettings];
+    try {
+    const c = mkComp(); const p = N.buildPanel(new mock.Panel(), ROOT);
+    const dd = p.find(e => e.type === "dropdownlist" && e.items.some(i => i.text === "OLD MONEY")); dd.selection = dd.items.findIndex(i => i.text === "OLD MONEY"); dd.onChange();
+    const box = p.find(e => e.type === "checkbox" && e.text === "отдельно по высоте"); assert.strictEqual(box.value, true, "в OLD MONEY зона включена");
+    const saved = () => N.parseJSON(env.settings["NOIR Captions/settings.v2"]).style;
+    box.value = false; box.onClick(); p.button("Создать субтитры").onClick(); assert.strictEqual(saved().layout.accentPosY, undefined);
+    box.value = true; box.onClick(); p.button("Создать субтитры").onClick(); assert.strictEqual(saved().layout.accentPosY, 24);
+    const chip = (t, which) => p.find(e => e.type === "button" && e.text === t && e._which === which); chip("Fade", "in").onClick();
+    assert.strictEqual(saved().anim.accentIn, undefined, "ручной выбор — для всех слов"); assert.strictEqual(saved().anim.animIn, "fade");
+    } finally { if (savedBefore === undefined) delete env.settings[keySettings]; else env.settings[keySettings] = savedBefore; }
+  });
   await test("ручной сдвиг фразы переживает пересоздание; «исходные места» его снимает", () => {
     const c = mkComp(); genSrc(c, "sA", "sA");
     const ph0 = ofSrc(c, "sA").filter(l => N.groupInfo(l).segment === 0), before = ph0.map(l => N.baseOf(l));

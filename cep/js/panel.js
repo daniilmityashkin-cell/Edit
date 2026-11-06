@@ -156,7 +156,7 @@
         record.hasReference=reference;record.tile.classList.toggle("has-reference",reference);video.hidden=!reference;
         if(reference && record.source!=="noir") {video.src="media/noir.mp4";video.poster="media/noir.jpg";record.source="noir";}
         else if(!reference && record.source){video.pause();video.removeAttribute("src");video.removeAttribute("poster");video.load();record.source=null;}
-        var names={"mix-colors":"Mix Colors","editorial-italic":"Editorial Italic","kinetic-stack":"Kinetic Blue","noir-red":"NOIR Red","editorial":"Editorial","pop-words":"Pop Words","kinetic-orange":"Kinetic Orange","invert":"Invert","reels-glow":"Reels Glow","gold-serif":"Gold Serif","silver-italic":"Silver Italic","aukera-future":"Aukera Future","onder-wide":"Onder Wide","abraxas-sci":"Abraxas Sci-Fi","pixel-vpch2":"Pixel VPCH2","elastre-thin":"Elastre Thin","dispater-gold":"Dispater Gold","belcanto-cream":"Belcanto Cream","peter-ornate":"Peter Ornate"};
+        var names={"mix-colors":"Mix Colors","editorial-italic":"Editorial Italic","kinetic-stack":"Kinetic Blue","noir-red":"NOIR Red","editorial":"Editorial","pop-words":"Pop Words","kinetic-orange":"Kinetic Orange","invert":"Invert","reels-glow":"Reels Glow","gold-serif":"Gold Serif","silver-italic":"Silver Italic","aukera-future":"Aukera Future","onder-wide":"Onder Wide","abraxas-sci":"Abraxas Sci-Fi","pixel-vpch2":"Pixel VPCH2","elastre-thin":"Elastre Thin","dispater-gold":"Dispater Gold","belcanto-cream":"Belcanto Cream","peter-ornate":"Peter Ornate","old-money":"OLD MONEY"};
         var name=names[meta.id] || meta.name;
         record.caption.hidden=reference;record.caption.textContent=name;
         record.shortText=name;record.el.textContent=name;
@@ -263,7 +263,7 @@
         view.heading=element("h1","workspace-heading","Ваше видео",introduction);
         var mark=element("span","brand-mark","",brand);
         var logo=element("img","","",mark);logo.src="media/noir-mark.svg";logo.alt="";mark.setAttribute("aria-hidden","true");
-        brand.title="NOIR Captions · 0.17.0 — главный экран";brand.setAttribute("aria-label","Главный экран NOIR Captions");
+        brand.title="NOIR Captions · 0.18.0 — главный экран";brand.setAttribute("aria-label","Главный экран NOIR Captions");
         var primaryArea=element("div","primary-area","",header);
         view.primary=button("Распознать речь","create-action",primaryArea,function(){
             action((!ui.home && ui.main===0) || !workflow.hasData?"recognize":workflow.canUpdate?"updatePhrase":"generate");

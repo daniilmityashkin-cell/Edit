@@ -1,0 +1,130 @@
+{
+ "schema": "noir-style/1",
+ "id": "old-money",
+ "name": "OLD MONEY",
+ "description": "Дорогой минимализм: мелкие светлые слова на уровне груди и крупные акценты антиквой в верхней зоне (фиолетовый, бирюзовый, белый, сиреневый). Слова копятся быстро, с лёгким размытием. Идея — рекламные ролики с человеком в кадре; «за человеком» — кнопка в «Правке».",
+ "layout": {
+  "reveal": "word",
+  "maxWords": 6,
+  "maxChars": 42,
+  "lineChars": 0,
+  "pauseBreak": 0.45,
+  "punctBreak": true,
+  "stripPunct": false,
+  "autoAccent": true,
+  "posX": 50,
+  "posY": 50,
+  "accentPosY": 24,
+  "lineGap": 0.06,
+  "wordSpace": 0.26,
+  "accentOwnLine": true,
+  "safeWidth": 0.88,
+  "holdGap": 0.25
+ },
+ "base": {
+  "fonts": [
+   "Montserrat-Light",
+   "Montserrat-Regular",
+   "Inter-Light",
+   "Roboto-Light",
+   "SegoeUI-Light",
+   "ArialMT"
+  ],
+  "size": 58,
+  "color": [
+   1,
+   1,
+   1
+  ],
+  "tracking": 0,
+  "caps": false,
+  "strokeWidth": 0,
+  "strokeColor": [
+   0,
+   0,
+   0
+  ],
+  "opacity": 95,
+  "shadow": {
+   "color": [
+    0,
+    0,
+    0
+   ],
+   "opacity": 45,
+   "distance": 2,
+   "softness": 10
+  },
+  "glow": null
+ },
+ "accent": {
+  "fonts": [
+   "PlayfairDisplayRoman-Regular",
+   "PlayfairDisplay-Regular",
+   "Prata-Regular",
+   "OldStandardTT-Regular",
+   "Georgia",
+   "TimesNewRomanPSMT"
+  ],
+  "size": 165,
+  "color": [
+   0.56,
+   0.36,
+   0.82
+  ],
+  "colors": [
+   [
+    0.56,
+    0.36,
+    0.82
+   ],
+   [
+    0.15,
+    0.72,
+    0.8
+   ],
+   [
+    1,
+    1,
+    1
+   ],
+   [
+    0.86,
+    0.4,
+    0.86
+   ]
+  ],
+  "tracking": -8,
+  "caps": true,
+  "strokeWidth": 0,
+  "strokeColor": [
+   0,
+   0,
+   0
+  ],
+  "shadow": {
+   "color": [
+    0,
+    0,
+    0
+   ],
+   "opacity": 35,
+   "distance": 3,
+   "softness": 14
+  },
+  "glow": null
+ },
+ "anim": {
+  "animIn": "blurRise",
+  "inDur": 0.28,
+  "animOut": "blur",
+  "outDur": 0.2,
+  "distance": 16,
+  "blur": 14,
+  "easeInfluence": 85,
+  "accentIn": "blurPop",
+  "accentInDur": 0.24,
+  "accentOut": "blur",
+  "accentOutDur": 0.18
+ }
+}

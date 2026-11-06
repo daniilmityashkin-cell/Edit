@@ -23,6 +23,7 @@
  "base": {
   "fonts": [
    "PlayfairDisplay-Italic",
+   "PlayfairDisplayItalic-Regular",
    "BodoniModa-Italic",
    "BodoniModa28pt-Italic",
    "Georgia-Italic",
@@ -59,6 +60,7 @@
    "BodoniModa-Bold",
    "BodoniModa28pt-Bold",
    "PlayfairDisplay-Bold",
+   "PlayfairDisplayRoman-Bold",
    "BodoniMT-Bold",
    "Georgia-Bold",
    "TimesNewRomanPS-BoldMT"

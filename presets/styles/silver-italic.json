@@ -58,6 +58,7 @@
  "accent": {
   "fonts": [
    "PlayfairDisplay-Italic",
+   "PlayfairDisplayItalic-Regular",
    "BodoniModa-Italic",
    "Georgia-Italic",
    "TimesNewRomanPS-ItalicMT"

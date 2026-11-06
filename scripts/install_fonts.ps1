@@ -35,6 +35,8 @@ $fonts = @(
   @('lora','Lora-Italic[wght].ttf','Lora Italic','book italic'),
   @('cormorant','Cormorant[wght].ttf','Cormorant','elegant serif'),
   @('cormorant','Cormorant-Italic[wght].ttf','Cormorant Italic','elegant italic'),
+  @('prata','Prata-Regular.ttf','Prata','didone serif, accents'),
+  @('oldstandardtt','OldStandard-Regular.ttf','Old Standard TT','didone serif'),
   @('notoserifdisplay','NotoSerifDisplay[wdth,wght].ttf','Noto Serif Display','high-contrast serif'),
   @('philosopher','Philosopher-Regular.ttf','Philosopher','characterful serif'),
   @('philosopher','Philosopher-BoldItalic.ttf','Philosopher Bold Italic','bold italic'),

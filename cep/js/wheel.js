@@ -79,7 +79,7 @@
                 { t: "Создать все", run: click("generate", 1) }, { t: "Обновить фразу", run: click("updatePhrase", 1) }, { t: "Проверить", run: click("check", 1) }] },
             { id: "fix", label: "Правка", color: "#a3e635", icon: ICONS.fix, items: [
                 { t: "Открыть ▸", run: function () { api.page(3); } }, { t: "Этого видео", run: function () { api.run({ op: "scope", id: "source" }); } }, { t: "Выделенные", run: function () { api.run({ op: "scope", id: "selected" }); } },
-                { t: "Все NOIR", run: function () { api.run({ op: "scope", id: "all" }); } }, { t: "Применить стиль", run: function () { api.run({ op: "applyStyle" }); } },
+                { t: "Все NOIR", run: function () { api.run({ op: "scope", id: "all" }); } }, { t: "Применить стиль", run: function () { api.run({ op: "applyStyle" }); } }, { t: "За человеком", run: function () { api.run({ op: "behind" }); } },
                 { t: "Удалить", run: function () { if (window.confirm("Удалить выбранные субтитры? Отмена — Ctrl+Z в AE.")) api.run({ op: "delete", confirmed: true }); } }] },
             { id: "more", label: "Ещё", color: "#94a3b8", icon: ICONS.more, items: [
                 { t: "Настройки", run: function () { api.settings("recognition"); } }, { t: "Шрифт", run: function () { api.settings("font"); } },
@@ -305,7 +305,8 @@
         if (!t) return { say: "Напишите команду, например «поставь внизу».", act: null };
         if (/распозн/.test(t)) return { say: "Распознаю речь выбранного слоя", act: function () { api.page(0); api.click("recognize"); } };
         if (/(созда|сдела).*(все|субтитр)|созда/.test(t) && !/обнов/.test(t)) return { say: "Создаю субтитры", act: function () { api.page(1); api.click("generate"); } };
-        if (/обнов/.test(t)) return /все/.test(t) ? { say: "Обновляю все фразы", act: function () { api.click("generate"); } } : { say: "Обновляю текущую фразу", act: function () { api.click("updatePhrase"); } };
+        if (/за человек|под слой|за спин|позади/.test(t)) return { say: "Ставлю субтитры под выделенный слой", act: function () { api.run({ op: "behind" }); } };
+                if (/обнов/.test(t)) return /все/.test(t) ? { say: "Обновляю все фразы", act: function () { api.click("generate"); } } : { say: "Обновляю текущую фразу", act: function () { api.click("updatePhrase"); } };
         if (/удал/.test(t)) return { say: "Удаляю выбранные субтитры (можно отменить Ctrl+Z)", act: function () { if (window.confirm("Удалить выбранные субтитры? Отмена — Ctrl+Z в AE.")) api.run({ op: "delete", confirmed: true }); } };
         if (/исходн|сброс|верни/.test(t)) return { say: "Возвращаю субтитры на исходные места", act: function () { api.run({ op: "resetPos" }); } };
         if (/(раньше|позже|удлин|продли|укорот|укороч|короче|дольше)/.test(t)) {

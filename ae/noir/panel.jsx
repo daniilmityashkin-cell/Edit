@@ -7,7 +7,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
 (function (N) {
     var SECTION = "NOIR Captions";
     var SETTINGS_KEY = "settings.v2";
-    var VERSION = "0.17.0";
+    var VERSION = "0.18.0";
 
     function clone(o) { return N.parseJSON(N.stringify(o)); }
 
@@ -604,6 +604,10 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         etLineGap.helpTip = "Межстрочный интервал (доля размера шрифта)";
         var etWordSpace = field(rPos, 0.28, 4, { min: 0, max: 3, step: 0.005, dec: 2, name: "Пробел между словами" });
         etWordSpace.helpTip = "Пробел между словами в строке (доля размера шрифта)";
+        var rZone = row(tLayout, "Акценты", 60);
+        var cbAccentZone = rZone.add("checkbox", undefined, "отдельно по высоте");
+        cbAccentZone.helpTip = "Акцентные слова ставятся на свою высоту кадра (например, над головой), остальные слова — на «Позицию Y». Так сделан стиль OLD MONEY";
+        var etAccentY = field(rZone, 20, 3, { min: -50, max: 150, step: 0.25, dec: 1, name: "Высота акцентов, %" });
         var rBreak = row(tLayout, "Разрыв на паузе, с");
         var etPause = field(rBreak, 0.35, 4, { min: 0.05, max: 10, step: 0.01, dec: 2, name: "Разрыв на паузе, с" });
         var cbPunctBreak = rBreak.add("checkbox", undefined, "и на . , ! ?");
@@ -765,6 +769,8 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         var pnlFinLook = tFinish.add("panel", undefined, "Вид и слои");
         pnlFinLook.alignChildren = ["fill", "top"]; pnlFinLook.margins = [6, 12, 6, 6]; pnlFinLook.spacing = 3;
         var btnFinStyle = pnlFinLook.add("button", undefined, "Применить текущий стиль");
+        var btnFinBehind = pnlFinLook.add("button", undefined, "Поместить под выделенный слой");
+        btnFinBehind.helpTip = "Выделите слой (например, копию видео с вырезанным человеком) — субтитры окажутся под ним, и текст зайдёт «за человека»";
         var btnFinDelete = pnlFinLook.add("button", undefined, "Удалить субтитры");
         btnFinTop.helpTip = btnFinMid.helpTip = btnFinBottom.helpTip = "Ставит каждую фразу целиком на эту высоту кадра. Анимация сохраняется";
         btnFinReset.helpTip = "Снимает ручные сдвиги: фразы встают туда, куда их поставило создание субтитров";
@@ -966,7 +972,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             var primary = [btnRecognize, btnGenerate, btnMakeAccent, btnCounter, btnStrike, btnMask];
             var ghost = [btnCancel, btnLoad, btnSave, btnReset, btnSavePreset, btnFromLayer, btnFontToLayers,
                 btnColor, btnStrokeColor, btnMakeBase, btnApply, btnInvert, btnReflow, btnAnimApply, btnStrikeColor, btnStrikeRemove, btnMaskRemove, btnSfxSelected, btnSfxRemove, btnSfxHere, btnSfxRescan, btnSfxFolder,
-                btnFinTop, btnFinMid, btnFinBottom, btnFinUp, btnFinDown, btnFinLeft, btnFinRight, btnFinSmaller, btnFinBigger, btnFinEarlier, btnFinLater, btnFinStartEarlier, btnFinStartLater, btnFinEndEarlier, btnFinEndLater, btnFinReset, btnFinAnim, btnFinStyle, btnFinDelete];
+                btnFinTop, btnFinMid, btnFinBottom, btnFinUp, btnFinDown, btnFinLeft, btnFinRight, btnFinSmaller, btnFinBigger, btnFinEarlier, btnFinLater, btnFinStartEarlier, btnFinStartLater, btnFinEndEarlier, btnFinEndLater, btnFinReset, btnFinAnim, btnFinStyle, btnFinBehind, btnFinDelete];
             for (var bi = 0; bi < primary.length; bi++) TH.button(primary[bi], "primary");
             for (var gi = 0; gi < ghost.length; gi++) TH.button(ghost[gi], "ghost");
             btnGenerate.preferredSize.height = 32;
@@ -1178,6 +1184,8 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             cbAutoAccent.value = !!L.autoAccent;
             etPosX.text = String(L.posX);
             etPosY.text = String(L.posY);
+            cbAccentZone.value = L.accentPosY !== undefined && L.accentPosY !== null;
+            etAccentY.text = String(cbAccentZone.value ? L.accentPosY : 20);
             etLineGap.text = String(L.lineGap);
             etWordSpace.text = String(L.wordSpace);
             etPause.text = String(L.pauseBreak);
@@ -1268,6 +1276,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             L.autoAccent = cbAutoAccent.value;
             L.posX = num(etPosX.text, 50, -50, 150);
             L.posY = num(etPosY.text, 50, -50, 150);
+            if (cbAccentZone.value) L.accentPosY = num(etAccentY.text, 20, -50, 150); else delete L.accentPosY;
             L.lineGap = num(etLineGap.text, 0.12, -1, 5);
             L.wordSpace = num(etWordSpace.text, 0.28, 0, 3);
             L.pauseBreak = num(etPause.text, 0.35, 0.05, 10);
@@ -1345,10 +1354,10 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
                 saveSettings(S);
             };
         }
-        var editable = [etSize, etTrack, etStroke, etGlow, etMaxWords, etMaxChars, etLineChars, etPosX, etPosY,
+        var editable = [etSize, etTrack, etStroke, etGlow, etMaxWords, etMaxChars, etLineChars, etPosX, etPosY, etAccentY,
             etLineGap, etWordSpace, etPause, etInDur, etOutDur, etDist, etBlur, etEase, etOpacity];
         for (var ei = 0; ei < editable.length; ei++) editable[ei].onChange = function () { markCustom(); };
-        var toggles = [cbCaps, cbShadow, cbGlow, cbAccentLine, cbAutoAccent, cbPunctBreak, cbStrip];
+        var toggles = [cbCaps, cbShadow, cbGlow, cbAccentZone, cbAccentLine, cbAutoAccent, cbPunctBreak, cbStrip];
         for (var ci = 0; ci < toggles.length; ci++) toggles[ci].onClick = function () { markCustom(); };
         ddReveal.onChange = ddBlend.onChange = function () { markCustom(); };
 
@@ -1683,7 +1692,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         function hasSelectedText() { try { selectedTextLayers(); return true; } catch (e) { return false; } }
         // Выбор вылета: запоминаем для новых субтитров и, если выделены текстовые слои, сразу применяем к ним.
         function pickAnim(which, id) {
-            if (which === "in") S.style.anim.animIn = id; else S.style.anim.animOut = id;
+            if (which === "in") { S.style.anim.animIn = id; delete S.style.anim.accentIn; } else { S.style.anim.animOut = id; delete S.style.anim.accentOut; }   // выбранная вручную анимация — для всех слов
             markCustom();
             refreshChips();
             saveSettings(S);
@@ -1858,6 +1867,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             }
             else if (cmd.op === "resetPos") btnFinReset.onClick();
             else if (cmd.op === "applyStyle") btnFinStyle.onClick();
+            else if (cmd.op === "behind") finishBehind();
             else if (cmd.op === "delete") finishDelete(!!cmd.confirmed);
             else if (cmd.op === "scope") {
                 var sc = String(cmd.id), sidx = -1, q;
@@ -1924,6 +1934,30 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
                 setStatus("Удалено слоёв: " + sel.layers.length);
             } finally { app.endUndoGroup(); }
         }
+        // «За человеком»: слои NOIR (этого видео) ставятся сразу под выделенный слой — копию видео с вырезанным человеком.
+        function finishBehind() {
+            readUI();
+            var comp, over = null, list = [], i;
+            try {
+                comp = activeComp();
+                var sel = comp.selectedLayers;
+                for (i = 0; i < sel.length; i++) if (!N.isGenerated(sel[i])) { over = sel[i]; break; }
+                if (!over) throw new Error("Выделите слой, под которым должны оказаться субтитры (например, копию видео с вырезанным человеком).");
+                var key = state.data ? N.sourceKey(state.data, state.link) : null;
+                for (i = 1; i <= comp.numLayers; i++) {
+                    var l = comp.layer(i);
+                    if (l instanceof TextLayer && N.isGenerated(l) && (!key || N.layerSource(l) === key)) list.push(l);
+                }
+                if (!list.length) throw new Error("В композиции нет субтитров NOIR" + (key ? " этого видео." : "."));
+            } catch (e) { alert(e.message, "NOIR Captions"); return; }
+            app.beginUndoGroup("NOIR Captions: субтитры под слой");
+            try {
+                var r = N.placeBehind(comp, list, over);
+                setStatus("Субтитры под слоем «" + over.name + "»: " + r.moved);
+            } catch (e2) { alert("Ошибка: " + e2.toString(), "NOIR Captions"); }
+            finally { app.endUndoGroup(); }
+        }
+        btnFinBehind.onClick = finishBehind;
         btnFinDelete.onClick = function () { finishDelete(false); };
 
         // ----- SFX -----

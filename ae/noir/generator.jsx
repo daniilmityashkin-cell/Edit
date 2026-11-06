@@ -486,8 +486,8 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
 
         var tOut = g.compOut;
         var safeW = comp.width * layout.safeWidth;
-        var lines = N.splitLines(items, layout);
-        var useBlur = N.animUsesBlur(anim);
+        var zones = hasZones(layout), zl = zones ? splitZones(items, layout) : null;
+        var lines = zones ? zl.base.concat(zl.acc) : N.splitLines(items, layout);
 
         // 1. создать слои и измерить
         for (i = 0; i < lines.length; i++) {
@@ -512,7 +512,11 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
 
         // 2–3. раскладка: ужать широкие строки и расставить блок вокруг (posX, posY)
         for (i = 0; i < lines.length; i++) for (j = 0; j < lines[i].length; j++) lines[i][j].t = Math.max(0, lines[i][j].start);
-        layoutLines(lines, layout, safeW, layout.lineGap * style.base.size * ctx.scale,
+        if (zones) {
+            layoutLines(zl.base, layout, safeW, layout.lineGap * style.base.size * ctx.scale, comp.width * layout.posX / 100, comp.height * layout.posY / 100);
+            layoutLines(zl.acc, layout, safeW, layout.lineGap * style.accent.size * ctx.scale,
+                comp.width * (layout.accentPosX !== undefined && layout.accentPosX !== null ? layout.accentPosX : layout.posX) / 100, comp.height * layout.accentPosY / 100);
+        } else layoutLines(lines, layout, safeW, layout.lineGap * style.base.size * ctx.scale,
             comp.width * layout.posX / 100, comp.height * layout.posY / 100);
 
         var gid = ctx.run + "-" + (ctx.gseq++);
@@ -532,9 +536,8 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
                 if (w.st.shadow) addShadow(L, w.st.shadow, "NOIR Shadow", ctx.scale);
                 if (w.st.glow) addShadow(L, { color: w.st.glow.color || w.st.color, opacity: w.st.glow.opacity,
                     distance: 0, softness: w.st.glow.softness }, "NOIR Glow", ctx.scale);
-                var blurProp = useBlur ? addBlur(L) : null;
-                var a = {};
-                for (var k in anim) a[k] = anim[k];
+                var a = roleAnim(anim, w.accent);
+                var blurProp = N.animUsesBlur(a) ? addBlur(L) : null;
                 a.distance = anim.distance * ctx.scale;
                 a.blur = anim.blur * ctx.scale;
                 a.opacity = styleOpacity(w.st);
@@ -599,6 +602,25 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         var gi = N.groupInfo(layer);
         return gi ? gi.sourceKey : "";
     };
+    // Две зоны: акценты в своей вертикальной позиции (layout.accentPosY, % высоты; accentPosX — по желанию), остальные слова — в posY.
+    function hasZones(layout) { return layout.accentPosY !== undefined && layout.accentPosY !== null; }
+    function splitZones(items, layout) {
+        var base = [], acc = [], i;
+        for (i = 0; i < items.length; i++) (items[i].accent ? acc : base).push(items[i]);
+        return { base: N.splitLines(base, layout), acc: N.splitLines(acc, layout) };
+    }
+    // Анимация акцентов может отличаться: anim.accentIn / accentOut (+ accentInDur / accentOutDur).
+    function roleAnim(anim, accent) {
+        var a = {}, k;
+        for (k in anim) a[k] = anim[k];
+        if (accent) {
+            if (anim.accentIn) a.animIn = anim.accentIn;
+            if (anim.accentOut) a.animOut = anim.accentOut;
+            if (anim.accentInDur !== undefined) a.inDur = anim.accentInDur;
+            if (anim.accentOutDur !== undefined) a.outDur = anim.accentOutDur;
+        }
+        return a;
+    }
     N.groupInfo = function (layer) {
         var c = String(layer.comment || "");
         if (c.indexOf(N.LAYER_TAG + "|") !== 0) return null;
@@ -635,9 +657,23 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             if (!items.length) continue;
             var firstBase = items[0].size;
             for (j = 0; j < items.length; j++) if (!items[j].accent) { firstBase = items[j].size; break; }
-            var lines = N.splitLines(items, layout);
-            layoutLines(lines, layout, comp.width * layout.safeWidth, layout.lineGap * firstBase,
-                (minL + maxR) / 2, (minT + maxB) / 2);
+            var safe = comp.width * layout.safeWidth;
+            if (hasZones(layout)) {       // каждая зона перекладывается вокруг собственного центра
+                var zset = [[], []], zi;
+                for (j = 0; j < items.length; j++) zset[items[j].accent ? 1 : 0].push(items[j]);
+                for (zi = 0; zi < 2; zi++) {
+                    var zs = zset[zi]; if (!zs.length) continue;
+                    var zl = 1e9, zr = -1e9, zt = 1e9, zb = -1e9;
+                    for (j = 0; j < zs.length; j++) {
+                        zl = Math.min(zl, zs[j].base[0] - zs[j].rect.width / 2); zr = Math.max(zr, zs[j].base[0] + zs[j].rect.width / 2);
+                        zt = Math.min(zt, zs[j].base[1] - zs[j].rect.height / 2); zb = Math.max(zb, zs[j].base[1] + zs[j].rect.height / 2);
+                    }
+                    layoutLines(N.splitLines(zs, layout), layout, safe, layout.lineGap * (zi ? zs[0].size : firstBase), (zl + zr) / 2, (zt + zb) / 2);
+                }
+            } else {
+                var lines = N.splitLines(items, layout);
+                layoutLines(lines, layout, safe, layout.lineGap * firstBase, (minL + maxR) / 2, (minT + maxB) / 2);
+            }
             for (j = 0; j < items.length; j++) {
                 var it = items[j], tr = it.layer.property("Transform"), posProp = tr.property("Position");
                 var dx = it.pos[0] - it.base[0], dy = it.pos[1] - it.base[1];
@@ -849,6 +885,16 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         return { changed: n };
     };
 
+    // Субтитры «за человеком»: слои NOIR ставятся сразу под выбранный слой (например, копию видео с вырезанным человеком).
+    N.placeBehind = function (comp, layers, over) {
+        var moved = 0, i;
+        for (i = layers.length - 1; i >= 0; i--) {
+            if (layers[i] === over || layers[i].locked) continue;
+            layers[i].moveAfter(over); moved++;
+        }
+        return { moved: moved };
+    };
+
     // Вернуть слои туда, куда их поставил генератор (снять ручные сдвиги).
     N.resetPositions = function (layers) {
         var n = 0;
@@ -984,8 +1030,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             op.setValue(restOpacity);
             if (hadRot) rot.setValue(0);
             clearEffect(layer, "NOIR Blur");
-            var a = {};
-            for (var k in spec.anim) a[k] = spec.anim[k];
+            var a = roleAnim(spec.anim, layer.label === 11);
             a.distance = spec.anim.distance * ctx.scale;
             a.blur = spec.anim.blur * ctx.scale;
             a.opacity = restOpacity;
