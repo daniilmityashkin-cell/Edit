@@ -30,6 +30,9 @@ if (-not (Test-Path ".venv\Scripts\python.exe")) {
 $vpy = Join-Path $root ".venv\Scripts\python.exe"
 & $vpy -m pip install --upgrade pip
 & $vpy -m pip install -r recognition\requirements.txt
+Write-Host "Ставлю OpenCV для поиска лица (необязательно, ~50 МБ) ..."
+& $vpy -m pip install -r recognition\requirements-face.txt
+if ($LASTEXITCODE -ne 0) { Write-Host "OpenCV не поставился — функция «не закрывать лицо» будет недоступна, остальное работает." -ForegroundColor Yellow }
 
 $hasNvidia = $false
 try { & nvidia-smi -L | Out-Host; if ($LASTEXITCODE -eq 0) { $hasNvidia = $true } } catch {}

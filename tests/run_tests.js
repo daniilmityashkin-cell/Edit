@@ -1248,6 +1248,61 @@ const GOPTS = { maxWords: 1, maxChars: 99, pauseBreak: 0.35, punctBreak: true, s
     assert.strictEqual(saved().anim.accentIn, undefined, "ручной выбор — для всех слов"); assert.strictEqual(saved().anim.animIn, "fade");
     } finally { if (savedBefore === undefined) delete env.settings[keySettings]; else env.settings[keySettings] = savedBefore; }
   });
+  const faceStyle = () => { const st = styleOf("old-money"); st.layout.autoAccent = false; return st; };
+  const genOM = (c, list) => { const st = faceStyle(); const d = omPhrase(list); const words = N.applyEdits(d, d.segments[0].words.map(w => (w.accent ? "*" + w.text + "*" : w.text)).join(" "), []); const gs = prep(words, st.layout); gs.forEach(g => (g.sourceKey = "sFace")); N.generate(c, gs, st, st.anim, true); return st; };
+  const boxY = (ls, c) => { const b = ls.map(l => ({ y: N.baseOf(l)[1], h: l.sourceRectAtTime().height })); return { top: Math.min(...b.map(x => x.y - x.h / 2)) / c.height, bottom: Math.max(...b.map(x => x.y + x.h / 2)) / c.height }; };
+  await test("лицо: мелкий текст — ниже лица, акценты — выше головы; ничего не заходит на лицо; по горизонтали не двигается", () => {
+    const c = mkComp(), st = genOM(c, [{ t: "let" }, { t: "me", a: true }, { t: "be" }, { t: "first" }]);
+    const face = { x: 0.35, y: 0.30, w: 0.3, h: 0.2 }, xs = subs(c).map(l => N.baseOf(l)[0]);
+    const r = N.avoidFace(c, subs(c), face, st.layout);
+    const acc = subs(c).filter(l => l.label === 11), base = subs(c).filter(l => l.label !== 11);
+    const faceTop = face.y - 0.45 * face.h, faceBottom = face.y + face.h + 0.15 * face.h;
+    assert.ok(boxY(base, c).top >= faceBottom, "мелкий ниже лица+шеи"); assert.ok(boxY(acc, c).bottom <= faceTop + 1e-9, "акценты выше лба");
+    assert.strictEqual(r.phrases, 1); subs(c).forEach((l, i) => near(N.baseOf(l)[0], xs[i], 1e-6));
+  });
+  await test("лицо: нет места сверху — всё идёт вниз; нет места нигде — текст уменьшается и влезает в большую полосу", () => {
+    const c = mkComp(), st = genOM(c, [{ t: "let" }, { t: "me", a: true }, { t: "be" }]);
+    N.avoidFace(c, subs(c), { x: 0.3, y: 0.05, w: 0.4, h: 0.3 }, st.layout);       // лицо у самого верха: верхней полосы нет
+    const all = boxY(subs(c), c); assert.ok(all.top >= 0.05 + 0.3 * 1.15 - 1e-9, "целиком под лицом");
+    const c2 = mkComp(), st2 = genOM(c2, [{ t: "let" }, { t: "me", a: true }, { t: "be" }]); const h0 = subs(c2)[0].src.value.fontSize;
+    const r = N.avoidFace(c2, subs(c2), { x: 0.1, y: 0.2, w: 0.8, h: 0.55 }, st2.layout);   // лицо крупное: места мало, текст уменьшается
+    assert.ok(r.shrunk >= 1 && subs(c2)[0].src.value.fontSize < h0, "текст уменьшен");
+    const b2 = boxY(subs(c2), c2); assert.ok(b2.top >= 0 && b2.bottom <= 1.0001, "остался в кадре");
+  });
+  await test("placeZones: обычные слова и акценты — на заданной высоте, блок за блоком", () => {
+    const c = mkComp(); genOM(c, [{ t: "let" }, { t: "me", a: true }, { t: "be" }]);
+    N.placeZones(c, subs(c), 70, 15);
+    near(boxY(subs(c).filter(l => l.label !== 11), c).top / 1 + (boxY(subs(c).filter(l => l.label !== 11), c).bottom - boxY(subs(c).filter(l => l.label !== 11), c).top) / 2, 0.70, 1e-6);
+    near((boxY(subs(c).filter(l => l.label === 11), c).top + boxY(subs(c).filter(l => l.label === 11), c).bottom) / 2, 0.15, 1e-6);
+  });
+  await test("панель: команды scale / placeZones / preset через run; faceScan без Python — понятная ошибка; поиск лица с подменой Python расставляет субтитры", () => {
+    const c = mkComp();
+    const jf = path.join(TMP, "withsource.json"); fs.writeFileSync(jf, JSON.stringify(Object.assign(sample(), { source: { file: path.join(TMP, "clip.mp4") } })));
+    const p = N.buildPanel(new mock.Panel(), ROOT), before = global.File.openDialog; global.File.openDialog = () => mock.File(jf);
+    p.button("Загрузить результат…").onClick(); global.File.openDialog = before;
+    p.button("Создать субтитры").onClick();
+    const ls = subs(c).slice(), s0 = ls.map(l => l.src.value.fontSize), win = p;
+    const run = (cmd) => win._cep.run(cmd);
+    run({ op: "scale", factor: 1.25 }); ls.forEach((l, i) => near(l.src.value.fontSize, s0[i] * 1.25, 1e-6));
+    assert.throws(() => run({ op: "scale", factor: 9 }), /множитель/);
+    run({ op: "placeZones", baseY: 80, accentY: 20 });
+    run({ op: "preset", id: "old-money" });
+    assert.throws(() => run({ op: "preset", id: "net-takogo" }), /Нет стиля/);
+    const origScan = N.faceScan; let asked = null;
+    N.faceScan = (root, py, file, t, cb) => { asked = { file, t }; cb.onDone({ found: true, box: { x: 0.35, y: 0.3, w: 0.3, h: 0.2 } }); };
+    try {
+      const msg = run({ op: "avoidFace" }); assert.ok(asked && /\.(mp4|mov|wav|mp3|m4a)|json|clip|audio|media/i.test(String(asked.file)) || asked, "запрос ушёл в Python");
+      assert.strictEqual(win._cep.workflow().scanning, false, "поиск завершён");
+      assert.ok(/Лицо найдено/.test(win._cep.status()), win._cep.status());
+      const base = subs(c).filter(l => l.label !== 11); assert.ok(boxY(base, c).top >= 0.30 + 0.2 * 1.15 - 1e-9, "субтитры под лицом");
+      N.faceScan = (root, py, file, t, cb) => cb.onDone({ found: false });
+      run({ op: "faceScan" }); assert.ok(/не найдено/.test(win._cep.status()));
+      N.faceScan = (root, py, file, t, cb) => cb.onError("Для поиска лица нужен OpenCV");
+      run({ op: "faceScan" }); assert.ok(/OpenCV/.test(win._cep.status()));
+    } finally { N.faceScan = origScan; }
+    const ctx = win._cep.context(); assert.ok(ctx.comp && ctx.presets.length > 10 && ctx.style && ctx.subtitles.count > 0, "контекст для модели");
+    assert.ok(ctx.face && ctx.face.w > 0, "лицо попало в контекст");
+  });
   await test("ручной сдвиг фразы переживает пересоздание; «исходные места» его снимает", () => {
     const c = mkComp(); genSrc(c, "sA", "sA");
     const ph0 = ofSrc(c, "sA").filter(l => N.groupInfo(l).segment === 0), before = ph0.map(l => N.baseOf(l));

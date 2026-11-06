@@ -27,66 +27,92 @@ global.$.fileName=root+'/cep/host/bridge.jsx';
  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
  await page.addInitScript(()=>{window.__adobe_cep__={evalScript:(script,cb)=>window.hostEval(script).then(cb)};});
  await page.goto('http://127.0.0.1:'+server.address().port+'/index.html');
- await page.waitForTimeout(500);
+ await page.waitForTimeout(500);await page.setViewportSize({width:460,height:640});await page.waitForTimeout(300);
  const settle=()=>page.waitForTimeout(170);
  const runs=()=>commands.filter(c=>c.action==='run').map(c=>c.command);
- const home=page.locator('.noir-home svg'), overlay=page.locator('#noir-wheel');
- // scope: '.noir-home' (RT 252, tile ring 120) or '#noir-wheel' (RT 214, tile ring 90)
- const G={'.noir-home':{rt:252,ring:120},'#noir-wheel':{rt:214,ring:90}};
- const tilePoint=async(scope,i)=>{await page.waitForTimeout(scope==='#noir-wheel'?220:60);return page.evaluate(([scope,i,g])=>{const r=document.querySelector(scope+' svg').getBoundingClientRect(),s=r.width/(g.rt*2),a=i*(360/11)*Math.PI/180,rr=g.ring*s;return {x:r.left+r.width/2+rr*Math.sin(a),y:r.top+r.height/2-rr*Math.cos(a)};},[scope,i,G[scope]]);};
- const pillPoint=async(scope,text)=>{await page.waitForTimeout(scope==='#noir-wheel'?220:60);return page.evaluate(([scope,text])=>{const t=[...document.querySelectorAll(scope+' .wh-pill text')].find(e=>e.textContent===text);if(!t)throw new Error('no pill '+text);const b=t.getBoundingClientRect();return {x:b.left+b.width/2,y:b.top+b.height/2};},[scope,text]);};
- const orbPoint=async(scope)=>page.evaluate((scope)=>{const r=document.querySelector(scope+' svg').getBoundingClientRect();return {x:r.left+r.width/2,y:r.top+r.height/2};},scope);
  const heading=()=>page.locator('.workspace-heading').innerText();
- // 1. the home screen is the wheel itself, shown first
- assert.strictEqual(await home.count(),1,'home wheel is mounted');assert.ok(await home.isVisible(),'home wheel visible at start');assert.strictEqual(await heading(),'NOIR Captions');
- // 2. hover a tile -> its items appear; clicking an item runs it and the home wheel stays
- let p=await tilePoint('.noir-home',3);await page.mouse.move(p.x,p.y);
- p=await pillPoint('.noir-home','Внизу');await page.mouse.move(p.x,p.y);await page.mouse.down();await page.mouse.up();
- await settle();assert.deepStrictEqual(runs().pop(),{op:'place',y:75});assert.ok(await home.isVisible(),'home wheel stays open after an action');
- // 3. press on a tile, drag to an item and release on it
- p=await tilePoint('.noir-home',6);await page.mouse.move(p.x,p.y);await page.mouse.down();
- p=await pillPoint('.noir-home','Pop');await page.mouse.move(p.x,p.y,{steps:4});await page.mouse.up();
- await settle();assert.deepStrictEqual(runs().pop(),{op:'animIn',id:'pop'});
- // repeatable items (nudge, time)
- p=await tilePoint('.noir-home',5);await page.mouse.move(p.x,p.y);
- p=await pillPoint('.noir-home','Конец +');await page.mouse.move(p.x,p.y);await page.mouse.down();await page.mouse.up();
- await settle();assert.deepStrictEqual(runs().pop(),{op:'time',dOut:1});
- // 4. "Открыть ▸" opens the page; the orb button in the top bar returns home
- p=await tilePoint('.noir-home',9);await page.mouse.move(p.x,p.y);p=await pillPoint('.noir-home','Открыть ▸');await page.mouse.move(p.x,p.y);await page.mouse.down();await page.mouse.up();
- await page.waitForTimeout(150);assert.strictEqual(await heading(),'Правка субтитров');assert.ok(!(await home.isVisible()),'home hidden on a page');
- assert.ok(await page.locator('#finishPage').isVisible(),'the page is shown');
- await page.getByRole('button',{name:'Главный экран NOIR Captions'}).click();assert.ok(await home.isVisible(),'orb button goes home');
- await page.getByRole('tab',{name:'Текст',exact:true}).click();assert.ok(!(await home.isVisible()));await page.getByRole('tab',{name:'Текст',exact:true}).click();
+ const orb=page.locator('.orbit-orb'), orbit=page.locator('.orbit');
+ const hoverOrb=async()=>{const b=await orb.boundingBox();await page.mouse.move(b.x+b.width/2,b.y+b.height/2);await page.waitForTimeout(750);};
+ // 1. home: a calm orb; the sections are hidden until the orb is hovered
+ assert.ok(await orb.isVisible(),'orb visible at start');assert.strictEqual(await heading(),'NOIR Captions');
+ assert.ok(!(await orbit.evaluate(e=>e.classList.contains('open'))),'ring closed at start');
+ assert.strictEqual(await page.locator('.orbit-tile').count(),8,'eight sections');
+ assert.strictEqual(await page.locator('.orbit-line, .orbit svg line').count(),0,'no connector lines');
+ // 2. hover the orb -> the tiles slide out and are clickable; none overlap each other or leave the area
+ await hoverOrb();assert.ok(await orbit.evaluate(e=>e.classList.contains('open')),'hover opens the ring');
+ const geometry=await page.evaluate(()=>{const host=document.querySelector('.home-host').getBoundingClientRect();const r=[...document.querySelectorAll('.orbit-tile')].map(e=>e.getBoundingClientRect());let overlap=0,outside=0;r.forEach((a,i)=>{if(a.left<host.left-1||a.right>host.right+1||a.top<host.top-1||a.bottom>host.bottom+1)outside++;r.forEach((b,j)=>{if(j>i&&a.left<b.right-2&&b.left<a.right-2&&a.top<b.bottom-2&&b.top<a.bottom-2)overlap++;});});return {overlap,outside,size:r[0].width};});
+ assert.strictEqual(geometry.overlap,0,'tiles do not overlap');assert.strictEqual(geometry.outside,0,'tiles stay inside the area');assert.ok(geometry.size>=54,'tiles are big enough: '+geometry.size);
+ const labelSize=await page.locator('.tile-label').first().evaluate(e=>parseFloat(getComputedStyle(e).fontSize));assert.ok(labelSize>=12,'labels are readable: '+labelSize);
+ // 3. click a section -> it opens full-size with only its block; "← Меню" returns to the ring
+ await page.locator('.orbit-tile[data-id="time"]').click();await page.waitForTimeout(250);
+ assert.strictEqual(await heading(),'Время');assert.ok(!(await orb.isVisible()),'home hidden');
+ const visiblePanels=await page.evaluate(()=>[...document.querySelectorAll('#finishPage .panel')].filter(e=>e.offsetParent!==null).map(e=>e.querySelector('.panel-title').textContent));
+ assert.deepStrictEqual(visiblePanels,['Время'],'only the Время block is shown');
+ await page.getByRole('button',{name:'← Меню'}).click();assert.ok(await orb.isVisible(),'back to the ring');assert.strictEqual(await heading(),'NOIR Captions');
+ for(const [id,expected,block] of [['place','Позиция','Положение и размер'],['anim','Анимация','Анимация'],['layers','Слои','Вид и слои']]){
+   await hoverOrb();await page.locator('.orbit-tile[data-id="'+id+'"]').click();await page.waitForTimeout(200);
+   assert.strictEqual(await heading(),expected);
+   assert.deepStrictEqual(await page.evaluate(()=>[...document.querySelectorAll('#finishPage .panel')].filter(e=>e.offsetParent!==null).map(e=>e.querySelector('.panel-title').textContent)),[block]);
+   await page.getByRole('button',{name:'← Меню'}).click();
+ }
+ await hoverOrb();await page.locator('.orbit-tile[data-id="style"]').click();await page.waitForTimeout(200);assert.strictEqual(await heading(),'Галерея стилей');
+ await page.getByRole('button',{name:'Главный экран NOIR Captions'}).click();assert.ok(await orb.isVisible(),'the top-bar orb also returns home');
+ await hoverOrb();await page.locator('.orbit-tile[data-id="more"]').click();await page.waitForTimeout(200);assert.ok(await page.locator('.settings-drawer').isVisible(),'Настройки opens the drawer');await page.keyboard.press('Escape');
+ // the "Правка" tab still shows every block
+ await page.getByRole('tab',{name:'Правка',exact:true}).click();
+ assert.strictEqual(await page.evaluate(()=>[...document.querySelectorAll('#finishPage .panel')].filter(e=>e.offsetParent!==null).length),4,'the tab shows all blocks');
  await page.getByRole('button',{name:'Главный экран NOIR Captions'}).click();
- // 5. right button anywhere opens the pop-up wheel above (also while on a page); release cancels, Escape closes
+ // 4. keyboard: Tab to the orb opens the ring, arrows move between sections, Enter opens one
+ await orb.focus();assert.ok(await orbit.evaluate(e=>e.classList.contains('open')),'focus opens the ring');
+ await page.keyboard.press('ArrowRight');await page.keyboard.press('ArrowRight');
+ assert.strictEqual(await page.evaluate(()=>document.activeElement.dataset.id),'text');await page.keyboard.press('Enter');await page.waitForTimeout(200);assert.strictEqual(await heading(),'Редактор текста');
+ await page.getByRole('button',{name:'← Меню'}).click();
+ // 5. the pop-up wheel (right button) still works on any page
  await page.getByRole('tab',{name:'Видео',exact:true}).click();
- await page.mouse.move(500,330);await page.mouse.down({button:'right'});assert.strictEqual(await overlay.count(),1,'right button opens the pop-up wheel');await page.mouse.up({button:'right'});await page.keyboard.press('Escape');assert.strictEqual(await overlay.count(),0);
- p=await tilePoint('.noir-home',0).catch(()=>null);
- // pop-up wheel: sector 3 / item
- await page.mouse.move(520,300);await page.mouse.down({button:'right'});await page.mouse.up({button:'right'});
- p=await tilePoint('#noir-wheel',3);await page.mouse.move(p.x,p.y);p=await pillPoint('#noir-wheel','Вверху');await page.mouse.move(p.x,p.y);await page.mouse.down();await page.mouse.up();
- await settle();assert.deepStrictEqual(runs().pop(),{op:'place',y:25});assert.strictEqual(await overlay.count(),0,'pop-up wheel closes after an item');
- // 6. keyboard on the home wheel
+ await page.mouse.move(220,300);await page.mouse.down({button:'right'});assert.strictEqual(await page.locator('#noir-wheel').count(),1,'right button opens the pop-up wheel');await page.mouse.up({button:'right'});await page.keyboard.press('Escape');
+ assert.strictEqual(await page.locator('#noir-wheel').count(),0);
  await page.getByRole('button',{name:'Главный экран NOIR Captions'}).click();
- p=await tilePoint('.noir-home',0);await page.mouse.move(p.x,p.y);await settle();const before6=runs().length;
- await page.locator('.noir-home svg').focus();for(let i=0;i<3;i++)await page.keyboard.press('ArrowRight');await page.keyboard.press('Enter');await page.keyboard.press('Enter');
- await settle();assert.strictEqual(runs().length,before6+1,'keyboard ran one command');assert.deepStrictEqual(runs().pop(),{op:'place',y:25},'keyboard: 4th tile, first item');
- // 7. the orb opens the assistant; plain commands become host commands; unknown text runs nothing
- const o=await orbPoint('.noir-home');await page.mouse.move(o.x,o.y);await page.mouse.down();await page.mouse.up();
- assert.strictEqual(await page.locator('.noir-assistant').count(),1,'orb opens the assistant');
- const ask=async(text)=>{await page.fill('.noir-assistant input',text);await page.keyboard.press('Enter');};
- for(const [text,expected] of [['поставь внизу',{op:'place',y:75}],['выше на 40',{op:'nudge',kx:0,ky:-1,px:40}],['сделай крупнее на 15',{op:'size',sign:1,pct:15}],['появление pop',{op:'animIn',id:'pop'}],['исчезание fade',{op:'animOut',id:'fade'}],['исчезание whip',{op:'animOut',id:'whipR'}],['верни на место',{op:'resetPos'}],['сдвинь раньше на 0.5',{op:'time',amount:0.5,shift:-1}],['удлини на 2 кадра',{op:'time',amount:2,frames:true,dOut:1}],['начало позже',{op:'time',dIn:1}],['укороти',{op:'time',dOut:-1}]]){
+ // 6. assistant: orb click opens it; without a model, plain phrases become commands; the exact request from the user is understood offline
+ await orb.click();assert.strictEqual(await page.locator('.noir-assistant').count(),1,'orb click opens the assistant');
+ const ask=async(text)=>{await page.fill('.noir-assistant input',text);await page.keyboard.press('Enter');await page.waitForTimeout(250);};
+ for(const [text,expected] of [['поставь внизу',{op:'place',y:75}],['выше на 40',{op:'nudge',kx:0,ky:-1,px:40}],['сделай крупнее на 15',{op:'size',sign:1,pct:15}],['появление pop',{op:'animIn',id:'pop'}],['исчезание fade',{op:'animOut',id:'fade'}],['верни на место',{op:'resetPos'}],['сдвинь раньше на 0.5',{op:'time',amount:0.5,shift:-1}],['удлини на 2 кадра',{op:'time',amount:2,frames:true,dOut:1}],['укороти',{op:'time',dOut:-1}],['Настрой субтитры правильно и расположи красиво, чтобы лицо не загораживали',{op:'avoidFace'}]]){
    await ask(text);await settle();assert.deepStrictEqual(runs().pop(),expected,text);
  }
- await settle();const n=runs().length;await ask('что-то непонятное');await settle();assert.strictEqual(runs().length,n,'unknown text must not run anything');
+ const multi=runs().length;await ask('поставь внизу и сделай крупнее на 10');await settle();await settle();const added=runs().slice(multi);
+ assert.deepStrictEqual(added,[{op:'place',y:75},{op:'size',sign:1,pct:10}],'two requests in one sentence run in order');
+ await ask('что-то совсем непонятное');await settle();assert.ok((await page.locator('.as-msg.ai').last().innerText()).length>10,'a hint is shown for unknown text');
  await page.keyboard.press('Escape');assert.strictEqual(await page.locator('.noir-assistant').count(),0);
- // 8. a small panel: the home wheel fits, the pop-up wheel fits
- await page.setViewportSize({width:320,height:420});await page.waitForTimeout(250);
- const fit=await page.evaluate(()=>{const r=document.querySelector('.noir-home svg').getBoundingClientRect(),h=document.querySelector('.home-host').getBoundingClientRect();return r.left>=h.left-1&&r.right<=h.right+1&&r.top>=h.top-1&&r.bottom<=h.bottom+1&&r.width>150;});
- assert.ok(fit,'home wheel must fit a small panel');
- await page.mouse.move(160,200);await page.mouse.down({button:'right'});await page.mouse.up({button:'right'});
- const fit2=await page.evaluate(()=>{const r=document.querySelector('#noir-wheel svg').getBoundingClientRect();return r.left>=-1&&r.top>=-1&&r.right<=innerWidth+1&&r.bottom<=innerHeight+1;});assert.ok(fit2,'pop-up wheel must fit a small panel');
+ // 7. assistant with a language model (a fake local Ollama): free text -> validated commands run, unknown ones are dropped
+ const seen=[];
+ const ollama=require('http').createServer((req,res)=>{
+   res.setHeader('Access-Control-Allow-Origin','*');res.setHeader('Access-Control-Allow-Headers','*');res.setHeader('Access-Control-Allow-Methods','*');
+   if(req.method==='OPTIONS'){res.writeHead(204);res.end();return;}
+   if(req.url==='/api/tags'){res.setHeader('Content-Type','application/json');res.end(JSON.stringify({models:[{name:'nomic-embed-text:latest'},{name:'qwen2.5:7b'}]}));return;}
+   let body='';req.on('data',c=>body+=c);req.on('end',()=>{seen.push(JSON.parse(body));res.setHeader('Content-Type','application/json');
+     res.end(JSON.stringify({message:{content:'```json\n'+JSON.stringify({say:'Подняла и увеличила.',commands:[{op:'scale',factor:1.3},{op:'placeZones',baseY:70,accentY:20},{op:'hackTheWorld'},{op:'animIn',id:'не-существует'},{op:'delete'}]})+'\n```'}}));});
+ });
+ await new Promise(r=>ollama.listen(0,'127.0.0.1',r));
+ await page.evaluate(port=>NoirAssistant.setSettings({endpoint:'http://127.0.0.1:'+port,model:'',mode:'auto'}),ollama.address().port);
+ await orb.click();await page.waitForTimeout(700);
+ assert.ok(/qwen2\.5:7b/.test(await page.locator('.as-mode').innerText()),'the chat model is picked, the embedding model is ignored: '+await page.locator('.as-mode').innerText());
+ const before=runs().length;await ask('сделай покрупнее и подними красиво');await page.waitForTimeout(900);
+ assert.strictEqual(seen.length,1,'the model was asked once');assert.strictEqual(seen[0].model,'qwen2.5:7b');assert.strictEqual(seen[0].format,'json');
+ assert.ok(/Просьба: сделай покрупнее/.test(seen[0].messages[1].content)&&/Состояние/.test(seen[0].messages[1].content),'the request and the state go to the model');
+ assert.ok(/avoidFace/.test(seen[0].messages[0].content),'the model is told the commands');
+ const got=runs().slice(before);assert.deepStrictEqual(got.slice(0,2),[{op:'scale',factor:1.3},{op:'placeZones',baseY:70,accentY:20}],'known commands run in order');
+ assert.ok(!got.some(c=>c.op==='hackTheWorld'),'unknown commands never reach the host');
+ const log=await page.locator('.noir-assistant .as-log').innerText();assert.ok(/Подняла и увеличила/.test(log)&&/Пропущено команд/.test(log),'the answer and the dropped count are shown');
+ // a dead endpoint: the assistant falls back to offline phrases without errors
+ await page.evaluate(()=>NoirAssistant.setSettings({endpoint:'http://127.0.0.1:1',model:''}));await page.keyboard.press('Escape');await orb.click();await page.waitForTimeout(700);
+ assert.ok(/без ИИ/.test(await page.locator('.as-mode').innerText()));
+ await ask('поставь вверху');await settle();assert.deepStrictEqual(runs().pop(),{op:'place',y:25});
+ await page.keyboard.press('Escape');ollama.close();
+ // 8. a small panel: the ring fits
+ await page.setViewportSize({width:320,height:440});await page.waitForTimeout(300);
+ await hoverOrb();
+ const fits=await page.evaluate(()=>{const host=document.querySelector('.home-host').getBoundingClientRect();return [...document.querySelectorAll('.orbit-tile')].every(e=>{const r=e.getBoundingClientRect();return r.left>=host.left-1&&r.right<=host.right+1&&r.top>=host.top-1&&r.bottom<=host.bottom+1;});});
+ assert.ok(fits,'tiles fit a small panel');
  assert.deepStrictEqual(errors,[]);
- console.log('Home wheel + pop-up wheel: hover/click, press-drag-release, pages and back, right button, keyboard, assistant commands, small panel: PASS');
+ console.log('Home ring (hover, sections full-size, back), keyboard, pop-up wheel, assistant offline + language model + fallback, small panel: PASS');
  await browser.close();server.close();process.exit(0);
 })().catch(e=>{console.error(e);process.exit(1);});

@@ -7,7 +7,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
 (function (N) {
     var SECTION = "NOIR Captions";
     var SETTINGS_KEY = "settings.v2";
-    var VERSION = "0.18.0";
+    var VERSION = "0.19.0";
 
     function clone(o) { return N.parseJSON(N.stringify(o)); }
 
@@ -247,7 +247,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         var S = loadSettings();
         var presets = N.loadPresets(root);
         // syncing: идёт программное заполнение контролов — их onChange не считаются правкой
-        var state = { data: null, link: null, target: "base", syncing: false, recognizing: false, cleanLines: [], dataRevision: 0 };
+        var state = { data: null, link: null, target: "base", syncing: false, recognizing: false, cleanLines: [], dataRevision: 0, scanning: false, face: null };
 
         // Тема необязательна: если файла нет или он сломан — обычные вкладки и кнопки.
         try { $.evalFile(File(root + "/ae/noir/theme.jsx")); } catch (eTheme) {}
@@ -720,7 +720,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         if (options.headless) stFinHint._cepVisible = false;   // в HTML свой подзаголовок
         var ddFinScope = dropdown(row(tFinish, "Что менять", 70), FIN_SCOPES, "source");
         ddFinScope.helpTip = "«Этого видео» — субтитры аудиослоя, текст которого сейчас открыт в панели. Субтитры других слоёв не меняются";
-        var pnlFinPos = tFinish.add("panel", undefined, "Положение");
+        var pnlFinPos = tFinish.add("panel", undefined, "Положение и размер");
         pnlFinPos.alignChildren = ["fill", "top"]; pnlFinPos.margins = [6, 12, 6, 6]; pnlFinPos.spacing = 3;
         var rFinPlace = pnlFinPos.add("group");
         var btnFinTop = rFinPlace.add("button", undefined, "Вверху");
@@ -1865,6 +1865,26 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
                     return "Время изменено у слоёв: " + r.changed + " (шаг " + (Math.round(step * 100) / 100) + " с)";
                 });
             }
+            else if (cmd.op === "scale") {
+                var factor = Number(cmd.factor);
+                if (!isFinite(factor) || factor < 0.3 || factor > 3) throw new Error("Недопустимый множитель размера.");
+                finishAction("NOIR Captions: размер текста", function (sel) {
+                    var r = N.scaleFont(sel.comp, sel.layers, factor, S.style.layout);
+                    return "Размер ×" + (Math.round(factor * 100) / 100) + ": слоёв " + r.changed;
+                });
+            }
+            else if (cmd.op === "placeZones") {
+                finishAction("NOIR Captions: положение слов и акцентов", function (sel) {
+                    var r = N.placeZones(sel.comp, sel.layers, Number(cmd.baseY), Number(cmd.accentY));
+                    return "Фраз переставлено: " + r.phrases + " (слова на " + cmd.baseY + "%, акценты на " + cmd.accentY + "%)";
+                });
+            }
+            else if (cmd.op === "preset") {
+                var chosen = presetById(String(cmd.id));
+                if (!chosen) throw new Error("Нет стиля «" + cmd.id + "».");
+                choosePreset(chosen); setStatus("Стиль выбран: " + chosen.name + ". «Применить текущий стиль» применит его к готовым субтитрам.");
+            }
+            else if (cmd.op === "faceScan" || cmd.op === "avoidFace") startFaceScan(cmd.op === "avoidFace");
             else if (cmd.op === "resetPos") btnFinReset.onClick();
             else if (cmd.op === "applyStyle") btnFinStyle.onClick();
             else if (cmd.op === "behind") finishBehind();
@@ -1877,6 +1897,34 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             }
             else throw new Error("Неизвестная команда: " + cmd.op);
             return lastStatus;
+        }
+        // Лицо: один кадр исходного видео уходит в Python (OpenCV) — рамка лица в долях кадра. avoid=true: сразу расставить субтитры.
+        function startFaceScan(avoid) {
+            readUI();
+            if (state.scanning) throw new Error("Поиск лица уже идёт.");
+            var comp = activeComp();
+            if (!state.data || !state.data.source || !state.data.source.file) throw new Error("Нужен распознанный или загруженный текст с путём к видео. Распознайте слой ещё раз.");
+            var map = resolveLink(comp), srcTime = Math.max(0, N.compToSource(comp.time, map.startTime, map.stretch));
+            state.scanning = true; setStatus("Ищу лицо на кадре…");
+            N.faceScan(root, S.python, state.data.source.file, srcTime, {
+                onDone: function (res) {
+                    state.scanning = false;
+                    if (!res.found) { setStatus("Лицо на этом кадре не найдено (время " + (Math.round(srcTime * 10) / 10) + " с). Передвиньте индикатор времени на кадр, где лицо видно, и повторите."); return; }
+                    state.face = res.box; state.faceTime = srcTime;
+                    var note = "Лицо найдено: центр " + Math.round((res.box.x + res.box.w / 2) * 100) + "% по ширине, " + Math.round((res.box.y + res.box.h / 2) * 100) + "% по высоте.";
+                    if (!avoid) { setStatus(note); return; }
+                    var sel;
+                    try { sel = finishLayers(); } catch (e) { setStatus(note + " " + e.message); return; }
+                    app.beginUndoGroup("NOIR Captions: субтитры мимо лица");
+                    try {
+                        var r = N.avoidFace(sel.comp, sel.layers, res.box, S.style.layout);
+                        setStatus(note + " Фраз переставлено: " + r.moved + (r.top ? ", выше лица: " + r.top : "") + (r.bottom ? ", ниже лица: " + r.bottom : "") + (r.shrunk ? ", уменьшено: " + r.shrunk : "") + ". Положение лица оценено по одному кадру.");
+                    } catch (e2) { setStatus("Ошибка расстановки: " + e2.toString()); }
+                    finally { app.endUndoGroup(); }
+                },
+                onError: function (text) { state.scanning = false; setStatus(text); }
+            });
+            return "Ищу лицо…";
         }
         btnFinEarlier.onClick = function () { runCommand({ op: "time", shift: -1 }); };
         btnFinLater.onClick = function () { runCommand({ op: "time", shift: 1 }); };
@@ -2255,6 +2303,29 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         win._cep = {
             run: runCommand,
             status: function () { return lastStatus; },
+            context: function () {
+                var comp = null, out = { hasData: !!state.data };
+                try { comp = app.project.activeItem; } catch (e0) {}
+                if (comp instanceof CompItem) {
+                    out.comp = { name: comp.name, width: comp.width, height: comp.height, duration: Math.round(comp.duration * 100) / 100, time: Math.round(comp.time * 100) / 100 };
+                    var key = state.data ? N.sourceKey(state.data, state.link) : null, base = [], acc = [], n = 0, i;
+                    for (i = 1; i <= comp.numLayers; i++) {
+                        var l = comp.layer(i);
+                        if (l instanceof TextLayer && N.isGenerated(l) && (!key || N.layerSource(l) === key)) {
+                            n++; var y = Math.round(N.baseOf(l)[1] / comp.height * 100); (l.label === 11 ? acc : base).push(y);
+                        }
+                    }
+                    function avg(a) { var t = 0; for (var k = 0; k < a.length; k++) t += a[k]; return a.length ? Math.round(t / a.length) : null; }
+                    out.subtitles = { count: n, accentCount: acc.length, wordsCenterYPercent: avg(base), accentsCenterYPercent: avg(acc) };
+                }
+                var st = S.style;
+                out.style = { preset: S.presetId, baseFont: st.base.fonts[0], baseSize: st.base.size, accentFont: st.accent.fonts[0], accentSize: st.accent.size,
+                    posYPercent: st.layout.posY, accentYPercent: st.layout.accentPosY, reveal: st.layout.reveal, animIn: st.anim.animIn, animOut: st.anim.animOut, accentIn: st.anim.accentIn };
+                out.presets = [];
+                for (var pi = 0; pi < presets.length && pi < 60; pi++) out.presets.push({ id: presets[pi].id, name: presets[pi].name });
+                out.face = state.face ? { x: Math.round(state.face.x * 100) / 100, y: Math.round(state.face.y * 100) / 100, w: Math.round(state.face.w * 100) / 100, h: Math.round(state.face.h * 100) / 100 } : null;
+                return out;
+            },
             clearIssues: function () { cepIssues = []; pendingCheck = null; },
             selectTextPhrase: function (index) {
                 if (!state.data || index < 0 || index >= state.data.segments.length || index !== Math.floor(index)) throw new Error("Нет такой фразы.");
@@ -2277,7 +2348,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
                 return {hasData:!!state.data,recognizing:state.recognizing,canUpdate:canUpdate,
                     dirty:textDirty(),phraseDirty:!!state.data && lines[phraseIndex()] !== state.cleanLines[phraseIndex()],
                     phrase:phraseIndex(),count:state.data ? state.data.segments.length : 0,
-                    dataRevision:state.dataRevision,page:tabs.current || 0,issues:cepIssues,pending:!!pendingCheck,preset:S.presetId,completed:generationSerial};
+                    dataRevision:state.dataRevision,scanning:!!state.scanning,page:tabs.current || 0,issues:cepIssues,pending:!!pendingCheck,preset:S.presetId,completed:generationSerial};
             },
             wordEdit: function (command) {
                 if (!state.data || command.text !== etText.text) throw new Error("Текст изменился. Выделите слово ещё раз.");

@@ -19,7 +19,7 @@
     function flushInputs() { editableInputs.forEach(function(el){el._flush();}); }
     function schedulePoll() {
         clearTimeout(timer);
-        if(document.hidden || !workflow.recognizing)return;
+        if(document.hidden || !(workflow.recognizing || workflow.scanning))return;
         timer=setTimeout(function(){if(!busy && !queue.length)send({action:"poll"});else schedulePoll();},1000);
     }
     function send(command) {
@@ -28,6 +28,8 @@
         }
         enqueue(command); pump();
     }
+    // Same as send(), but resolves with the host's reply (the assistant needs to wait for results).
+    function sendAsync(command) { return new Promise(function (resolve) { command._done = resolve; send(command); }); }
     function pump() {
         if (busy || !queue.length) return;
         busy = true;
@@ -39,7 +41,8 @@
                 var response = JSON.parse(raw);
                 if (response.error) showError(response.error,8000);
                 else { if(response.notice){showError(response.notice,5000);}else if(Date.now()>noticeUntil)showError(""); update(response); }
-            } catch (error) { showError("Не удалось связаться с панелью AE: " + String(raw).slice(0, 300),8000); }
+                if(command._done)command._done(response);
+            } catch (error) { showError("Не удалось связаться с панелью AE: " + String(raw).slice(0, 300),8000);if(command._done)command._done({error:"Нет связи с панелью AE"}); }
             schedulePoll();pump();
         });
     }
@@ -113,7 +116,11 @@
         } else if (node.type === "progressbar") input.value = node.value;
     }
     var MAIN_PAGES = ["speechPage","textPage","stylePage","finishPage"];
-    var roles = {}, workflow = {}, ui = {main:0, home:true, settings:false, section:"recognition", completed:0, successUntil:0}, view = {};
+    // Home sections. main = page to open, finish = which block of the "Правка" page to show, settings = settings drawer section.
+    var GROUPS = [{id:"video",label:"Видео",main:0},{id:"text",label:"Текст",main:1},{id:"style",label:"Стиль",main:2},
+        {id:"place",label:"Позиция",icon:"place",main:3,finish:"Положение и размер"},{id:"time",label:"Время",main:3,finish:"Время"},
+        {id:"anim",label:"Анимация",main:3,finish:"Анимация"},{id:"layers",label:"Слои",main:3,finish:"Вид и слои"},{id:"more",label:"Настройки",settings:"recognition"}];
+    var roles = {}, workflow = {}, ui = {main:0, home:true, finish:null, settings:false, section:"recognition", completed:0, successUntil:0}, view = {};
     function element(tag, cls, text, parent) {
         var el = document.createElement(tag); el.className = cls || "";
         if (text) el.textContent = text;
@@ -171,8 +178,13 @@
     function goHome() {
         ui.home=true;ui.settings=false;stopVideos();flushInputs();pump();renderLayout();
     }
-    function selectMain(index) {
-        ui.home=false;ui.main=index;view.body.scrollTop=0;view.tools.hidden=true;stopVideos();
+    function openGroup(id) {
+        var g=null;GROUPS.forEach(function(x){if(x.id===id)g=x;});if(!g)return;
+        if(g.settings){openSettings(g.settings);return;}
+        selectMain(g.main,g.finish||null,g.finish?g.label:null);
+    }
+    function selectMain(index,finish,label) {
+        ui.home=false;ui.main=index;ui.finish=finish||null;ui.groupLabel=label||null;view.body.scrollTop=0;view.tools.hidden=true;stopVideos();
         flushInputs();pump();
         renderLayout();
     }
@@ -186,7 +198,12 @@
         var onHome=ui.home, onVideo=!onHome && ui.main===0;
         MAIN_PAGES.forEach(function(role,index){if(roles[role])roles[role].el.hidden=onHome || ui.main!==index;});
         view.body.hidden=onHome;view.homeHost.hidden=!onHome;view.brandButton.classList.toggle("tab-active",onHome);view.brandButton.setAttribute("aria-pressed",String(onHome));
-        if(view.heading)view.heading.textContent=onHome?"NOIR Captions":["Ваше видео","Редактор текста","Галерея стилей","Правка субтитров"][ui.main];
+        if(view.heading)view.heading.textContent=onHome?"NOIR Captions":ui.groupLabel || ["Ваше видео","Редактор текста","Галерея стилей","Правка субтитров"][ui.main];
+        view.back.hidden=onHome;
+        if(roles.finishPage)Array.prototype.forEach.call(roles.finishPage.el.children,function(child){
+            if(!child.classList.contains("panel"))return;
+            var title=child.querySelector(".panel-title");child.classList.toggle("filtered-out",!!ui.finish && !(title && title.textContent===ui.finish));
+        });
         view.tabs.forEach(function(tab,index){var on=!onHome && ui.main===index;tab.classList.toggle("tab-active",on);tab.setAttribute("aria-selected",on?"true":"false");});
         view.shell.classList.toggle("settings-open",ui.settings);view.drawer.hidden=!ui.settings;view.backdrop.hidden=!ui.settings;
         view.more.setAttribute("aria-expanded",String(ui.settings));
@@ -260,10 +277,11 @@
         var sidebar=element("aside","sidebar","",view.shell),brand=button("","brand home-button",sidebar,function(){goHome();});view.brandButton=brand;
         var stage=element("div","stage","",view.shell),header=element("header","app-header","",stage);
         var introduction=element("div","introduction","",header);
+        view.back=button("← Меню","back-button",introduction,function(){goHome();});view.back.hidden=true;view.back.title="Вернуться в круговое меню";
         view.heading=element("h1","workspace-heading","Ваше видео",introduction);
         var mark=element("span","brand-mark","",brand);
         var logo=element("img","","",mark);logo.src="media/noir-mark.svg";logo.alt="";mark.setAttribute("aria-hidden","true");
-        brand.title="NOIR Captions · 0.18.0 — главный экран";brand.setAttribute("aria-label","Главный экран NOIR Captions");
+        brand.title="NOIR Captions · 0.19.0 — главный экран";brand.setAttribute("aria-label","Главный экран NOIR Captions");
         var primaryArea=element("div","primary-area","",header);
         view.primary=button("Распознать речь","create-action",primaryArea,function(){
             action((!ui.home && ui.main===0) || !workflow.hasData?"recognize":workflow.canUpdate?"updatePhrase":"generate");
@@ -293,6 +311,7 @@
             settings:function(section){openSettings(section);},
             notify:function(text,time){showError(text,time);}};
         if(window.NoirWheel)NoirWheel.init(wheelApi);
+        if(window.NoirAssistant)NoirAssistant.init({page:wheelApi.page,sendAsync:sendAsync,roleId:function(role){return roles[role]?roles[role].id:null;},workflow:function(){return workflow;}});
         view.more=button("Настройки","more-button",sidebar,function(){if(ui.settings)closeSettings();else openSettings();});
         view.more.setAttribute("aria-controls","settings-drawer");view.more.setAttribute("aria-label","Настройки");
         var settingsIcon=element("span","nav-icon","");settingsIcon.setAttribute("aria-hidden","true");
@@ -301,7 +320,7 @@
         var workspace=element("div","workspace-layout","",stage);
         view.homeHost=element("section","home-host","",workspace);
         view.body=element("main","scroll-body workspace","",workspace);
-        if(window.NoirWheel)NoirWheel.mount(view.homeHost,wheelApi);
+        if(window.NoirHome)NoirHome.mount(view.homeHost,{groups:GROUPS,open:openGroup,assistant:function(){if(window.NoirWheel)NoirWheel.openAssistant();}});
         if(window.IntersectionObserver)previewObserver=new IntersectionObserver(function(entries){
             entries.forEach(function(entry){if(!entry.isIntersecting){var r=entry.target._previewRecord;if(r && !r.video.paused){r.video.pause();r.tile.classList.remove("playing");}}});
         },{root:view.body});

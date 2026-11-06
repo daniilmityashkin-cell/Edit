@@ -1,0 +1,2 @@
+# Optional: face finder for "do not cover the face" (face_box.py). Pinned to 4.x: OpenCV 5 moved the Haar cascades out of the main module.
+opencv-python-headless>=4.8,<5

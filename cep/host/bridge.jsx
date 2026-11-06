@@ -53,7 +53,7 @@ var NOIR_CEP = (function () {
     function snapshot(full) {
         // No wrapping below the main tabs. HTML supplies horizontal overflow if necessary.
         // HTML owns layout; polling must never rebuild native dropdowns or repaint tabs.
-        var result = {full:!!full,nodes:[],version:"0.18.0",workflow:win._cep.workflow()};
+        var result = {full:!!full,nodes:[],version:"0.19.0",workflow:win._cep.workflow()};
         walk(win, null, result);
         return NOIR.stringify(result);
     }
@@ -73,6 +73,14 @@ var NOIR_CEP = (function () {
             if (command.action === "wordEdit") { win._cep.wordEdit(command); return snapshot(false); }
             if (command.action === "selectTextPhrase") { win._cep.selectTextPhrase(Number(command.index)); return snapshot(false); }
             if (command.action === "continueGeneration") { win._cep.continueGeneration(); return snapshot(false); }
+            if (command.action === "context") {
+                var ctx = NOIR.parseJSON(snapshot(false)); ctx.context = win._cep.context();
+                return NOIR.stringify(ctx);
+            }
+            if (command.action === "status") {
+                var st = NOIR.parseJSON(snapshot(false)); st.notice = win._cep.status();
+                return NOIR.stringify(st);
+            }
             if (command.action === "run") {
                 win._cep.clearIssues();
                 var message = win._cep.run(command.command || {});

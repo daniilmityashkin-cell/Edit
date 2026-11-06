@@ -10,7 +10,7 @@
     var GEO_O = { R0: 36, R1: 106, TILE: 38, TILE_R: 90, SUB: [150, 188], RT: 214 }, GEO_H = { R0: 50, R1: 146, TILE: 52, TILE_R: 120, SUB: [178, 214], RT: 252 };
     var R0 = 36, R1 = 106, TILE = 38, TILE_R = 90, SUBR = [150, 188], RT = 214;
     function geo(g) { R0 = g.R0; R1 = g.R1; TILE = g.TILE; TILE_R = g.TILE_R; SUBR = g.SUB; RT = g.RT; }
-    var api = null, st = null, overlay = null, assistant = null, bound = false;
+    var api = null, st = null, overlay = null, bound = false;
 
     // Shades are computed here: the CEP browser in older After Effects has no color-mix().
     function rgbOf(hex) { return [parseInt(hex.substr(1, 2), 16), parseInt(hex.substr(3, 2), 16), parseInt(hex.substr(5, 2), 16)]; }
@@ -289,75 +289,9 @@
         (function () { var prev = st; st = home; render(); st = prev; })();
     }
 
-    // ---- local assistant: understands plain commands offline; the same command objects a language model would produce ----
-    var ANIM_WORDS = [[/по букв/, "letRise"], [/печат/, "type"], [/whip|вип/, null], [/pop|поп/, "pop"], [/fade|плавн|проявл/, "fade"], [/blur|размыт/, "blur"], [/punch|удар/, "punch"], [/zoom|зум/, "zoom"],
-        [/slam|слэм/, "slam"], [/grow|рост/, "grow"], [/поворот|rotate/, "rotate"], [/снизу|вверх/, "rise"], [/сверху|вниз/, "drop"], [/слева/, "left"], [/справа/, "right"], [/нет|без|убер/, "none"]];
-    function number(text, fallback) { var m = /(\d+)/.exec(text); return m ? Number(m[1]) : fallback; }
-    function animId(text, outgoing) {
-        if (/whip|вип/.test(text)) return /справа|вправо/.test(text) || outgoing ? "whipR" : "whipL";
-        if (outgoing) { if (/вверх|вверху/.test(text)) return "up"; if (/вниз/.test(text)) return "down"; if (/влево|слева/.test(text)) return "left"; if (/вправо|справа/.test(text)) return "right"; if (/уменьш|shrink/.test(text)) return "shrink"; }
-        for (var i = 0; i < ANIM_WORDS.length; i++) if (ANIM_WORDS[i][1] && ANIM_WORDS[i][0].test(text)) return ANIM_WORDS[i][1];
-        return null;
-    }
-    // Returns {say, act}: act() performs the command, or null with a hint in say.
-    function understand(raw) {
-        var t = String(raw).toLowerCase().replace(/ё/g, "е").trim(), m;
-        if (!t) return { say: "Напишите команду, например «поставь внизу».", act: null };
-        if (/распозн/.test(t)) return { say: "Распознаю речь выбранного слоя", act: function () { api.page(0); api.click("recognize"); } };
-        if (/(созда|сдела).*(все|субтитр)|созда/.test(t) && !/обнов/.test(t)) return { say: "Создаю субтитры", act: function () { api.page(1); api.click("generate"); } };
-        if (/за человек|под слой|за спин|позади/.test(t)) return { say: "Ставлю субтитры под выделенный слой", act: function () { api.run({ op: "behind" }); } };
-                if (/обнов/.test(t)) return /все/.test(t) ? { say: "Обновляю все фразы", act: function () { api.click("generate"); } } : { say: "Обновляю текущую фразу", act: function () { api.click("updatePhrase"); } };
-        if (/удал/.test(t)) return { say: "Удаляю выбранные субтитры (можно отменить Ctrl+Z)", act: function () { if (window.confirm("Удалить выбранные субтитры? Отмена — Ctrl+Z в AE.")) api.run({ op: "delete", confirmed: true }); } };
-        if (/исходн|сброс|верни/.test(t)) return { say: "Возвращаю субтитры на исходные места", act: function () { api.run({ op: "resetPos" }); } };
-        if (/(раньше|позже|удлин|продли|укорот|укороч|короче|дольше)/.test(t)) {
-            var frames = /кадр/.test(t), num = /(\d+(?:[.,]\d+)?)/.exec(t), amount = num ? Number(num[1].replace(",", ".")) : 0, edge = /начал/.test(t) ? "dIn" : "dOut", cmd = { op: "time" };
-            if (amount) cmd.amount = amount; if (frames) cmd.frames = true;
-            if (/удлин|продли|дольше/.test(t)) { cmd.dOut = 1; edge = "dOut"; }
-            else if (/укорот|укороч|короче/.test(t)) cmd.dOut = -1;
-            else { var dir = /раньше/.test(t) ? -1 : 1; if (/начал|конец|конц/.test(t)) cmd[edge] = dir; else cmd.shift = dir; }
-            return { say: "Меняю время субтитров", act: function () { api.run(cmd); } };
-        }
-        if ((m = /(выше|ниже|левее|правее)/.exec(t))) {
-            var px = number(t, 0), v = { "выше": [0, -1], "ниже": [0, 1], "левее": [-1, 0], "правее": [1, 0] }[m[1]];
-            return { say: "Сдвигаю " + m[1] + (px ? " на " + px + " px" : ""), act: function () { api.run({ op: "nudge", kx: v[0], ky: v[1], px: px || undefined }); } };
-        }
-        if (/крупн|больше|увелич/.test(t)) return { say: "Увеличиваю размер", act: function () { api.run({ op: "size", sign: 1, pct: number(t, 0) || undefined }); } };
-        if (/мельч|меньше|уменьш/.test(t) && !/появ|выход|исчез/.test(t)) return { say: "Уменьшаю размер", act: function () { api.run({ op: "size", sign: -1, pct: number(t, 0) || undefined }); } };
-        if (/исчез|выход|уход/.test(t)) { var o = animId(t, true); return o ? { say: "Исчезание: " + o, act: function () { api.run({ op: "animOut", id: o }); } } : { say: "Не понял, какое исчезание. Например: «исчезание fade».", act: null }; }
-        if (/появ|вход|анимац/.test(t)) { var i = animId(t, false); return i ? { say: "Появление: " + i, act: function () { api.run({ op: "animIn", id: i }); } } : { say: "Не понял, какое появление. Например: «появление pop».", act: null }; }
-        if (/стиль/.test(t) && /примен/.test(t)) return { say: "Применяю текущий стиль", act: function () { api.run({ op: "applyStyle" }); } };
-        if (/(вверху|наверху|вверх)/.test(t)) return { say: "Ставлю фразы вверху", act: function () { api.run({ op: "place", y: 25 }); } };
-        if (/(центр|середин|посередин)/.test(t)) return { say: "Ставлю фразы по центру", act: function () { api.run({ op: "place", y: 50 }); } };
-        if (/(внизу|низ)/.test(t)) return { say: "Ставлю фразы внизу", act: function () { api.run({ op: "place", y: 75 }); } };
-        if (/выделенн/.test(t)) return { say: "Область: выделенные слои", act: function () { api.run({ op: "scope", id: "selected" }); } };
-        if (/все субтитр|все noir/.test(t)) return { say: "Область: все субтитры NOIR", act: function () { api.run({ op: "scope", id: "all" }); } };
-        return { say: "Пока не понял. Я знаю простые команды: положение, сдвиг, размер, появление/исчезание, создать, обновить, удалить.", act: null };
-    }
-
-    function closeAssistant() { if (assistant && assistant.parentNode) assistant.parentNode.removeChild(assistant); assistant = null; }
-    function openAssistant() {
-        closeAssistant();
-        assistant = document.createElement("section"); assistant.className = "noir-assistant"; assistant.setAttribute("role", "dialog"); assistant.setAttribute("aria-label", "Помощник NOIR");
-        assistant.innerHTML = '<div class="as-head"><b>Помощник</b><button type="button" class="as-close" aria-label="Закрыть">×</button></div>' +
-            '<div class="as-log" aria-live="polite"></div><form class="as-form"><input type="text" autocomplete="off" placeholder="Что сделать? Например: поставь внизу" aria-label="Команда помощнику"><button type="submit">Выполнить</button></form>' +
-            '<div class="as-chips"></div><p class="as-note">Работает без интернета: понимает простые команды. Подключение языковой модели — отдельный шаг.</p>';
-        document.body.appendChild(assistant);
-        var log = assistant.querySelector(".as-log"), input = assistant.querySelector("input"), chips = assistant.querySelector(".as-chips");
-        function say(text, who) { var p = document.createElement("div"); p.className = "as-msg " + who; p.textContent = text; log.appendChild(p); log.scrollTop = log.scrollHeight; }
-        function submit(text) {
-            if (!String(text).trim()) return;
-            say(text, "me"); var r = understand(text); say(r.say, "ai");
-            if (r.act) { try { r.act(); } catch (err) { say(String(err && err.message || err), "ai"); } input.value = ""; }
-        }
-        say("Привет! Скажите, что сделать с субтитрами.", "ai");
-        ["поставь внизу", "выше на 40", "крупнее", "появление pop", "исчезание fade", "обнови фразу"].forEach(function (text) {
-            var b = document.createElement("button"); b.type = "button"; b.textContent = text; b.onclick = function () { submit(text); }; chips.appendChild(b);
-        });
-        assistant.querySelector("form").onsubmit = function (ev) { ev.preventDefault(); submit(input.value); };
-        assistant.querySelector(".as-close").onclick = closeAssistant;
-        assistant.addEventListener("keydown", function (ev) { if (ev.key === "Escape") { ev.preventDefault(); closeAssistant(); } });
-        input.focus();
-    }
+    // The assistant lives in assistant.js; the wheel only opens it.
+    function openAssistant() { if (window.NoirAssistant) NoirAssistant.open(); }
+    function closeAssistant() { if (window.NoirAssistant) NoirAssistant.close(); }
 
     function bindHub(hub) {
         if (!hub) return;
@@ -379,6 +313,6 @@
             });
             document.addEventListener("contextmenu", function (e) { if (!(e.target.closest && e.target.closest("input,textarea,select"))) e.preventDefault(); });
         },
-        mount: mount, open: open, close: close, understand: understand, openAssistant: openAssistant
+        mount: mount, open: open, close: close, openAssistant: openAssistant
     };
 })();

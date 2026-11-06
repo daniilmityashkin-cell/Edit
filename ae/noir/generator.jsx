@@ -885,6 +885,72 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         return { changed: n };
     };
 
+    // ---------- расстановка с учётом лица ----------
+
+    function splitByRole(block) {
+        var base = [], acc = [], i;
+        for (i = 0; i < block.length; i++) (block[i].label === 11 ? acc : base).push(block[i]);
+        return { base: base, acc: acc };
+    }
+    function boxOf(set) {
+        var l = 1e9, r = -1e9, t = 1e9, b = -1e9, i;
+        for (i = 0; i < set.length; i++) {
+            var ly = set[i], p = N.baseOf(ly), rc = ly.sourceRectAtTime(Math.max(0, ly.inPoint), false);
+            l = Math.min(l, p[0] - rc.width / 2); r = Math.max(r, p[0] + rc.width / 2);
+            t = Math.min(t, p[1] - rc.height / 2); b = Math.max(b, p[1] + rc.height / 2);
+        }
+        return { l: l, r: r, t: t, b: b, cy: (t + b) / 2, h: b - t };
+    }
+    function moveSetTo(set, cyPx) {
+        if (!set.length) return;
+        var dy = cyPx - boxOf(set).cy;
+        for (var i = 0; i < set.length; i++) N.shiftLayer(set[i], 0, dy);
+    }
+    // Обычные слова и акценты ставятся каждый на свою высоту (в % кадра) для каждой фразы.
+    N.placeZones = function (comp, layers, baseY, accentY) {
+        var blocks = phraseBlocks(comp, layers), i, n = 0;
+        for (i = 0; i < blocks.length; i++) {
+            var sp = splitByRole(blocks[i]);
+            moveSetTo(sp.base, comp.height * baseY / 100); moveSetTo(sp.acc, comp.height * accentY / 100); n++;
+        }
+        return { phrases: n };
+    };
+
+    // face: { x, y, w, h } — рамка лица в долях кадра. Свободные полосы — выше головы и ниже подбородка.
+    // Мелкий текст уходит в нижнюю полосу, крупные акценты — в верхнюю (если помещаются); иначе фраза целиком в более просторную
+    // полосу, при необходимости уменьшаясь. По горизонтали ничего не двигается.
+    N.avoidFace = function (comp, layers, face, layout) {
+        var H = comp.height, top = Math.max(0, face.y - 0.45 * face.h), bottom = Math.min(1, face.y + face.h + 0.15 * face.h), gap = 0.03;
+        var topBand = [0.04, top - gap], botBand = [bottom + gap, 0.96];
+        var topH = Math.max(0, topBand[1] - topBand[0]), botH = Math.max(0, botBand[1] - botBand[0]);
+        var blocks = phraseBlocks(comp, layers), i, res = { phrases: blocks.length, shrunk: 0, moved: 0, top: 0, bottom: 0, topFree: topH, bottomFree: botH };
+        function target(band, desired, hFrac) {       // центр юнита в долях кадра: ближе к desired, но целиком внутри полосы
+            return Math.max(band[0] + hFrac / 2, Math.min(band[1] - hFrac / 2, desired));
+        }
+        for (i = 0; i < blocks.length; i++) {
+            var sp = splitByRole(blocks[i]), hb = sp.base.length ? boxOf(sp.base).h / H : 0, ha = sp.acc.length ? boxOf(sp.acc).h / H : 0;
+            if (sp.base.length && sp.acc.length && hb <= botH * 1.0 && ha <= topH * 1.0) {
+                moveSetTo(sp.base, H * target(botBand, 0.72, hb)); moveSetTo(sp.acc, H * target(topBand, 0.2, ha)); res.top++; res.bottom++; res.moved++;
+                continue;
+            }
+            var all = blocks[i], two = sp.base.length && sp.acc.length, gapF = 0.012;
+            var whole = two ? ha + hb + gapF : boxOf(all).h / H;
+            var useBottom = botH >= whole * 1.05 || (topH < whole * 1.05 && botH >= topH), band = useBottom ? botBand : topBand, free = useBottom ? botH : topH;
+            if (whole > free * 0.98 && free > 0.02 && layout) {
+                var f = Math.max(0.35, free * 0.95 / whole);
+                N.scaleFont(comp, all, f, layout); res.shrunk++;
+                if (two) { hb = boxOf(sp.base).h / H; ha = boxOf(sp.acc).h / H; whole = ha + hb + gapF; } else whole = boxOf(all).h / H;
+            }
+            var center = target(band, useBottom ? 0.72 : 0.2, whole);
+            if (two) {          // акценты и обычные слова — один столбик: акцент сверху, под ним слова
+                var unitTop = center - whole / 2;
+                moveSetTo(sp.acc, H * (unitTop + ha / 2)); moveSetTo(sp.base, H * (unitTop + ha + gapF + hb / 2));
+            } else moveSetTo(all, H * center);
+            res[useBottom ? "bottom" : "top"]++; res.moved++;
+        }
+        return res;
+    };
+
     // Субтитры «за человеком»: слои NOIR ставятся сразу под выбранный слой (например, копию видео с вырезанным человеком).
     N.placeBehind = function (comp, layers, over) {
         var moved = 0, i;

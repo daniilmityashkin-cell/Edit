@@ -77,6 +77,35 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         N.audioPreview = {status: status, started: new Date().getTime()};
         N.audioPreview.task = app.scheduleTask("NOIR.pollAudioPreview()", 500, true);
     };
+    // Поиск лица на одном кадре исходного видео (OpenCV, только на этом компьютере). cb: {onDone(result), onError(text)}.
+    N.faceScan = function (root, override, source, timeSec, cb) {
+        if (!isWin) { cb.onError("Поиск лица из панели поддерживается на Windows."); return; }
+        if (N.faceJob) { cb.onError("Поиск лица уже идёт."); return; }
+        var py = File(N.pythonPath(root, override)), script = File(root + "/recognition/face_box.py");
+        if (!py.exists || !File(source).exists || !script.exists) { cb.onError("Не найден Python, видеофайл или recognition/face_box.py."); return; }
+        var dir = Folder(Folder.temp.fsName + "/NOIR_Captions"); if (!dir.exists) dir.create();
+        var base = dir.fsName + "/face_" + new Date().getTime();
+        var job = File(base + ".json"), status = File(base + "_status.json"), vbs = File(base + ".vbs");
+        N.writeText(job, N.stringify({ input: source, time: timeSec, status: status.fsName }));
+        var command = '"' + py.fsName + '" "' + script.fsName + '" "' + job.fsName + '"';
+        N.writeText(vbs, 'CreateObject("WScript.Shell").Run "' + command.replace(/"/g, '""') + '", 0, False\r\n');
+        if (!vbs.execute()) { cb.onError("Не удалось запустить поиск лица."); return; }
+        N.faceJob = { status: status, started: new Date().getTime(), cb: cb };
+        N.faceJob.task = app.scheduleTask("NOIR.pollFaceScan()", 500, true);
+    };
+    N.pollFaceScan = function () {
+        var j = N.faceJob; if (!j) return;
+        try {
+            var text = readText(j.status);
+            if (text === null) {
+                if (new Date().getTime() - j.started < 90000) return;
+                app.cancelTask(j.task); N.faceJob = null; j.cb.onError("Поиск лица занял больше 90 секунд."); return;
+            }
+            var result; try { result = N.parseJSON(text); } catch (e0) { return; }     // файл ещё пишется
+            app.cancelTask(j.task); N.faceJob = null;
+            if (result.state === "error") j.cb.onError(result.message); else j.cb.onDone(result);
+        } catch (e) { try { app.cancelTask(j.task); } catch (e2) {} N.faceJob = null; j.cb.onError(String(e)); }
+    };
     N.pollAudioPreview = function () {
         var job = N.audioPreview; if (!job) return;
         try {
