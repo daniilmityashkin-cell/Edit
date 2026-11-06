@@ -40,8 +40,20 @@ global.$.fileName=root+'/cep/host/bridge.jsx';
  assert.strictEqual(await page.locator('.orbit-line, .orbit svg line').count(),0,'no connector lines');
  // 2. hover the orb -> the tiles slide out and are clickable; none overlap each other or leave the area
  await hoverOrb();assert.ok(await orbit.evaluate(e=>e.classList.contains('open')),'hover opens the ring');
- const geometry=await page.evaluate(()=>{const host=document.querySelector('.home-host').getBoundingClientRect();const r=[...document.querySelectorAll('.orbit-tile')].map(e=>e.getBoundingClientRect());let overlap=0,outside=0;r.forEach((a,i)=>{if(a.left<host.left-1||a.right>host.right+1||a.top<host.top-1||a.bottom>host.bottom+1)outside++;r.forEach((b,j)=>{if(j>i&&a.left<b.right-2&&b.left<a.right-2&&a.top<b.bottom-2&&b.top<a.bottom-2)overlap++;});});return {overlap,outside,size:r[0].width};});
- assert.strictEqual(geometry.overlap,0,'tiles do not overlap');assert.strictEqual(geometry.outside,0,'tiles stay inside the area');assert.ok(geometry.size>=54,'tiles are big enough: '+geometry.size);
+ const layoutCheck=()=>page.evaluate(()=>{
+   const host=document.querySelector('.home-host').getBoundingClientRect();
+   const items=[...document.querySelectorAll('.orbit-tile')].flatMap(t=>[{k:'tile:'+t.dataset.id,r:t.getBoundingClientRect(),own:t},{k:'label:'+t.dataset.id,r:t.querySelector('.tile-label').getBoundingClientRect(),own:t}]);
+   const bad=[];const hit=(a,b)=>a.left<b.right-1.5&&b.left<a.right-1.5&&a.top<b.bottom-1.5&&b.top<a.bottom-1.5;
+   items.forEach((a,i)=>{if(a.r.left<host.left-1||a.r.right>host.right+1||a.r.top<host.top-1||a.r.bottom>host.bottom+1)bad.push('outside '+a.k);
+     items.forEach((b,j)=>{if(j>i&&hit(a.r,b.r))bad.push(a.k+' x '+b.k);});});
+   const orb=document.querySelector('.orbit-orb').getBoundingClientRect(),oc={x:orb.left+orb.width/2,y:orb.top+orb.height/2},or=orb.width/2;items.forEach(a=>{const nx=Math.max(a.r.left,Math.min(oc.x,a.r.right)),ny=Math.max(a.r.top,Math.min(oc.y,a.r.bottom));if(Math.hypot(nx-oc.x,ny-oc.y)<or-1)bad.push('orb x '+a.k);});
+   return {bad,size:items[0].r.width};});
+ for(const [w,h] of [[460,640],[400,520],[380,470],[320,440]]){
+   await page.setViewportSize({width:w,height:h});await page.waitForTimeout(350);
+   const lc=await layoutCheck();assert.deepStrictEqual(lc.bad,[],'no overlaps at '+w+'x'+h+': '+lc.bad.join(', '));
+ }
+ await page.setViewportSize({width:460,height:640});await page.waitForTimeout(350);
+ const geometry={size:(await layoutCheck()).size,overlap:0,outside:0};
  const labelSize=await page.locator('.tile-label').first().evaluate(e=>parseFloat(getComputedStyle(e).fontSize));assert.ok(labelSize>=12,'labels are readable: '+labelSize);
  // 3. click a section -> it opens full-size with only its block; "← Меню" returns to the ring
  await page.locator('.orbit-tile[data-id="time"]').click();await page.waitForTimeout(250);
@@ -107,11 +119,7 @@ global.$.fileName=root+'/cep/host/bridge.jsx';
  assert.ok(/без ИИ/.test(await page.locator('.as-mode').innerText()));
  await ask('поставь вверху');await settle();assert.deepStrictEqual(runs().pop(),{op:'place',y:25});
  await page.keyboard.press('Escape');ollama.close();
- // 8. a small panel: the ring fits
- await page.setViewportSize({width:320,height:440});await page.waitForTimeout(300);
- await hoverOrb();
- const fits=await page.evaluate(()=>{const host=document.querySelector('.home-host').getBoundingClientRect();return [...document.querySelectorAll('.orbit-tile')].every(e=>{const r=e.getBoundingClientRect();return r.left>=host.left-1&&r.right<=host.right+1&&r.top>=host.top-1&&r.bottom<=host.bottom+1;});});
- assert.ok(fits,'tiles fit a small panel');
+ // 8. a small panel: tiles and labels fit (checked above at several sizes)
  assert.deepStrictEqual(errors,[]);
  console.log('Home ring (hover, sections full-size, back), keyboard, pop-up wheel, assistant offline + language model + fallback, small panel: PASS');
  await browser.close();server.close();process.exit(0);

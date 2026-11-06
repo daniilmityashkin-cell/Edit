@@ -281,7 +281,7 @@
         view.heading=element("h1","workspace-heading","Ваше видео",introduction);
         var mark=element("span","brand-mark","",brand);
         var logo=element("img","","",mark);logo.src="media/noir-mark.svg";logo.alt="";mark.setAttribute("aria-hidden","true");
-        brand.title="NOIR Captions · 0.19.0 — главный экран";brand.setAttribute("aria-label","Главный экран NOIR Captions");
+        brand.title="NOIR Captions · 0.19.1 — главный экран";brand.setAttribute("aria-label","Главный экран NOIR Captions");
         var primaryArea=element("div","primary-area","",header);
         view.primary=button("Распознать речь","create-action",primaryArea,function(){
             action((!ui.home && ui.main===0) || !workflow.hasData?"recognize":workflow.canUpdate?"updatePhrase":"generate");

@@ -35,20 +35,33 @@
             b.onclick = function () { options.open(g.id); };
             return b;
         });
+        // Sizes come from the free space. Labels sit OUTSIDE the ring (beside the side tiles, above the top one, below the bottom one),
+        // so a label never lands on a neighbouring tile: width needs R + T/2 + label, height needs R + T/2 + a text line.
         function fit() {
-            var w = host.clientWidth, hintH = host.clientHeight < 330 ? 0 : hint.offsetHeight + 8;
+            var LABEL_W = 78, LABEL_H = 22, n = tiles.length;
+            var availW = host.clientWidth - 16, hintH = host.clientHeight < 340 ? 0 : hint.offsetHeight + 8;
             hint.style.display = hintH ? "" : "none";
-            var S = Math.max(150, Math.min(w - 8, host.clientHeight - hintH - 8)), n = tiles.length;
-            metrics.T = Math.max(40, Math.min(86, S * 0.19)); metrics.orb = Math.max(54, Math.min(120, S * 0.26));
-            metrics.R = Math.min(S * 0.37, S / 2 - metrics.T / 2 - 24);                    // labels hang below the tiles
-            metrics.R = Math.max(metrics.R, metrics.orb / 2 + metrics.T / 2 + 6);
-            metrics.T = Math.max(34, Math.min(metrics.T, 2 * metrics.R * Math.sin(Math.PI / n) - 8));   // neighbouring tiles never touch
-            orbit.style.setProperty("--S", S + "px"); orbit.style.setProperty("--T", metrics.T + "px"); orbit.style.setProperty("--orb", metrics.orb + "px");
+            var availH = host.clientHeight - hintH - 16;
+            var S = Math.max(150, Math.min(availW, availH)), T = Math.max(40, Math.min(80, S * 0.2));
+            var R = Math.min(availW / 2 - LABEL_W - 6 - T / 2, availH / 2 - LABEL_H - T / 2, 190);
+            R = Math.max(R, 54);
+            var Ry0 = Math.max(R, Math.min(availH / 2 - LABEL_H - T / 2, R * 1.5)), minD = 1e9, ii, jj;
+            for (ii = 0; ii < n; ii++) for (jj = ii + 1; jj < n; jj++) {                     // the closest pair of tile centres limits the tile size
+                var ax = R * Math.sin(ii * 2 * Math.PI / n), ay = Ry0 * Math.cos(ii * 2 * Math.PI / n), bx = R * Math.sin(jj * 2 * Math.PI / n), by = Ry0 * Math.cos(jj * 2 * Math.PI / n);
+                minD = Math.min(minD, Math.sqrt((ax - bx) * (ax - bx) + (ay - by) * (ay - by)));
+            }
+            T = Math.max(34, Math.min(T, minD - 12));
+            var orbD = Math.max(46, Math.min(112, 2 * (R - T * 0.8 - 6)));   // the orb clears even the corners of the diagonal tiles
+            var Ry = Math.max(R, Math.min(availH / 2 - LABEL_H - T / 2, R * 1.5));          // taller than wide: stretch the ring into an oval
+            metrics.T = T; metrics.R = R; metrics.Ry = Ry; metrics.orb = orbD;
+            orbit.style.setProperty("--S", Math.min(availW, availH + hintH * 0) + "px"); orbit.style.setProperty("--T", T + "px"); orbit.style.setProperty("--orb", orbD + "px");
+            orbit.style.width = Math.max(S, 2 * (R + T / 2 + LABEL_W)) + "px"; orbit.style.height = Math.max(S, 2 * (Ry + T / 2 + LABEL_H)) + "px";
             tiles.forEach(function (b, i) {
-                var a = i * 2 * Math.PI / tiles.length;
-                b.style.setProperty("--x", (metrics.R * Math.sin(a)).toFixed(1) + "px"); b.style.setProperty("--y", (-metrics.R * Math.cos(a)).toFixed(1) + "px");
+                var a = i * 2 * Math.PI / n, x = R * Math.sin(a), y = -Ry * Math.cos(a);
+                b.style.setProperty("--x", x.toFixed(1) + "px"); b.style.setProperty("--y", y.toFixed(1) + "px");
+                b.dataset.side = Math.abs(x) < R * 0.3 ? (y < 0 ? "top" : "bottom") : (x > 0 ? "right" : "left");
             });
-            rings.style.setProperty("--r1", (metrics.R * 2) + "px"); rings.style.setProperty("--r2", (metrics.R * 2 + metrics.T * 1.6) + "px");
+            rings.style.setProperty("--r1", (R * 2) + "px"); rings.style.setProperty("--r2", (R * 2 + T * 1.6) + "px"); rings.style.setProperty("--ry1", (Ry * 2) + "px"); rings.style.setProperty("--ry2", (Ry * 2 + T * 1.6) + "px");
         }
         function setOpen(on) {
             clearTimeout(closeTimer); if (open === on) return; open = on;
@@ -60,7 +73,7 @@
         moveHandler = function (e) {
             var d = distanceFromCenter(e);
             if (!open) { if (d <= metrics.orb / 2 + 8) setOpen(true); }
-            else if (d > metrics.R + metrics.T * 0.95) { clearTimeout(closeTimer); closeTimer = setTimeout(function () { setOpen(false); }, 380); }
+            else if (d > Math.max(metrics.R, metrics.Ry) + metrics.T * 0.95) { clearTimeout(closeTimer); closeTimer = setTimeout(function () { setOpen(false); }, 380); }
             else clearTimeout(closeTimer);
         };
         host.addEventListener("pointermove", moveHandler);
