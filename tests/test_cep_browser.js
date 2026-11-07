@@ -406,6 +406,26 @@ function layoutProblems() {
         await page.evaluate(() => NoirAssistant.setSettings({ endpoint: "http://127.0.0.1:59999" }));
         await page.unroute("http://127.0.0.1:11434/**");
     });
+    await step("помощник: нарезка по речи — сначала замер «было → стало», «Отмена» ничего не режет, «Применить» режет видео и пересоздаёт субтитры", async () => {
+        const v = new mock.AVLayer(comp, "clip.mp4"); v.source = { hasVideo: true }; comp._l.push(v); comp._l.forEach(l => { l.selected = l === v; });
+        await page.evaluate(() => NoirAssistant.open());
+        const input = page.locator(".as-form input");
+        await input.fill("убери паузы длиннее 0,5 секунды"); await input.press("Enter");
+        await page.waitForSelector(".as-cut");
+        const card = page.locator(".as-plan").last();
+        assert.ok(/12 с → \d(\.\d)? с/.test(await card.locator(".as-cut-big").textContent()), await card.textContent());
+        await shot("assistant-cut");
+        await card.locator(".btn.ghost").click(); await settle();
+        assert.ok(comp._l.includes(v), "после «Отмена» видео не тронуто");
+        await input.fill("вырежи паузы"); await input.press("Enter");
+        await page.waitForFunction(() => document.querySelectorAll(".as-cut").length === 2);
+        await page.locator(".as-plan").last().locator(".btn.primary").click();
+        await page.waitForFunction(() => /Нарезано/.test([...document.querySelectorAll(".as-msg.note")].pop().textContent)); await settle();
+        const pieces = comp._l.filter(l => l.comment === N.CUT_TAG);
+        assert.strictEqual(pieces.length, 2); assert.ok(!comp._l.includes(v));
+        assert.ok((await hostState()).words[0].start < 0.3, "слова на новом времени");
+        await page.keyboard.press("Escape");
+    });
     await step("узкая панель 300 px: без горизонтальной прокрутки, вкладки помещаются", async () => {
         await page.setViewportSize({ width: 300, height: 520 });
         for (const p of ["text", "style", "edit", "settings"]) {

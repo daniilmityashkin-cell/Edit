@@ -271,6 +271,45 @@ const accept = (a, mode) => { let r = a.call("generate", { mode: mode || "all" }
     a.call("phrase.select", { index: 1 }); a.call("word.delete", { index: 0 }); a.call("word.delete", { index: 0 });
     assert.strictEqual(a.state().text.split("\n")[1], ""); assert.throws(() => a.call("word.delete", { index: 0 }), /Нет такого слова/);
   });
+  await test("нарезка по речи: паузы убираются, куски встык, слова и субтитры едут за видео; карта времени ведёт к исходнику", () => {
+    const c = mkComp({ duration: 12 }), a = freshApp(); accept(a);
+    const v = new mock.AVLayer(c, "clip.mp4"); v.source = { hasVideo: true }; c._l.push(v); v.selected = true;
+    const p = a.call("cut.plan", { mode: "pauses", minPause: 0.5, pad: 0.08 });
+    assert.strictEqual(p.keeps, 2); near(p.before, 12); assert.ok(p.after > 2.1 && p.after < 2.3, "after " + p.after);
+    const subs0 = subs(c).length; assert.ok(subs0 > 0);
+    const r = a.call("cut.apply", { mode: "pauses", minPause: 0.5, pad: 0.08 });
+    assert.strictEqual(r.pieces, 2); assert.ok(!c._l.includes(v), "исходный слой заменён кусками");
+    const pieces = c._l.filter(l => l.comment === N.CUT_TAG).sort((x, y) => x.inPoint - y.inPoint);
+    assert.strictEqual(pieces.length, 2); near(pieces[0].inPoint, 0, 1e-9); near(pieces[1].inPoint, pieces[0].outPoint, 1e-9);
+    near(pieces[0].startTime, -0.9, 0.05);
+    const w = a.state().words; near(w[0].start, 0.0833, 0.03); assert.ok(w[0].start < w[0].end);
+    a.call("phrase.select", { index: 1 }); const w2 = a.state().words; assert.ok(w2[0].start > pieces[1].inPoint - 0.01 && w2[0].start < pieces[1].inPoint + 0.2, "вторая фраза в начале второго куска");
+    assert.ok(subs(c).length > 0, "субтитры пересозданы"); assert.ok(subs(c).every(l => l.inPoint < 2.4), "субтитры в новом времени");
+    assert.ok(/Нарезано/.test(a.call("status")));
+    const again = a.call("cut.plan", { mode: "pauses" }); assert.strictEqual(again.layers, 2, "повторная нарезка берёт куски");
+    assert.ok(again.removed < 0.1, "пауз больше нет");
+  });
+  await test("нарезка: паразиты, отрезок и по фразам; Time Remap и пустая нарезка — понятные ошибки", () => {
+    const fill = { schema: "noir-captions/1", language: "ru", engine: { model: "small", device: "cpu" }, warnings: [], source: { file: path.join(TMP, "clip.mp4") },
+      segments: [{ words: [{ text: "Привет,", start: 1.0, end: 1.3 }, { text: "ээ", start: 1.4, end: 1.9 }, { text: "это", start: 2.0, end: 2.2 }, { text: "NOIR.", start: 2.2, end: 2.6 }] }] };
+    let c = mkComp({ duration: 4 }), a = freshApp(fill);
+    let v = new mock.AVLayer(c, "clip.mp4"); c._l.push(v); v.selected = true;
+    let p = a.call("cut.plan", { mode: "fillers" }); assert.strictEqual(p.keeps, 2); near(p.removed, 0.5, 0.05);
+    a.call("cut.apply", { mode: "fillers" }); assert.deepStrictEqual(a.state().words.map(x => x.text), ["Привет,", "это", "NOIR."]);
+    assert.ok(a.state().words[1].start < 1.6, "слова после паразита сдвинулись");
+    c = mkComp({ duration: 12 }); a = freshApp(); v = new mock.AVLayer(c, "clip.mp4"); c._l.push(v); v.selected = true;
+    p = a.call("cut.plan", { mode: "range", from: 2.9, to: 4 }); assert.strictEqual(p.keeps, 1); near(p.after, 1.1, 0.05);
+    assert.throws(() => a.call("cut.plan", { mode: "range", from: 5 }), /отрезок/);
+    a.call("cut.apply", { mode: "range", from: 2.9, to: 4 }); assert.deepStrictEqual(a.state().phrases.length, 1);
+    c = mkComp({ duration: 12 }); a = freshApp(); v = new mock.AVLayer(c, "clip.mp4"); c._l.push(v); v.selected = true;
+    const r = a.call("cut.apply", { mode: "phrases" }); assert.strictEqual(r.pieces, 2);
+    const pcs = c._l.filter(l => l.comment === N.CUT_TAG).sort((x, y) => x.inPoint - y.inPoint);
+    near(pcs[0].outPoint, 2.5, 0.05); near(pcs[1].inPoint, pcs[0].outPoint, 1e-9); near(pcs[1].outPoint, 12, 1e-9);
+    near(a.state().words[0].start, 1.0, 1e-6, "время слов не меняется");
+    c = mkComp({ duration: 12 }); a = freshApp(); v = new mock.AVLayer(c, "clip.mp4"); c._l.push(v); v.selected = true; v.timeRemapEnabled = true;
+    assert.throws(() => a.call("cut.apply", { mode: "pauses" }), /Time Remap/);
+    assert.throws(() => { const b = freshApp(false); mkComp(); b.call("cut.apply", {}); }, /распознайте/);
+  });
   await test("превью: отдельная композиция, исходник не меняется", () => {
     const c = mkComp({ duration: 12 }), a = freshApp(); let copy;
     c.duplicate = () => { copy = new mock.CompItem({ duration: 12 }); copy.openInViewer = () => { copy.opened = true; }; return copy; };

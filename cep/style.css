@@ -297,6 +297,7 @@ select.input option { background: var(--surface); color: var(--text); }
 .as-plan { align-self: stretch; padding: var(--s2) 10px; border: 1px solid rgba(96, 165, 250, .5); border-radius: var(--r-m); background: rgba(59, 130, 246, .12); }
 .as-plan ol { margin: 0 0 var(--s2); padding-left: 18px; } .as-plan li { margin: 2px 0; }
 .as-plan-title { display: block; margin-bottom: var(--s2); }
+.as-cut { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; margin-bottom: var(--s1); } .as-cut-big { font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .as-diff { display: flex; flex-direction: column; gap: 6px; margin-bottom: var(--s2); }
 .as-diff-row { display: flex; gap: var(--s2); align-items: baseline; }
 .as-diff-n { flex: none; min-width: 18px; color: #94a3b8; font-size: var(--fs-s); text-align: right; }

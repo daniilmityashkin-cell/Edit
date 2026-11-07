@@ -34,6 +34,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         { id: "rotate", label: "Поворот + scale", abbr: "Rotate", op: 0, rot: -14, sc: 85 },
         { id: "grow", label: "Grow (вырастает с overshoot)", abbr: "Grow", op: 0, sc: 30, over: 108 },
         { id: "blurPop", label: "Blur Pop", abbr: "Blur Pop", op: 0, sc: 75, over: 104, blur: 1 },
+        { id: "zoomBlur", label: "Влёт крупно + blur (уличное интервью)", abbr: "Zoom Blur", op: 0, sc: 150, blur: 0.8 },
         // letters: анимация по буквам (текстовый аниматор с диапазоном, а не ключи слоя)
         { id: "letFade", label: "По буквам: fade", abbr: "Букв Fade", letters: "fade" },
         { id: "letRise", label: "По буквам: снизу", abbr: "Букв ↑", letters: "rise" },

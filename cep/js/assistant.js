@@ -7,7 +7,7 @@
     "use strict";
     var api = null, box = null, STORE = "noir.assistant.v1";
     var t = function (k, v) { return window.NoirI18n ? NoirI18n.t(k, v) : k; };
-    var ANIM_IN = ["none", "fade", "blur", "blurRise", "rise", "drop", "left", "right", "pop", "punch", "zoom", "slam", "whipL", "whipR", "rotate", "grow", "blurPop", "letFade", "letRise", "letPop", "letBlur", "type"];
+    var ANIM_IN = ["none", "fade", "blur", "blurRise", "rise", "drop", "left", "right", "pop", "punch", "zoom", "slam", "whipL", "whipR", "rotate", "grow", "blurPop", "zoomBlur", "letFade", "letRise", "letPop", "letBlur", "type"];
     var ANIM_OUT = ["none", "fade", "blur", "blurUp", "shrink", "up", "down", "left", "right", "zoom", "whipL", "whipR", "rotate", "slamOut", "letFade", "letRise", "letType"];
     var TEXT_OPS = { translate: 1, fixText: 1, fillers: 1, emoji: 1 };
     var LANGS = { en: "English", ru: "Russian", es: "Spanish", de: "German", fr: "French", it: "Italian", pt: "Portuguese", uk: "Ukrainian", kk: "Kazakh", tr: "Turkish", zh: "Chinese", ja: "Japanese", ko: "Korean", ar: "Arabic" };
@@ -50,6 +50,10 @@
             case "mask": out.shape = c.shape === "ellipse" ? "ellipse" : "rect"; ["x", "y", "w", "h"].forEach(function (k, i) { out[k] = clamp(c[k], i < 2 ? -50 : 1, i < 2 ? 150 : 200, i < 2 ? 10 : 80); });
                 out.feather = clamp(c.feather, 0, 100, 0); out.invert = !!c.invert; return out;
             case "roto": return out;
+            case "cut": out.mode = ["pauses", "fillers", "both", "range", "phrases"].indexOf(c.mode) >= 0 ? c.mode : "pauses";
+                if (c.minPause !== undefined) out.minPause = clamp(c.minPause, 0.1, 10, 0.5);
+                if (out.mode === "range") { out.from = clamp(c.from, 0, 36000, 0); out.to = clamp(c.to, 0, 36000, 0); if (!(out.to > out.from)) return null; }
+                return out;
             case "resetPos": case "applyStyle": case "behind": case "avoidFace": case "faceScan": case "recognize": case "create": case "update": case "updateAll":
             case "fixText": case "fillers": case "emoji": case "dynamic": case "calm": case "control": return out;
             case "delete": return out;   // always shown in the plan first; runs only after «Применить»
@@ -69,6 +73,17 @@
         var list = Array.isArray(j.commands) ? j.commands : (j.op ? [j] : []), cmds = [];
         for (var i = 0; i < list.length && cmds.length < 12; i++) { var c = sanitize(list[i]); if (c) cmds.push(c); }
         return { say: typeof j.say === "string" ? j.say.slice(0, 400) : "", commands: cmds, dropped: list.length - cmds.length };
+    }
+    // «паузы» + «паразиты» in one request → one cut that does both (two cuts in a row would need two plans).
+    function mergeCuts(cmds) {
+        var cuts = cmds.filter(function (c) { return c.op === "cut"; });
+        if (cuts.length < 2) return cmds;
+        var p = cuts.filter(function (c) { return c.mode === "pauses"; })[0], f = cuts.filter(function (c) { return c.mode === "fillers"; })[0];
+        if (!p || !f) return cmds.filter(function (c) { return c.op !== "cut" || c === cuts[0]; });
+        var both = { op: "cut", mode: "both" }; if (p.minPause) both.minPause = p.minPause;
+        var out = [], put = false;
+        cmds.forEach(function (c) { if (c.op !== "cut") out.push(c); else if (!put) { out.push(both); put = true; } });
+        return out;
     }
     // "dynamic" / "calm" are shortcuts for a few style settings (+ updating the captions if they exist).
     function expand(cmds) {
@@ -104,11 +119,13 @@
         "Слои: {\"op\":\"select\",\"target\":\"captions|all|accents|base|phrase|video|control|none\"} — выделить в таймлайне (субтитры этого видео, все NOIR, акценты, обычные слова, текущую фразу, видео, пульт, снять выделение).",
         "{\"op\":\"mask\",\"shape\":\"ellipse|rect\",\"x\":10,\"y\":10,\"w\":80,\"h\":80,\"feather\":10,\"invert\":false} — маска на выделенном слое (или на видео), x/y/w/h в % слоя, feather в %.",
         "{\"op\":\"roto\"} — подготовить «текст за человеком»: копия видео над субтитрами, открыта для Roto Brush (обвести человека кистью пользователь делает сам — скрипты AE этого не умеют).",
+        "Нарезка видео по речи (режет сам слой видео, субтитры едут следом): {\"op\":\"cut\",\"mode\":\"pauses\",\"minPause\":0.5} — убрать паузы длиннее minPause секунд; mode \"fillers\" — вырезать из видео слова-паразиты; \"both\" — паузы и паразиты; \"range\" с \"from\" и \"to\" (секунды) — оставить только этот отрезок; \"phrases\" — разрезать на куски по фразам, ничего не удаляя.",
         "Правила: не придумывай команд, которых нет в списке. Не больше 6 команд. Сначала текст, потом расположение, размер, анимация.",
         "Примеры:",
         "«настрой красиво, чтобы лицо не закрывали» → {\"say\":\"Найду лицо и уберу с него субтитры.\",\"commands\":[{\"op\":\"avoidFace\"}]}",
         "«переведи на английский и сделай динамичнее» → {\"say\":\"Переведу на английский и сделаю анимацию резче.\",\"commands\":[{\"op\":\"translate\",\"to\":\"en\"},{\"op\":\"dynamic\"}]}",
-        "«убери эээ и ну» → {\"say\":\"Уберу слова-паразиты.\",\"commands\":[{\"op\":\"fillers\"}]}"
+        "«убери эээ и ну» → {\"say\":\"Уберу слова-паразиты.\",\"commands\":[{\"op\":\"fillers\"}]}",
+        "«вырежи паузы длиннее секунды из видео» → {\"say\":\"Вырежу паузы длиннее 1 с.\",\"commands\":[{\"op\":\"cut\",\"mode\":\"pauses\",\"minPause\":1}]}"
     ].join("\n");
     var TEXT_SYSTEM = {
         translate: "You translate video subtitles. Input: JSON {\"lines\":[{\"i\":0,\"text\":\"...\"}], \"to\":\"<language>\"}. Translate every line into the target language, natural and short, as spoken subtitles. " +
@@ -253,12 +270,23 @@
             for (var li = 0; li < LANG_WORDS.length; li++) if (LANG_WORDS[li][0].test(t0)) return { say: "Переведу на " + LANG_NAMES[LANG_WORDS[li][1]], commands: [{ op: "translate", to: LANG_WORDS[li][1] }] };
             return { say: "На какой язык перевести? Например: «переведи на английский».", commands: [] };
         }
+        var vid = /видео|ролик|футаж|клип|video|footage/.test(t0);
+        if ((m = /(?:^|\s)(?:с|from)\s*(\d+(?:\.\d+)?)\s*(?:с|сек\S*|s)?\s*(?:по|до|to)\s*(\d+(?:\.\d+)?)/.exec(t0)) && /остав|keep|обреж|trim/.test(t0))
+            return { say: "Оставлю видео с " + m[1] + " по " + m[2] + " с", commands: [{ op: "cut", mode: "range", from: Number(m[1]), to: Number(m[2]) }] };
+        if (/(нареж|разреж|порежь|split).*(фраз|phrase)|по фразам/.test(t0) && !/субтитр/.test(t0)) return { say: "Разрежу видео на куски по фразам", commands: [{ op: "cut", mode: "phrases" }] };
+        if (/пауз|тишин|silence|jump ?cut|джамп/.test(t0) && /убер|выреж|вырез|удал|убра|сократ|cut|remove/.test(t0) || /джамп|jump ?cut/.test(t0)) {
+            var ms = /(\d+)\s*мс|(\d+)\s*ms/.exec(t0), mp = ms ? Number(ms[1] || ms[2]) / 1000 : number(t0, 0);
+            if (!mp && /секунд|second/.test(t0)) mp = 1;
+            var cmdP = { op: "cut", mode: "pauses" }; if (mp) cmdP.minPause = mp;
+            return { say: "Вырежу из видео паузы" + (mp ? " длиннее " + mp + " с" : " длиннее 0.5 с"), commands: [cmdP] };
+        }
+        if (/паразит|филлер|filler/.test(t0) && (vid || /выреж|вырез|нарез/.test(t0))) return { say: "Вырежу слова-паразиты из видео", commands: [{ op: "cut", mode: "fillers" }] };
         if (/паразит|филлер|эээ|\bээ\b|\bэм\b|filler|\bum\b|\buh\b/.test(t0)) return { say: "Уберу слова-паразиты", commands: [{ op: "fillers" }] };
         if (/эмодз|эмоджи|смайл|emoji/.test(t0)) return { say: "Добавлю эмодзи к ключевым словам", commands: [{ op: "emoji" }] };
         if (/ошибк|опечат|исправ.*текст|грамот|fix.*(text|typo|error)/.test(t0)) return { say: "Исправлю ошибки распознавания", commands: [{ op: "fixText" }] };
         if (/динамичн|энергичн|живее|резче|бодрее|dynamic|energetic/.test(t0)) return { say: "Сделаю динамичнее", commands: [{ op: "dynamic" }] };
         if (/спокойн|мягче|плавнее|calm|softer/.test(t0)) return { say: "Сделаю спокойнее", commands: [{ op: "calm" }] };
-        if (/roto|рото|выреж|вырез|за человек.*(сдела|настро|хочу)|текст за человеком/.test(t0)) return { say: "Подготовлю Roto Brush: копия видео над субтитрами, обвести человека нужно один раз кистью", commands: [{ op: "roto" }] };
+        if (/roto|рото|(выреж|вырез).*(человек|людей|фон|персон)|за человек.*(сдела|настро|хочу)|текст за человеком/.test(t0)) return { say: "Подготовлю Roto Brush: копия видео над субтитрами, обвести человека нужно один раз кистью", commands: [{ op: "roto" }] };
         if (/маск|виньет/.test(t0)) {
             var mk = { op: "mask", shape: /круг|овал|эллипс|виньет|ellipse|circle/.test(t0) ? "ellipse" : "rect", x: 10, y: 10, w: 80, h: 80, feather: /мягк|растуш|виньет|feather/.test(t0) ? 20 : 0, invert: /инверт|снаружи|вокруг|invert/.test(t0) };
             if (/верх/.test(t0)) { mk.x = 0; mk.y = 0; mk.w = 100; mk.h = 50; } else if (/низ/.test(t0)) { mk.x = 0; mk.y = 50; mk.w = 100; mk.h = 50; } else if (/лев/.test(t0)) { mk.x = 0; mk.y = 0; mk.w = 50; mk.h = 100; } else if (/прав/.test(t0)) { mk.x = 50; mk.y = 0; mk.w = 50; mk.h = 100; }
@@ -303,7 +331,7 @@
         return null;
     }
     function understand(raw) {
-        var s = String(raw).toLowerCase().replace(/ё/g, "е").trim();
+        var s = String(raw).toLowerCase().replace(/ё/g, "е").replace(/(\d),(\d)/g, "$1.$2").trim();
         if (!s) return { say: "Напишите, что сделать, например «поставь внизу».", commands: [], known: false };
         var parts = s.split(/\s*(?:,|;|\.\s|\sи\s|\sпотом\s|\sзатем\s|\sand\s|\sthen\s)\s*/), commands = [], says = [], any = false;
         for (var i = 0; i < parts.length; i++) {
@@ -313,6 +341,7 @@
             else if (r && r.say) says.push(r.say);
         }
         if (!any) return { say: says.join(" "), commands: [], known: false };
+        commands = mergeCuts(commands);
         return { say: says.join("; "), commands: commands, known: true };
     }
 
@@ -381,9 +410,16 @@
             case "mask": return "Маска " + (c.shape === "ellipse" ? "овалом" : "прямоугольником") + " " + c.x + "–" + (c.x + c.w) + "% × " + c.y + "–" + (c.y + c.h) + "%" + (c.feather ? ", растушёвка " + c.feather + "%" : "") + (c.invert ? ", инвертирована" : "");
             case "roto": return "Копия видео над субтитрами, открыть её для Roto Brush (обвести человека — один раз кистью)";
             case "delete": return "Удалить субтитры (Ctrl+Z вернёт)";
+            case "cut": return cutName(c);
         }
         return c.op;
     }
+
+    function cutName(c) {
+        return t("as.cut." + c.mode, { p: c.minPause || 0.5, a: c.from, b: c.to });
+    }
+    function cutArgs(c) { var a = { mode: c.mode }; if (c.minPause) a.minPause = c.minPause; if (c.mode === "range") { a.from = c.from; a.to = c.to; } return a; }
+    function sec(x) { return (Math.round(x * 10) / 10) + " " + t("as.sec"); }
 
     // ---------- UI ----------
     function close() { if (box && box.parentNode) box.parentNode.removeChild(box); box = null; }
@@ -452,9 +488,27 @@
                 });
             }, function (e) { if (waiting.parentNode) waiting.parentNode.removeChild(waiting); say("⚠ " + (e && e.message || e), "ai"); });
         }
+        // Cutting: the plan is measured by AE first (before → after seconds); the video changes only after «Применить».
+        function cutPlanCard(cmd) {
+            return api.call("cut.plan", cutArgs(cmd)).then(function (p) {
+                var c = card(cutName(cmd));
+                var stats = el("div", "as-cut", c);
+                el("span", "as-cut-big", stats, sec(p.before) + " → " + sec(p.after));
+                el("span", "as-note", stats, cmd.mode === "phrases" ? t("as.cutPieces", { n: p.keeps }) : t("as.cutRemoved", { s: sec(p.removed), n: p.keeps }));
+                el("p", "as-note", c, t("as.cutLayers", { name: p.names }) + " " + t("as.cutNote"));
+                if (cmd.mode !== "phrases" && p.removed < 0.04) { el("p", "as-note", c, t("as.cutNothing")); return; }
+                return confirmRow(c).then(function (ok) {
+                    if (!ok) return;
+                    return api.call("cut.apply", cutArgs(cmd)).then(function () { return api.call("status"); }).then(function (r) { say(window.NoirI18n ? NoirI18n.host(r) : r, "note"); });
+                });
+            }, function (e) { say("⚠ " + (window.NoirI18n ? NoirI18n.host(e && e.message || String(e)) : (e && e.message || e)), "ai"); });
+        }
         function run(reply) {
-            var cmds = expand(reply.commands), textOps = cmds.filter(function (c) { return TEXT_OPS[c.op]; }), rest = cmds.filter(function (c) { return !TEXT_OPS[c.op]; });
+            var cmds = mergeCuts(expand(reply.commands)), cuts = cmds.filter(function (c) { return c.op === "cut"; });
+            cmds = cmds.filter(function (c) { return c.op !== "cut"; });
+            var textOps = cmds.filter(function (c) { return TEXT_OPS[c.op]; }), rest = cmds.filter(function (c) { return !TEXT_OPS[c.op]; });
             var chain = Promise.resolve();
+            cuts.forEach(function (c) { chain = chain.then(function () { return cutPlanCard(c); }); });
             textOps.forEach(function (c) { chain = chain.then(function () { return textPlan(c); }); });
             if (rest.length) chain = chain.then(function () { return plan(rest); });
             return chain;
@@ -499,6 +553,6 @@
         input.focus();
     }
 
-    window.NoirAssistant = { init: function (options) { api = options; }, open: open, close: close, understand: understand, parseReply: parseReply, sanitize: sanitize, describe: describe, system: SYSTEM,
+    window.NoirAssistant = { init: function (options) { api = options; }, open: open, close: close, understand: understand, mergeCuts: mergeCuts, parseReply: parseReply, sanitize: sanitize, describe: describe, system: SYSTEM,
         localEmoji: localEmoji, expand: expand, setSettings: function (o) { for (var k in o) settings[k] = o[k]; saveSettings(settings); } };
 })();

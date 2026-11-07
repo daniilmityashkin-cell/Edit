@@ -181,7 +181,7 @@ const GOPTS = { maxWords: 1, maxChars: 99, pauseBreak: 0.35, punctBreak: true, s
       const c = mkComp({ width: 720, height: 1280 }), st = styleOf(id);
       const words = N.applyEdits(sample(), "Привет, это *NOIR.*\nСубтитры сами", []);
       const r = N.generate(c, prep(words, st.layout), st, st.anim, true);
-      assert.ok(r.created >= (st.layout.reveal === "group" ? 2 : 5), "created " + r.created);
+      assert.ok(r.created >= (st.layout.reveal === "group" || st.layout.layerMode === "phrase" ? 2 : 5), "created " + r.created);
       assert.strictEqual(subs(c).map(l => l.property("Source Text").value.text).join(" ").split(/\s+/).length, 5);
       allKeysInside(c);
       for (const l of subs(c)) {

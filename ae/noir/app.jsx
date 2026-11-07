@@ -10,7 +10,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
 (function (N) {
     var SECTION = "NOIR Captions";
     var SETTINGS_KEY = "settings.v2";
-    N.VERSION = "0.37.2";
+    N.VERSION = "0.38.0";
 
     function clone(o) { return N.parseJSON(N.stringify(o)); }
 
@@ -165,7 +165,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
 
     N.createApp = function (root) {
         var S = loadSettings(), presets = N.loadPresets(root), listeners = [];
-        var st = { data: null, link: null, text: "", cleanLines: [], history: [], timing: {}, phrase: 0, recognizing: false, scanning: false, progress: 0,
+        var st = { data: null, link: null, cutMap: null, text: "", cleanLines: [], history: [], timing: {}, phrase: 0, recognizing: false, scanning: false, progress: 0,
             status: "Готов к работе.", face: null, issues: [], pending: null, completed: 0, dataRevision: 0, log: [] };
         if (!S.presetId && !S.style.base.fonts.length) S.style = clone(FALLBACK_STYLE);
 
@@ -217,7 +217,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
 
         // ---------- text ----------
         function setData(data, link) {
-            st.dataRevision++; st.history = []; st.timing = {}; st.data = data; st.link = link; st.phrase = 0; st.issues = []; st.pending = null;
+            st.dataRevision++; st.history = []; st.timing = {}; st.cutMap = null; st.data = data; st.link = link; st.phrase = 0; st.issues = []; st.pending = null;
             st.text = N.toEditorText(data); st.cleanLines = st.text.split("\n");
             var n = 0;
             for (var i = 0; i < data.segments.length; i++) n += data.segments[i].words.length;
@@ -398,7 +398,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             if (st.scanning) throw new Error("Поиск лица уже идёт.");
             var comp = activeComp();
             if (!st.data || !st.data.source || !st.data.source.file) throw new Error("Нужен распознанный или загруженный текст с путём к видео. Распознайте слой ещё раз.");
-            var map = resolveLink(comp), srcTime = Math.max(0, N.compToSource(comp.time, map.startTime, map.stretch));
+            var srcTime = Math.max(0, compToSrc(comp, comp.time));
             st.scanning = true; status("Ищу лицо на кадре…");
             N.faceScan(root, S.python, st.data.source.file, srcTime, {
                 onDone: function (res) {
@@ -558,6 +558,128 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             m.property("ADBE Mask Feather").setValue([f, f]);
             try { m.inverted = !!a.invert; } catch (e) {}
             return m;
+        }
+
+        // ---------- cutting by speech ----------
+        // After a cut the words live on the new comp timeline (link = null) and st.cutMap maps every piece back to the source file
+        // (for listening and the face search): [{c0, c1, s0, f}] — source = s0 + (t − c0)·f.
+        N.CUT_TAG = "noir-captions:cut";
+        function compToSrc(comp, t) {
+            if (st.cutMap) {
+                for (var i = 0; i < st.cutMap.length; i++) { var p = st.cutMap[i]; if (t >= p.c0 - 1e-6 && t <= p.c1 + 1e-6) return p.s0 + (t - p.c0) * p.f; }
+                var last = st.cutMap[st.cutMap.length - 1]; return last ? last.s0 + (t - last.c0) * last.f : t;
+            }
+            var m = resolveLink(comp); return N.compToSource(t, m.startTime, m.stretch);
+        }
+        function srcRate(comp, t) {
+            if (st.cutMap) { for (var i = 0; i < st.cutMap.length; i++) if (t >= st.cutMap[i].c0 - 1e-6 && t <= st.cutMap[i].c1 + 1e-6) return st.cutMap[i].f; return 1; }
+            return 100 / resolveLink(comp).stretch;
+        }
+        // Layers to cut: selected footage layers; else the recognized layer; else the pieces of a previous cut.
+        function cutTargets(comp) {
+            var out = [], sel = comp.selectedLayers, i, l;
+            for (i = 0; i < sel.length; i++) if (!(sel[i] instanceof TextLayer) && !N.isGenerated(sel[i]) && !sel[i].nullLayer && String(sel[i].comment || "").indexOf("noir-captions:control") !== 0) out.push(sel[i]);
+            if (out.length) return out;
+            var src = sourceLayer(comp); if (src) return [src];
+            for (i = 1; i <= comp.numLayers; i++) { l = comp.layer(i); if (String(l.comment || "") === N.CUT_TAG) out.push(l); }
+            if (!out.length) throw new Error("Выделите слой видео (или звука), который нужно нарезать.");
+            return out;
+        }
+        function num(v, d, lo, hi) { v = Number(v); return isFinite(v) ? Math.max(lo, Math.min(hi, v)) : d; }
+        // Words on the comp timeline + the intervals to keep. mode: pauses | fillers | both | range | phrases.
+        function cutPlan(comp, a, targets) {
+            var words = N.applyEdits(st.data, st.text, []), map = resolveLink(comp), W = [], i, fd = comp.frameDuration;
+            for (i = 0; i < words.length; i++) W.push({ s: N.sourceToComp(words[i].start, map.startTime, map.stretch), e: N.sourceToComp(words[i].end, map.startTime, map.stretch), w: words[i] });
+            var L0 = 1e9, L1 = -1e9;
+            for (i = 0; i < targets.length; i++) { L0 = Math.min(L0, targets[i].inPoint); L1 = Math.max(L1, targets[i].outPoint); }
+            var mode = String(a.mode || "pauses"), pad = num(a.pad, 0.08, 0, 1), minPause = num(a.minPause, 0.5, 0.1, 10), removes = [], keeps = [];
+            var fillerSet = {}, list = a.words && a.words.length ? a.words : FILLERS, kept = W;
+            for (i = 0; i < list.length; i++) fillerSet[bare(list[i])] = true;
+            if (mode === "fillers" || mode === "both") {
+                kept = [];
+                for (i = 0; i < W.length; i++) {
+                    var pair = i + 1 < W.length && fillerSet[bare(W[i].w.text) + " " + bare(W[i + 1].w.text)];
+                    if (pair) { removes.push([W[i].s, W[i + 1].e]); i++; continue; }
+                    if (fillerSet[bare(W[i].w.text)]) removes.push([W[i].s, W[i].e]); else kept.push(W[i]);
+                }
+            }
+            if (mode === "pauses" || mode === "both") {
+                if (!kept.length) throw new Error("Нет слов — нечего оставлять.");
+                if (kept[0].s - pad - L0 > minPause) removes.push([L0, kept[0].s - pad]);
+                for (i = 0; i + 1 < kept.length; i++) if (kept[i + 1].s - kept[i].e > minPause) removes.push([kept[i].e + pad, kept[i + 1].s - pad]);
+                if (L1 - (kept[kept.length - 1].e + pad) > minPause) removes.push([kept[kept.length - 1].e + pad, L1]);
+            }
+            if (mode === "range") {
+                var f = Number(a.from), t = Number(a.to);
+                if (!isFinite(f) || !isFinite(t) || t - f < fd) throw new Error("Укажите отрезок: с какой по какую секунду оставить.");
+                removes.push([L0, f], [t, L1]);
+            }
+            function snap(x) { return Math.round(x / fd) * fd; }
+            if (mode === "phrases") {             // split at the middle of the gap between phrases, nothing removed
+                var cuts = [];
+                for (i = 0; i + 1 < W.length; i++) if (W[i + 1].w.seg !== W[i].w.seg) cuts.push(snap((W[i].e + W[i + 1].s) / 2));
+                var prev = L0;
+                for (i = 0; i < cuts.length; i++) if (cuts[i] > prev + fd && cuts[i] < L1 - fd) { keeps.push([prev, cuts[i]]); prev = cuts[i]; }
+                keeps.push([prev, L1]);
+            } else {
+                var r = [];
+                for (i = 0; i < removes.length; i++) { var x0 = snap(Math.max(L0, removes[i][0])), x1 = snap(Math.min(L1, removes[i][1])); if (x1 - x0 >= fd) r.push([x0, x1]); }
+                r.sort(function (p, q) { return p[0] - q[0]; });
+                var cur = L0;
+                for (i = 0; i < r.length; i++) { if (r[i][0] > cur + fd / 2) keeps.push([cur, r[i][0]]); cur = Math.max(cur, r[i][1]); }
+                if (L1 > cur + fd / 2) keeps.push([cur, L1]);
+            }
+            var total = 0; for (i = 0; i < keeps.length; i++) total += keeps[i][1] - keeps[i][0];
+            return { keeps: keeps, before: L1 - L0, after: total, removed: (L1 - L0) - total, cuts: mode === "phrases" ? keeps.length - 1 : Math.max(0, keeps.length - 1 + (keeps.length && keeps[0][0] > L0 + 1e-6 ? 1 : 0)), L0: L0, words: W, mode: mode };
+        }
+        function round2(x) { return Math.round(x * 100) / 100; }
+        function cutApply(a) {
+            if (!st.data) throw new Error("Сначала распознайте речь — нарезка идёт по словам.");
+            var comp = activeComp(), targets = cutTargets(comp), plan = cutPlan(comp, a, targets), i, k, fd = comp.frameDuration;
+            if (!plan.keeps.length) throw new Error("После нарезки ничего не останется.");
+            if (plan.mode !== "phrases" && plan.removed < fd) { status("Резать нечего: пауз длиннее порога нет."); return { removed: 0 }; }
+            for (i = 0; i < targets.length; i++) if (targets[i].timeRemapEnabled) throw new Error("У слоя «" + targets[i].name + "» включён Time Remap — нарезка его не поддерживает.");
+            var shift = plan.mode !== "phrases", starts = [], pos = plan.L0;
+            for (k = 0; k < plan.keeps.length; k++) { starts.push(shift ? pos : plan.keeps[k][0]); pos += plan.keeps[k][1] - plan.keeps[k][0]; }
+            var oldKey = sourceKey(), had = canUpdate(), pieces = 0;
+            var newMap = [];
+            for (k = 0; k < plan.keeps.length; k++) newMap.push({ c0: starts[k], c1: starts[k] + plan.keeps[k][1] - plan.keeps[k][0], s0: compToSrc(comp, plan.keeps[k][0]), f: srcRate(comp, plan.keeps[k][0]) });
+            undo("нарезка по речи", function () {
+                for (i = 0; i < targets.length; i++) {
+                    var L = targets[i];
+                    for (k = 0; k < plan.keeps.length; k++) {
+                        var a0 = Math.max(plan.keeps[k][0], L.inPoint), a1 = Math.min(plan.keeps[k][1], L.outPoint);
+                        if (a1 - a0 < fd / 2) continue;
+                        var d = L.duplicate(), at = starts[k] + (a0 - plan.keeps[k][0]);
+                        d.startTime = d.startTime + (at - a0);
+                        if (at >= d.outPoint) { d.outPoint = at + (a1 - a0); d.inPoint = at; } else { d.inPoint = at; d.outPoint = at + (a1 - a0); }
+                        if (!d.comment || String(d.comment) === N.CUT_TAG) d.comment = N.CUT_TAG;
+                        pieces++;
+                    }
+                    L.remove();
+                }
+                if (had && shift) N.removeGenerated(comp, oldKey);
+            });
+            if (!shift) { status("Видео нарезано по фразам: кусков " + plan.keeps.length + ". Время не менялось."); return { pieces: pieces }; }
+            // words move to the new timeline; words inside removed parts go away
+            function keepOf(t) { for (var j = 0; j < plan.keeps.length; j++) if (t >= plan.keeps[j][0] - 1e-6 && t <= plan.keeps[j][1] + 1e-6) return j; return -1; }
+            var segs = [], bySeg = {}, w;
+            for (i = 0; i < plan.words.length; i++) {
+                w = plan.words[i]; var j = keepOf((w.s + w.e) / 2); if (j < 0) continue;          // the word's middle decides: inside a removed part → gone
+                var kp = plan.keeps[j], t0 = starts[j] + Math.max(0, w.s - kp[0]), t1 = starts[j] + Math.min(kp[1], w.e) - kp[0];
+                if (t1 <= t0) t1 = t0 + Math.max(0.04, Math.min(w.e - w.s, 0.4));
+                if (!bySeg[w.w.seg]) { bySeg[w.w.seg] = { words: [], flags: [] }; segs.push(bySeg[w.w.seg]); }
+                bySeg[w.w.seg].words.push({ text: w.w.text, start: Math.round(t0 * 1000) / 1000, end: Math.round(t1 * 1000) / 1000, conf: w.w.conf });
+                bySeg[w.w.seg].flags.push(w.w);
+            }
+            var data = { schema: "noir-captions/1", language: st.data.language, engine: st.data.engine, warnings: [], source: { file: st.data.source ? st.data.source.file : "", cut: true }, segments: [] }, lines = [];
+            for (i = 0; i < segs.length; i++) { data.segments.push({ words: segs[i].words }); lines.push(N.editorWords(segs[i].flags)); }
+            setData(data, null); st.cutMap = newMap;
+            st.text = lines.join("\n"); st.cleanLines = st.text.split("\n");
+            var msg = "Нарезано: убрано " + (Math.round(plan.removed * 10) / 10) + " с (" + (Math.round(plan.before * 10) / 10) + " → " + (Math.round(plan.after * 10) / 10) + " с), кусков " + plan.keeps.length + ". Отмена в AE — Ctrl+Z.";
+            if (had) { var r = generate("all", false); if (r && r.pending) r = generate("all", true); msg += " Субтитры пересозданы под новое время."; }
+            status(msg + " Звуки и другие слои не сдвигаются.");
+            return { removed: plan.removed, pieces: pieces, keeps: plan.keeps.length };
         }
 
         // ---------- filler words ----------
@@ -920,7 +1042,9 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
                 var ws = phraseWords();
                 if (!ws.length) throw new Error("Нет слов для прослушивания.");
                 if (!st.data.source || !st.data.source.file) throw new Error("В JSON нет пути к аудио. Распознайте исходный слой ещё раз.");
-                N.previewAudio(root, S.python, st.data.source.file, ws[0].start, ws[ws.length - 1].end);
+                var comp0 = null; try { comp0 = activeComp(); } catch (eC) {}
+                var a0 = st.cutMap && comp0 ? compToSrc(comp0, ws[0].start) : ws[0].start, a1 = st.cutMap && comp0 ? compToSrc(comp0, ws[ws.length - 1].end) : ws[ws.length - 1].end;
+                N.previewAudio(root, S.python, st.data.source.file, a0, a1);
                 status("Фраза готовится к воспроизведению во внешнем проигрывателе."); return true;
             },
             generate: function (a) { return generate(a.mode || "all", !!a.accept); },
@@ -1003,6 +1127,12 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
                 status((done.length ? "Исправлено: " + done.join("; ") + "." : "Автоматически исправить нечего.") + (after.length ? " Осталось замечаний: " + after.length + " — их нужно поправить вручную." : " Замечаний больше нет."));
                 return { fixed: done, left: after };
             },
+            "cut.plan": function (a) {
+                if (!st.data) throw new Error("Сначала распознайте речь — нарезка идёт по словам.");
+                var comp = activeComp(), targets = cutTargets(comp), p = cutPlan(comp, a, targets);
+                return { keeps: p.keeps.length, before: round2(p.before), after: round2(p.after), removed: round2(p.removed), layers: targets.length, names: targets.length === 1 ? targets[0].name : targets.length + " слоёв" };
+            },
+            "cut.apply": function (a) { return cutApply(a); },
             "layers.select": function (a) {
                 var r = selectTarget(String(a.target || "captions"));
                 status(r.n ? "Выделено: " + r.what + (r.n > 1 ? " (" + r.n + ")" : "") : "Выделение снято."); return r.n;

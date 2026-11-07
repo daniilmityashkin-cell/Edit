@@ -1,0 +1,105 @@
+{
+ "schema": "noir-style/1",
+ "id": "street-talk",
+ "name": "Street Talk",
+ "description": "Уличное интервью: белые жирные слова заглавными по центру, появляются жёсткой сменой точно в момент слова; акценты — красный жирный курсив вдвое крупнее, на своей строке, влетают из крупного размытого за 4 кадра. Выделяйте акценты *звёздочками*, суммы — «Правка → Инструменты → Счётчик» красным.",
+ "layout": {
+  "reveal": "word",
+  "layerMode": "phrase",
+  "maxWords": 3,
+  "maxChars": 20,
+  "lineChars": 16,
+  "pauseBreak": 0.3,
+  "punctBreak": true,
+  "stripPunct": true,
+  "autoAccent": false,
+  "keepShortWords": true,
+  "posX": 50,
+  "posY": 47,
+  "lineGap": 0.0,
+  "wordSpace": 0.24,
+  "accentOwnLine": true,
+  "safeWidth": 0.86,
+  "holdGap": 0.12
+ },
+ "base": {
+  "fonts": [
+   "Montserrat-ExtraBold",
+   "Montserrat-Black",
+   "Montserrat-Bold",
+   "Inter-ExtraBold",
+   "Arial-BoldMT"
+  ],
+  "size": 64,
+  "color": [
+   1,
+   1,
+   1
+  ],
+  "tracking": 0,
+  "caps": true,
+  "strokeWidth": 0,
+  "strokeColor": [
+   0,
+   0,
+   0
+  ],
+  "shadow": {
+   "color": [
+    0,
+    0,
+    0
+   ],
+   "opacity": 55,
+   "distance": 3,
+   "softness": 12
+  },
+  "glow": null
+ },
+ "accent": {
+  "fonts": [
+   "Montserrat-BlackItalic",
+   "Montserrat-ExtraBoldItalic",
+   "Montserrat-BoldItalic",
+   "Arial-BoldItalicMT"
+  ],
+  "size": 118,
+  "color": [
+   0.9,
+   0.06,
+   0.09
+  ],
+  "tracking": -10,
+  "caps": true,
+  "strokeWidth": 0,
+  "strokeColor": [
+   0,
+   0,
+   0
+  ],
+  "shadow": {
+   "color": [
+    0,
+    0,
+    0
+   ],
+   "opacity": 50,
+   "distance": 4,
+   "softness": 14
+  },
+  "glow": null
+ },
+ "anim": {
+  "animIn": "none",
+  "inDur": 0,
+  "animOut": "none",
+  "outDur": 0,
+  "distance": 0,
+  "blur": 18,
+  "easeInfluence": 90,
+  "accentIn": "zoomBlur",
+  "accentInDur": 0.13,
+  "accentOut": "none",
+  "accentOutDur": 0
+ }
+}
