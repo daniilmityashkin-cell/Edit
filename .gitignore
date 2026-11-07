@@ -7,3 +7,6 @@ recognition/models/
 # user fonts (licenses unknown: never commit)
 fonts/user/*
 !fonts/user/.gitkeep
+
+# written by scripts/install_cep_dev.ps1 (through the link into cep/)
+cep/project-root.txt

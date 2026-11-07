@@ -68,9 +68,10 @@ powershell -ExecutionPolicy Bypass -File scripts\install_cep_dev.ps1
 ```
 cd C:\Users\<имя>\edit
 git pull
-powershell -ExecutionPolicy Bypass -File scripts\install_cep_dev.ps1
 ```
-и перезапустить AE.
+и перезапустить AE. С версии 0.41.1 панель установлена ссылкой на папку `cep` проекта — `git pull` обновляет её сразу.
+Если панель ставилась раньше (копией) — один раз выполните `powershell -ExecutionPolicy Bypass -File scripts\install_cep_dev.ps1`:
+он заменит копию ссылкой (старая копия сохранится в `%LOCALAPPDATA%\NOIR Captions\cep-backups`).
 
 ## Резервная копия
 - **Код**: всё на GitHub. Зафиксированные версии — ветки `backup/v…`
