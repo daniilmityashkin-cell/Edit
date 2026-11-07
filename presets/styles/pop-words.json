@@ -1,7 +1,7 @@
 {
  "schema": "noir-style/1",
  "id": "pop-words",
- "name": "Pop Words (реф. 5 — интервью)",
+ "name": "Pop Words",
  "description": "По одному слову по центру белым округлым шрифтом; выделенные слова — розовый жирный курсив крупнее.",
  "layout": {
   "reveal": "word",

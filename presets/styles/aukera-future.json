@@ -1,7 +1,7 @@
 {
  "schema": "noir-style/1",
  "id": "aukera-future",
- "name": "Aukera Future (футуризм, голубой акцент)",
+ "name": "Aukera Future",
  "description": "Округлый футуристичный шрифт Aukera: белая подпись и голубой акцент со свечением. Нужен шрифт Aukera Cyrillic (fonts/user).",
  "layout": {
   "reveal": "group",

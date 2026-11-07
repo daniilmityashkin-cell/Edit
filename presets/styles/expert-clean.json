@@ -1,7 +1,7 @@
 {
  "schema": "noir-style/1",
  "id": "expert-clean",
- "name": "Эксперт · Чистый",
+ "name": "Эксперт",
  "description": "Спокойная фраза, сдержанный акцент, читаемый текст.",
  "layout": {
   "reveal": "group",

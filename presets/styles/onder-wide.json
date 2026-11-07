@@ -1,7 +1,7 @@
 {
  "schema": "noir-style/1",
  "id": "onder-wide",
- "name": "Onder Wide (ультражирный широкий)",
+ "name": "Onder Wide",
  "description": "Очень жирный широкий Onder капсом: белый текст, акцент жёлто-салатовый. Нужен шрифт Onder.",
  "layout": {
   "reveal": "group",

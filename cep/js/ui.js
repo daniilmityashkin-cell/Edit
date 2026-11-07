@@ -4,16 +4,8 @@
     "use strict";
     var t = function (k, v) { return NoirI18n.t(k, v); };
     var NS = "http://www.w3.org/2000/svg";
-    var ICONS = {
-        home: "M2.5 7.5L8 3l5.5 4.5 M4 6.5V13h8V6.5", video: "M2 4h9v8H2z M11 7l3-2v6l-3-2", text: "M3 3h10 M8 3v10 M5.5 13h5",
-        style: "M3 2h10v12H3z M5 5h6 M5 8h6 M5 11h3", edit: "M3 13l7-7 M9 4l3 3 M11 2l1 1", settings: "M8 5.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5z M8 1.5v2 M8 12.5v2 M1.5 8h2 M12.5 8h2 M3.4 3.4l1.4 1.4 M11.2 11.2l1.4 1.4 M12.6 3.4l-1.4 1.4 M4.8 11.2l-1.4 1.4",
-        place: "M3 3h10 M3 13h10 M8 5v6 M5.5 8.5L8 11l2.5-2.5", time: "M8 2a6 6 0 1 0 0 12A6 6 0 0 0 8 2z M8 5v3l2 1.5",
-        anim: "M2 8h4 M6 8l-2-2 M6 8l-2 2 M9 3v10 M9 8h5 M14 8l-2-2 M14 8l-2 2", layers: "M8 2l6 3-6 3-6-3z M2 8l6 3 6-3 M2 11l6 3 6-3",
-        more: "M8 5.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5z M8 1.5v2 M8 12.5v2 M1.5 8h2 M12.5 8h2 M3.4 3.4l1.4 1.4 M11.2 11.2l1.4 1.4 M12.6 3.4l-1.4 1.4 M4.8 11.2l-1.4 1.4",
-        play: "M5 3l8 5-8 5z", star: "M8 2l1.8 3.8 4.2.5-3.1 2.9.8 4.1L8 11.3 4.3 13.3l.8-4.1L2 6.3l4.2-.5z", up: "M8 13V3 M4 7l4-4 4 4", down: "M8 3v10 M4 9l4 4 4-4",
-        left: "M13 8H3 M7 4L3 8l4 4", right: "M3 8h10 M9 4l4 4-4 4", plus: "M8 3v10 M3 8h10", minus: "M3 8h10", close: "M4 4l8 8 M12 4l-8 8",
-        spark: "M8 1.5l1.6 4.9 4.9 1.6-4.9 1.6L8 14.5l-1.6-4.9L1.5 8l4.9-1.6z", check: "M3 8.5l3 3 7-7", undo: "M5 6H10a3.5 3.5 0 0 1 0 7H6 M7.5 3.5L5 6l2.5 2.5", file: "M4 2h5l3 3v9H4z M9 2v3h3", trash: "M3 4h10 M6 4V2.5h4V4 M4.5 4l.7 9.5h5.6l.7-9.5"
-    };
+    // Icons: Lucide subset in js/icons.js (24×24 grid, 2 px stroke scaled to the icon size by CSS).
+    var ALIAS = { text: "captions", style: "palette", spark: "sparkles", video: "mic" };
     function el(tag, cls, parent, text) {
         var e = document.createElement(tag);
         if (cls) e.className = cls;
@@ -22,8 +14,9 @@
         return e;
     }
     function icon(name, parent) {
-        var s = document.createElementNS(NS, "svg"); s.setAttribute("viewBox", "0 0 16 16"); s.setAttribute("aria-hidden", "true"); s.setAttribute("class", "icon");
-        var p = document.createElementNS(NS, "path"); p.setAttribute("d", ICONS[name] || ICONS.more); s.appendChild(p);
+        var lib = window.NoirIcons || {}, s = document.createElementNS(NS, "svg");
+        s.setAttribute("viewBox", "0 0 24 24"); s.setAttribute("aria-hidden", "true"); s.setAttribute("class", "icon");
+        s.innerHTML = lib[ALIAS[name] || name] || lib.more || "";
         if (parent) parent.appendChild(s);
         return s;
     }
@@ -136,6 +129,8 @@
     function toast(text, kind, ms) {
         var box = document.getElementById("toast"); if (!box) return;
         clearTimeout(toastTimer);
+        var nav = document.querySelector(".tabs");          // just under the tabs: they stay readable
+        box.style.top = (nav ? Math.round(nav.getBoundingClientRect().bottom) + 8 : 52) + "px";
         box.textContent = text || ""; box.className = "toast" + (text ? " show" : "") + (kind ? " " + kind : "");
         if (text) toastTimer = setTimeout(function () { box.className = "toast"; }, ms || (kind === "error" ? 7000 : 3200));
     }

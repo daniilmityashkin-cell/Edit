@@ -1,7 +1,7 @@
 {
  "schema": "noir-style/1",
  "id": "editorial-italic",
- "name": "Editorial Italic (реф. 2, курсив)",
+ "name": "Editorial Italic",
  "description": "Курсивная антиква белым строчными + акцент жирной антиквой сине-серым капсом. Blur.",
  "layout": {
   "reveal": "word",

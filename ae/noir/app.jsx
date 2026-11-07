@@ -10,7 +10,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
 (function (N) {
     var SECTION = "NOIR Captions";
     var SETTINGS_KEY = "settings.v2";
-    N.VERSION = "0.31.0";
+    N.VERSION = "0.32.0";
 
     function clone(o) { return N.parseJSON(N.stringify(o)); }
 
@@ -161,9 +161,11 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         throw new Error("Неизвестный тип настройки.");
     }
 
+    N.isWindows = function () { return String($.os || "").indexOf("Windows") !== -1; };
+
     N.createApp = function (root) {
         var S = loadSettings(), presets = N.loadPresets(root), listeners = [];
-        var st = { data: null, link: null, text: "", cleanLines: [], history: [], phrase: 0, recognizing: false, scanning: false, progress: 0,
+        var st = { data: null, link: null, text: "", cleanLines: [], history: [], timing: {}, phrase: 0, recognizing: false, scanning: false, progress: 0,
             status: "Готов к работе.", face: null, issues: [], pending: null, completed: 0, dataRevision: 0, log: [] };
         if (!S.presetId && !S.style.base.fonts.length) S.style = clone(FALLBACK_STYLE);
 
@@ -178,7 +180,8 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             } catch (e) {}
         }
         function lines() { return String(st.text).replace(/\r\n?/g, "\n").split("\n"); }
-        function dirty() { return !!st.data && lines().join("\n") !== st.cleanLines.join("\n"); }
+        function timingDirty() { for (var k in st.timing) if (st.timing.hasOwnProperty(k)) return true; return false; }
+        function dirty() { return !!st.data && (lines().join("\n") !== st.cleanLines.join("\n") || timingDirty()); }
         function presetById(id) { for (var i = 0; i < presets.length; i++) if (presets[i].id === id) return presets[i]; return null; }
         function activeComp() {
             var comp = app.project.activeItem;
@@ -214,7 +217,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
 
         // ---------- text ----------
         function setData(data, link) {
-            st.dataRevision++; st.history = []; st.data = data; st.link = link; st.phrase = 0; st.issues = []; st.pending = null;
+            st.dataRevision++; st.history = []; st.timing = {}; st.data = data; st.link = link; st.phrase = 0; st.issues = []; st.pending = null;
             st.text = N.toEditorText(data); st.cleanLines = st.text.split("\n");
             var n = 0;
             for (var i = 0; i < data.segments.length; i++) n += data.segments[i].words.length;
@@ -229,6 +232,17 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             return out;
         }
         function remember() { st.history.push(st.text); if (st.history.length > 30) st.history.shift(); }
+        // Timing edits need the phrase's data words to match its editor line one to one: if the number of words changed in the text,
+        // the edited line becomes the phrase's words (with the timings the editor already shows).
+        function commitPhrase(si) {
+            var ws = phraseWords(si), seg = st.data.segments[si];
+            if (!ws.length) throw new Error("Фраза пуста.");
+            if (ws.length === seg.words.length) return seg.words;
+            var out = [];
+            for (var i = 0; i < ws.length; i++) out.push({ text: ws[i].text.replace(/[*~|]/g, ""), start: ws[i].start, end: ws[i].end, conf: ws[i].conf });
+            seg.words = out;
+            return out;
+        }
         function resolveLink(comp) {
             var L = st.link;
             if (!L) return { startTime: 0, stretch: 100, note: "" };
@@ -240,13 +254,14 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             if (!layer) return { startTime: L.startTime, stretch: L.stretch, note: "Аудиослой «" + L.layerName + "» не найден — использовано сохранённое время." };
             return { startTime: layer.startTime, stretch: layer.stretch, note: "" };
         }
-        function seek(index) {
-            var comp = activeComp(), words = phraseWords(index);
+        function seek(index, wordIndex) {
+            var comp = activeComp(), words = phraseWords(index), w = words[wordIndex || 0];
             if (!words.length) throw new Error("Выбранная фраза пуста.");
+            if (!w) throw new Error("Нет такого слова.");
             if (st.link && st.link.compId !== comp.id) throw new Error("Откройте исходную композицию для перехода к фразе.");
-            var map = resolveLink(comp), time = N.sourceToComp(words[0].start, map.startTime, map.stretch);
+            var map = resolveLink(comp), time = N.sourceToComp(w.start, map.startTime, map.stretch);
             comp.time = Math.max(0, Math.min(comp.duration - comp.frameDuration, time));
-            status("Фраза " + (index + 1) + " · " + time.toFixed(2) + " с" + (map.note ? " · " + map.note : ""));
+            status((wordIndex ? "«" + w.text.replace(/[*~|]/g, "") + "» · " : "Фраза " + (index + 1) + " · ") + time.toFixed(2) + " с" + (map.note ? " · " + map.note : ""));
         }
 
         // ---------- layers ----------
@@ -363,7 +378,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
                 for (var ri = 0; ri < oldPhrase.length; ri++) oldPhrase[ri].remove();
                 if (mode === "preview") { comp.openInViewer(); status("Превью создано отдельной композицией. Пробел — воспроизведение, Ctrl+Z — убрать."); return { preview: true }; }
                 var ls = lines();
-                if (mode === "phrase") st.cleanLines[st.phrase] = ls[st.phrase]; else st.cleanLines = ls;
+                if (mode === "phrase") { st.cleanLines[st.phrase] = ls[st.phrase]; delete st.timing[st.phrase]; } else { st.cleanLines = ls; st.timing = {}; }
                 st.completed++;
                 warnings = warnings.concat(res.warnings);
                 status("Создано слоёв: " + res.created + (res.removed ? ", заменено старых: " + res.removed : "") + (warnings.length ? "\n" + warnings.join("\n") : ""));
@@ -477,6 +492,74 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             st.text = ls.join("\n"); status("Выделено слов: " + changed + ". Обновите субтитры, чтобы применить."); return st.status;
         }
 
+        // ---------- readiness: what recognition needs on this computer ----------
+        function sitePackages() {
+            if (S.python) return null;                       // a custom Python: its packages are not inspected
+            var win = Folder(root + "/.venv/Lib/site-packages");
+            if (win.exists) return win;
+            var lib = Folder(root + "/.venv/lib");
+            if (lib.exists) { var subs = lib.getFiles("python*"); for (var i = 0; i < subs.length; i++) { var sp = Folder(subs[i].fsName + "/site-packages"); if (sp.exists) return sp; } }
+            return null;
+        }
+        // "Allow Scripts to Write Files and Access Network": read the preference when AE exposes it; otherwise (or when it reads 0,
+        // which an unknown key also returns) test by writing and deleting a small file.
+        function scriptingPref() {
+            var sections = ["Main Pref Section v2", "Main Pref Section"], i;
+            for (i = 0; i < sections.length; i++) {
+                try {
+                    var v = typeof PREFType !== "undefined" ? app.preferences.getPrefAsLong(sections[i], "Pref_SCRIPTING_FILE_NETWORK_SECURITY", PREFType.PREF_Type_MACHINE_INDEPENDENT)
+                        : app.preferences.getPrefAsLong(sections[i], "Pref_SCRIPTING_FILE_NETWORK_SECURITY");
+                    if (v === 1) return true;
+                } catch (e) {}
+            }
+            return null;
+        }
+        function canWriteFiles() {
+            if (scriptingPref() === true) return true;
+            try {
+                var dir = Folder(Folder.temp.fsName + "/NOIR_Captions"); if (!dir.exists) dir.create();
+                var f = File(dir.fsName + "/write_check.txt"); f.encoding = "UTF-8";
+                if (!f.open("w")) return false;
+                f.write("ok"); f.close(); try { f.remove(); } catch (e0) {}
+                return true;
+            } catch (e) { return false; }
+        }
+        function readiness() {
+            var items = [], py = File(N.pythonPath(root, S.python)), sp = sitePackages(), i;
+            var files = canWriteFiles();
+            items.push({ id: "files", ok: files, title: "Доступ к файлам",
+                hint: files ? "" : "After Effects → Edit → Preferences → Scripting & Expressions → включите «Allow Scripts to Write Files and Access Network», затем закройте и откройте панель." });
+            var engine = py.exists && (S.python ? true : !!(sp && Folder(sp.fsName + "/faster_whisper").exists));
+            items.push({ id: "engine", ok: engine, python: py.exists, title: "Движок распознавания", fix: engine ? null : "setup.engine", fixLabel: "Установить",
+                hint: engine ? "" : py.exists ? "Python есть, faster-whisper не установлен." : "Ставится один раз (~1 ГБ). Нужен Python 3.11 или 3.12 — если его нет, установщик скажет." });
+            var model = N.modelCached(S.model), info = null;
+            for (i = 0; i < N.MODELS.length; i++) if (N.MODELS[i].id === S.model) info = N.MODELS[i];
+            var size = info && /\(([^)]*)\)/.exec(info.label);
+            items.push({ id: "model", ok: model, title: "Модель " + S.model, fix: model || !engine ? null : "setup.model", fixLabel: "Скачать",
+                hint: model ? "" : engine ? "Скачивается один раз" + (size ? " (" + size[1] + ")" : "") + ". Аудио никуда не отправляется." : "Сначала установите движок." });
+            var missing = [], sides = ["base", "accent"];
+            for (i = 0; i < sides.length; i++) { var f0 = S.style[sides[i]].fonts[0]; if (N.fontInstalled(f0) === false && !N.hasItem(missing, f0)) missing.push(f0); }
+            items.push({ id: "fonts", ok: !missing.length, optional: true, title: "Шрифты стиля",
+                hint: missing.length ? "Не установлены: " + missing.join(", ") + ". Будет взят запасной шрифт. Свои шрифты: fonts/user + scripts/install_fonts.ps1." : "" });
+            var cv = sp ? Folder(sp.fsName + "/cv2").exists : null;
+            items.push({ id: "face", ok: cv !== false, optional: true, title: "Поиск лица (OpenCV)", hint: cv === false ? "Необязательно: нужен только для «убрать с лица». Ставится установщиком движка." : "" });
+            return { ready: files && engine && model, windows: N.isWindows(), items: items };
+        }
+        // A visible console window runs the step (pip / download progress is shown there); the panel re-checks afterwards.
+        function runConsole(name, title, command) {
+            if (!N.isWindows()) throw new Error("Из панели это запускается только на Windows. Запустите вручную: " + command);
+            var dir = Folder(Folder.temp.fsName + "/NOIR_Captions"); if (!dir.exists) dir.create();
+            var f = File(dir.fsName + "/" + name + "_" + new Date().getTime() + ".cmd");
+            f.encoding = "UTF-8"; f.lineFeed = "Unix";            // the \r\n below are written as they are
+            if (!f.open("w")) throw new Error("Не удалось записать файл: включите доступ к файлам (Scripting & Expressions).");
+            f.write("\r\n@echo off\r\nchcp 65001 >nul\r\ntitle NOIR Captions\r\ncd /d \"" + Folder(root).fsName + "\"\r\necho " + title + "\r\necho.\r\n" + command +
+                "\r\necho.\r\necho Окно можно закрыть: панель NOIR сама проверит результат.\r\npause\r\n");
+            f.close();
+            if (!f.execute()) throw new Error("Не удалось открыть окно установки.");
+            status(title + " — идёт в отдельном окне.");
+            return f.fsName;
+        }
+
         // ---------- SFX & tools ----------
         function sfxLib() { return N.sfxLibrary ? N.sfxLibrary(root, { mixBase: !!S.sfx.mixBase }) : { names: [], files: {}, cats: [] }; }
         function sfxChoice(id) { if (id === "auto" || id === "off" || id === "same") return { mode: id }; if (String(id).indexOf("cat:") === 0) return { mode: "cat", value: String(id).substring(4) }; return { mode: "off" }; }
@@ -491,7 +574,11 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             },
             presets: function () {
                 var out = [];
-                for (var i = 0; i < presets.length; i++) { var p = presets[i]; out.push({ id: p.id, name: p.name, description: p.description || "", user: !!p.user, base: p.base, accent: p.accent, anim: p.anim, layout: p.layout }); }
+                for (var i = 0; i < presets.length; i++) {
+                    var p = presets[i], missing = [], fs2 = [p.base.fonts[0], p.accent.fonts[0]];
+                    for (var k = 0; k < fs2.length; k++) if (fs2[k] && N.fontInstalled(fs2[k]) === false && !N.hasItem(missing, fs2[k])) missing.push(fs2[k]);
+                    out.push({ id: p.id, name: p.name, description: p.description || "", user: !!p.user, missing: missing, base: p.base, accent: p.accent, anim: p.anim, layout: p.layout });
+                }
                 return out;
             },
             "settings.set": function (a) {
@@ -553,7 +640,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             },
             recognize: function () {
                 var src = N.getAudioSource();
-                if (!N.modelCached(S.model)) throw new Error("Модель " + S.model + " не скачана. В PowerShell из папки проекта:\n.venv\\Scripts\\python.exe recognition\\download_model.py " + S.model + "\nАудио никуда не отправляется.");
+                if (!N.modelCached(S.model)) throw new Error("Модель " + S.model + " ещё не скачана. Нажмите «Скачать модель» на вкладке «Текст» (один раз; аудио никуда не отправляется).");
                 if (st.recognizing) throw new Error("Распознавание уже идёт.");
                 st.recognizing = true; st.progress = 0; status("Запуск распознавания…", 0);
                 try {
@@ -564,6 +651,18 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
                 });
                 } catch (e) { st.recognizing = false; status("Ошибка распознавания: " + (e.message || e), 0); throw e; }
                 return true;
+            },
+            "setup.check": function () { return readiness(); },
+            "setup.engine": function () {
+                var ps = File(root + "/recognition/setup_windows.ps1");
+                if (!ps.exists) throw new Error("Нет файла recognition/setup_windows.ps1 — обновите папку проекта.");
+                return runConsole("setup", "Установка движка распознавания NOIR (один раз, ~1 ГБ)", 'powershell -NoProfile -ExecutionPolicy Bypass -File "' + ps.fsName + '"');
+            },
+            "setup.model": function (a) {
+                var id = a.model || S.model; if (!inList(N.MODELS, id)) throw new Error("Нет такой модели.");
+                var py = File(N.pythonPath(root, S.python)), script = File(root + "/recognition/download_model.py");
+                if (!py.exists) throw new Error("Сначала установите движок распознавания.");
+                return runConsole("model", "Скачивание модели " + id + " (один раз)", '"' + py.fsName + '" "' + script.fsName + '" ' + id);
             },
             cancel: function () { N.cancelRecognition(); st.recognizing = false; status("Распознавание отменено.", 0); return true; },
             "json.load": function (a) {
@@ -611,13 +710,38 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             },
             "text.set": function (a) { if (!st.data) throw new Error("Нет текста."); var t = String(a.text); if (t !== st.text) { st.text = t; st.issues = []; st.pending = null; } return true; },
             "text.reset": function () { if (st.data) { remember(); st.text = N.toEditorText(st.data); } return true; },
-            "text.undo": function () { if (!st.history.length) throw new Error("Нет правок кнопками для отмены. В поле текста используйте Ctrl+Z."); st.text = st.history.pop(); status("Правка отменена."); return true; },
+            "text.undo": function () {
+                if (!st.history.length) throw new Error("Нет правок кнопками для отмены. В поле текста используйте Ctrl+Z.");
+                var h = st.history.pop();
+                if (typeof h === "string") st.text = h;
+                else { st.text = h.text; st.data.segments[h.si].words = h.words; if (h.timing) st.timing[h.si] = true; else delete st.timing[h.si]; }
+                status("Правка отменена."); return true;
+            },
             "phrase.select": function (a) {
                 var i = Number(a.index);
                 if (!st.data || i < 0 || i >= st.data.segments.length || i !== Math.floor(i)) throw new Error("Нет такой фразы.");
                 st.phrase = i; if (a.seek) seek(i); return i;
             },
             "phrase.seek": function () { seek(st.phrase); return true; },
+            "word.seek": function (a) { seek(st.phrase, Number(a.index) || 0); return true; },
+            // Word timing of the selected phrase, in seconds of the source (as state().words show it). Neighbours give way so that
+            // words stay in order and at least 40 ms long. One undo step per edit (text.undo).
+            "word.time": function (a) {
+                if (!st.data) throw new Error("Нет текста.");
+                var si = st.phrase, before = clone(st.data.segments[si].words), ws = commitPhrase(si), i = Number(a.index), w = ws[i], MIN = 0.04;
+                if (!w) throw new Error("Нет такого слова.");
+                var s = a.start === undefined ? w.start : Number(a.start), e = a.end === undefined ? w.end : Number(a.end);
+                if (!isFinite(s) || !isFinite(e)) throw new Error("Время — число секунд.");
+                var lo = i > 0 ? ws[i - 1].start + MIN : 0, hi = i + 1 < ws.length ? ws[i + 1].end - MIN : Math.max(e, w.end) + 30;
+                s = Math.max(lo, Math.min(s, hi - MIN)); e = Math.max(s + MIN, Math.min(e, hi));
+                st.history.push({ text: st.text, si: si, words: before, timing: !!st.timing[si] }); if (st.history.length > 30) st.history.shift();
+                w.start = Math.round(s * 1000) / 1000; w.end = Math.round(e * 1000) / 1000;
+                if (i > 0 && ws[i - 1].end > w.start) ws[i - 1].end = w.start;
+                if (i + 1 < ws.length && ws[i + 1].start < w.end) ws[i + 1].start = w.end;
+                st.timing[si] = true; st.issues = []; st.pending = null;
+                status("«" + w.text + "»: " + w.start.toFixed(2) + "–" + w.end.toFixed(2) + " с. Обновите фразу, чтобы применить.");
+                return { start: w.start, end: w.end };
+            },
             // Word edit by selection in the editor text: kind accent | line | phrase; start/end — character offsets.
             "word.edit": function (a) {
                 if (!st.data || a.text !== st.text) throw new Error("Текст изменился. Выделите слово ещё раз.");
@@ -771,9 +895,10 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         function state() {
             var ls = lines(), phrases = [], words = [], i;
             if (st.data) for (i = 0; i < st.data.segments.length; i++) phrases.push(String(i + 1) + " · " + (ls[i] || "").substr(0, 48));
-            try { var pw = phraseWords(); for (i = 0; i < pw.length; i++) words.push({ text: pw[i].text, accent: !!pw[i].accent, low: pw[i].conf !== undefined && pw[i].conf < 0.65 }); } catch (e) {}
+            try { var pw = phraseWords(); for (i = 0; i < pw.length; i++) words.push({ text: pw[i].text, accent: !!pw[i].accent, low: pw[i].conf !== undefined && pw[i].conf < 0.65,
+                start: Math.round(pw[i].start * 1000) / 1000, end: Math.round(pw[i].end * 1000) / 1000 }); } catch (e) {}
             return { version: N.VERSION, status: st.status, progress: st.progress, recognizing: st.recognizing, scanning: st.scanning,
-                hasData: !!st.data, dataRevision: st.dataRevision, text: st.text, dirty: dirty(), phraseDirty: !!st.data && ls[st.phrase] !== st.cleanLines[st.phrase],
+                hasData: !!st.data, dataRevision: st.dataRevision, text: st.text, dirty: dirty(), phraseDirty: !!st.data && (ls[st.phrase] !== st.cleanLines[st.phrase] || !!st.timing[st.phrase]),
                 phrase: st.phrase, phrases: phrases, words: words, canUpdate: canUpdate(), completed: st.completed, issues: st.issues, pending: !!st.pending,
                 settings: S, face: st.face, historyLength: st.history.length };
         }

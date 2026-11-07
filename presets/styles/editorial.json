@@ -1,7 +1,7 @@
 {
  "schema": "noir-style/1",
  "id": "editorial",
- "name": "Editorial (реф. 2 — девушка)",
+ "name": "Editorial",
  "description": "Мелкие белые слова + огромная фиолетовая антиква Didone капсом. Blur-появление.",
  "layout": {
   "reveal": "word",

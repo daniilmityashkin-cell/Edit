@@ -15,6 +15,8 @@
 | Модели Whisper (OpenAI) и конверсии Systran | MIT |
 | NVIDIA cuBLAS / cuDNN (pip-пакеты `nvidia-*`) | NVIDIA Software License — не часть репозитория, ставятся из PyPI на компьютер пользователя |
 | Шрифты в пресетах (Montserrat, Inter, Bodoni Moda, Playfair Display) | SIL OFL (не входят в репозиторий; пользователь ставит сам) |
+| Шрифты интерфейса панели (`cep/fonts`: Inter, Montserrat, Unbounded) | SIL OFL (тексты лицензий рядом) |
+| Иконки панели (`cep/js/icons.js`, часть Lucide 0.460.0) | ISC (`cep/icons/LICENSE-lucide.txt`) |
 
 Перед продажей: убедиться в условиях redistribution для CUDA-библиотек (рекомендуется не включать их в поставку,
 а ставить с PyPI, как сейчас) и выбрать лицензию собственного кода.

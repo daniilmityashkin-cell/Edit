@@ -1,7 +1,7 @@
 {
  "schema": "noir-style/1",
  "id": "silver-italic",
- "name": "Silver Italic (серебристый курсив)",
+ "name": "Silver Italic",
  "description": "Серебристо-белое курсивное слово-акцент крупно и мелкая белая подпись. Мягкая тень, без свечения.",
  "layout": {
   "reveal": "group",

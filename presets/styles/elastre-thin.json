@@ -1,7 +1,7 @@
 {
  "schema": "noir-style/1",
  "id": "elastre-thin",
- "name": "Elastre Thin (тонкий широкий)",
+ "name": "Elastre Thin",
  "description": "Тонкий широкий гротеск Elastre Super Line: белый текст, акцент серебристо-золотой. Нужен шрифт Elastre.",
  "layout": {
   "reveal": "group",

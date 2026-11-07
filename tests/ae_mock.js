@@ -177,6 +177,8 @@ class FileC extends FSItem {
   read() { return this._buf; }
   write(s) { this._buf += s; }
   close() { if (this._mode === "w") fs.writeFileSync(this.fsName, this._buf, "utf8"); }
+  remove() { try { fs.unlinkSync(this.fsName); return true; } catch (e) { return false; } }
+  execute() { (global.__executed || (global.__executed = [])).push(this.fsName); return true; }
 }
 class FolderC extends FSItem {
   create() { fs.mkdirSync(this.fsName, { recursive: true }); return true; }

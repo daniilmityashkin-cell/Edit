@@ -1,7 +1,7 @@
 {
  "schema": "noir-style/1",
  "id": "kinetic-stack",
- "name": "Kinetic Blue (реф. 1 — парень)",
+ "name": "Kinetic Blue",
  "description": "Мелкие слова оранжевым строчными, главное слово огромное голубое капсом, строки вплотную. Снизу + blur.",
  "layout": {
   "reveal": "word",

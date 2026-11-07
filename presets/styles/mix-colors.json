@@ -1,7 +1,7 @@
 {
  "schema": "noir-style/1",
  "id": "mix-colors",
- "name": "Mix Colors (реф. 4 — набережная)",
+ "name": "Mix Colors",
  "description": "Слова ступенькой, главные — крупные и каждое своего цвета (синий, красный, зелёный, оранжевый) по кругу. Blur Pop.",
  "layout": {
   "reveal": "word",

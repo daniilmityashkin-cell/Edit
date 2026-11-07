@@ -1,7 +1,7 @@
 {
  "schema": "noir-style/1",
  "id": "dispater-gold",
- "name": "Dispater Gold (русский стиль, золото)",
+ "name": "Dispater Gold",
  "description": "Узорный узкий Dispater: подпись Belozerov SP, акцент — золотой Dispater Extrabold. Нужны шрифты DISPATER и Belozerov SP (OFL).",
  "layout": {
   "reveal": "group",

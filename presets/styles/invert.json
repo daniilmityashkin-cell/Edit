@@ -1,7 +1,7 @@
 {
  "schema": "noir-style/1",
  "id": "invert",
- "name": "Invert (реф. 1, инверсия)",
+ "name": "Invert",
  "description": "Белый текст в режиме Difference — инвертирует кадр под буквами. Крупные слова капсом, blur.",
  "layout": {
   "reveal": "word",

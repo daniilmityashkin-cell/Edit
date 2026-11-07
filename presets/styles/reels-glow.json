@@ -1,7 +1,7 @@
 {
  "schema": "noir-style/1",
  "id": "reels-glow",
- "name": "Reels Glow (реф. 3 — ремонт в Дубае)",
+ "name": "Reels Glow",
  "description": "Белый мелкий текст в 1–2 строки, акцент красным жирным со свечением. Pop.",
  "layout": {
   "reveal": "word",

@@ -1,7 +1,7 @@
 {
  "schema": "noir-style/1",
  "id": "peter-ornate",
- "name": "Peter Ornate (орнамент, красный)",
+ "name": "Peter Ornate",
  "description": "Орнаментальный Peter Ivanowitsch для акцентов: белая подпись Belozerov SP и красный акцент. Нужны шрифты Peter Ivanowitsch и Belozerov SP.",
  "layout": {
   "reveal": "group",

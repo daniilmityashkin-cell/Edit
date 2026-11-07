@@ -1,7 +1,7 @@
 {
   "schema": "noir-style/1",
   "id": "interview-clean",
-  "name": "Интервью · Чистый",
+  "name": "Интервью",
   "description": "Короткие фразы и мягкое появление без лишних эффектов.",
   "layout": {
     "reveal": "group",

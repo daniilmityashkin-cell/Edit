@@ -1,7 +1,7 @@
 {
  "schema": "noir-style/1",
  "id": "kinetic-orange",
- "name": "Kinetic Orange (реф. 1, белый + оранжевый)",
+ "name": "Kinetic Orange",
  "description": "Белые слова строчными, главное слово огромное оранжевое капсом. Снизу + blur.",
  "layout": {
   "reveal": "word",

@@ -1,7 +1,7 @@
 {
  "schema": "noir-style/1",
  "id": "pixel-vpch2",
- "name": "Pixel VPCH2 (пиксельный, печать)",
+ "name": "Pixel",
  "description": "Пиксельный шрифт VPCH2 с печатью по буквам, зелёный акцент. Нужен шрифт VPCH2.",
  "layout": {
   "reveal": "group",

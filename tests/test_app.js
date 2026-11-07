@@ -125,6 +125,57 @@ const accept = (a, mode) => { let r = a.call("generate", { mode: mode || "all" }
     mine.forEach((l, i) => near(l.inPoint, in0[i] + 3 * c.frameDuration, 1e-6));
     assert.strictEqual(foreign.inPoint, 0.2);
   });
+  await test("готовность: доступ к файлам, движок, модель, шрифты; «Установить» и «Скачать» пишут .cmd и открывают окно (Windows)", () => {
+    const fake = path.join(TMP, "proj"); fs.mkdirSync(path.join(fake, "recognition"), { recursive: true });
+    fs.writeFileSync(path.join(fake, "recognition/setup_windows.ps1"), "#"); fs.writeFileSync(path.join(fake, "recognition/download_model.py"), "#");
+    const hfKeep = process.env.HF_HOME; process.env.HF_HOME = path.join(TMP, "hf");
+    try {
+      for (const k of Object.keys(env.settings)) delete env.settings[k];
+      const a = N.createApp(fake); a.call("settings.set", { path: "model", value: "small" });
+      const check = () => { const r = a.call("setup.check"); r.by = (id) => r.items.find(i => i.id === id); return r; };
+      let r = check(); assert.strictEqual(r.ready, false); assert.ok(r.by("files").ok);
+      assert.ok(!r.by("engine").ok && r.by("engine").fix === "setup.engine"); assert.ok(!r.by("model").ok && !r.by("model").fix, "модель — после движка");
+      fs.mkdirSync(path.join(fake, ".venv/bin"), { recursive: true }); fs.writeFileSync(path.join(fake, ".venv/bin/python"), "");
+      fs.mkdirSync(path.join(fake, ".venv/lib/python3.12/site-packages/faster_whisper"), { recursive: true });
+      r = check(); assert.ok(r.by("engine").ok); assert.strictEqual(r.by("model").fix, "setup.model"); assert.ok(/0\.5 ГБ/.test(r.by("model").hint), r.by("model").hint);
+      assert.strictEqual(r.by("face").ok, false, "OpenCV не стоит — необязательный пункт");
+      fs.mkdirSync(path.join(TMP, "hf/hub/models--Systran--faster-whisper-small/snapshots/abc"), { recursive: true });
+      fs.writeFileSync(path.join(TMP, "hf/hub/models--Systran--faster-whisper-small/snapshots/abc/model.bin"), "");
+      r = check(); assert.strictEqual(r.ready, true);
+      assert.throws(() => a.call("setup.engine"), /только на Windows/);
+      const keep = N.isWindows; N.isWindows = () => true; global.__executed = [];
+      try {
+        const f = a.call("setup.engine"), body = fs.readFileSync(f, "utf8");
+        assert.ok(/chcp 65001/.test(body) && /setup_windows\.ps1/.test(body) && /\r\n/.test(body)); assert.deepStrictEqual(global.__executed, [f]);
+        const g = a.call("setup.model", { model: "small" }); assert.ok(/download_model\.py" small/.test(fs.readFileSync(g, "utf8")));
+        assert.throws(() => a.call("setup.model", { model: "huge" }), /Нет такой модели/);
+      } finally { N.isWindows = keep; }
+    } finally { if (hfKeep === undefined) delete process.env.HF_HOME; else process.env.HF_HOME = hfKeep; }
+  });
+  await test("стили: у каждого — список не установленных шрифтов", () => {
+    const a = freshApp(false), ps = a.call("presets");
+    assert.ok(ps.every(p => Array.isArray(p.missing)));
+    assert.ok(ps.some(p => p.missing.length > 0), "в моке стоят не все шрифты стилей");
+  });
+  await test("тайминг слова: края тянутся, соседи уступают, порядок и минимум 40 мс; фраза помечается к обновлению; отмена; переход к слову", () => {
+    const c = mkComp(), a = freshApp(); accept(a);
+    assert.strictEqual(a.state().phraseDirty, false);
+    let w = a.state().words; near(w[0].start, 1); near(w[0].end, 1.3);
+    a.call("word.time", { index: 0, end: 1.7 }); near(a.state().words[0].end, 1.46, 1e-9, "соседу остаётся 40 мс");
+    a.call("text.undo");
+    a.call("word.time", { index: 0, end: 1.45 }); w = a.state().words;
+    near(w[0].end, 1.45); near(w[1].start, 1.45, 1e-9); assert.strictEqual(a.state().phraseDirty, true); assert.strictEqual(a.state().dirty, true);
+    a.call("word.time", { index: 1, start: 0 }); w = a.state().words;
+    near(w[1].start, 1.04, 1e-9); near(w[0].end, w[1].start, 1e-9); assert.ok(w[0].end - w[0].start >= 0.04 - 1e-9);
+    a.call("text.undo"); near(a.state().words[1].start, 1.45, 1e-9);
+    a.call("text.undo"); near(a.state().words[0].end, 1.3, 1e-9); assert.strictEqual(a.state().phraseDirty, false, "отмена снимает пометку");
+    a.call("text.set", { text: a.state().text.replace("Привет,", "Привет, друг,") });
+    a.call("word.time", { index: 1, start: 1.2, end: 1.3 }); w = a.state().words;
+    assert.strictEqual(w.length, 4); near(w[1].start, 1.2, 1e-9); assert.ok(/друг/.test(w[1].text));
+    a.call("word.seek", { index: 1 }); near(c.time, 1.2, 1e-9);
+    accept(a, "phrase"); assert.strictEqual(a.state().phraseDirty, false); assert.strictEqual(a.state().dirty, false);
+    assert.throws(() => a.call("word.time", { index: 9, start: 1 }), /Нет такого слова/);
+  });
   await test("превью: отдельная композиция, исходник не меняется", () => {
     const c = mkComp({ duration: 12 }), a = freshApp(); let copy;
     c.duplicate = () => { copy = new mock.CompItem({ duration: 12 }); copy.openInViewer = () => { copy.opened = true; }; return copy; };

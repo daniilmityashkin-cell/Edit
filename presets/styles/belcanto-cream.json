@@ -1,7 +1,7 @@
 {
  "schema": "noir-style/1",
  "id": "belcanto-cream",
- "name": "Belcanto Cream (ар-нуво, кремовый)",
+ "name": "Belcanto Cream",
  "description": "Ар-нуво капс Belcanto Modern: белая подпись и кремово-золотой акцент крупнее. Нужен шрифт Belcanto Modern.",
  "layout": {
   "reveal": "group",

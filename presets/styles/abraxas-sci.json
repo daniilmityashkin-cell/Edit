@@ -1,7 +1,7 @@
 {
  "schema": "noir-style/1",
  "id": "abraxas-sci",
- "name": "Abraxas Sci-Fi (наклонный техно)",
+ "name": "Abraxas Sci-Fi",
  "description": "Наклонный sci-fi шрифт Abraxas: белая подпись, розово-фиолетовый акцент. Нужен шрифт Abraxas.",
  "layout": {
   "reveal": "group",

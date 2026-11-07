@@ -7,18 +7,12 @@
     "use strict";
     var api = null, st = null, bound = false;
     var NS = "http://www.w3.org/2000/svg";
-    var ICONS = {
-        video: "M2 4h9v8H2z M11 7l3-2v6l-3-2", file: "M4 2h5l3 3v9H4z M9 2v3h3", subs: "M2 4h12v8H2z M4 8h3 M9 8h3 M4 10h6",
-        text: "M3 3h10 M8 3v10 M5.5 13h5", style: "M3 2h10v12H3z M5 5h6 M5 8h6 M5 11h3", format: "M5 2h6v12H5z M7 4h2", gear: "M8 5.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5z M8 1.5v2 M8 12.5v2 M1.5 8h2 M12.5 8h2 M3.4 3.4l1.4 1.4 M11.2 11.2l1.4 1.4 M12.6 3.4l-1.4 1.4 M4.8 11.2l-1.4 1.4",
-        create: "M8 1.5l1.6 4.9 4.9 1.6-4.9 1.6L8 14.5l-1.6-4.9L1.5 8l4.9-1.6z", eye: "M1.5 8s2.5-4.5 6.5-4.5S14.5 8 14.5 8 12 12.5 8 12.5 1.5 8 1.5 8z M8 6a2 2 0 1 0 0 4 2 2 0 0 0 0-4z",
-        check: "M3 8.5l3 3 7-7", reveal: "M2 5h3 M7 5h3 M12 5h2 M2 9h5 M9 9h5 M2 13h7", save: "M3 2h8l2 2v10H3z M5 2v4h5V2 M5 10h6",
-        place: "M3 3h10 M3 13h10 M8 5v6 M5.5 8.5L8 11l2.5-2.5", move: "M8 2v12 M2 8h12 M8 2l-2 2 M8 2l2 2 M8 14l-2-2 M8 14l2-2 M2 8l2-2 M2 8l2 2 M14 8l-2-2 M14 8l-2 2",
-        time: "M8 2a6 6 0 1 0 0 12A6 6 0 0 0 8 2z M8 5v3l2 1.5", animIn: "M1.5 8h6 M7.5 8l-2-2 M7.5 8l-2 2 M10 3v10", animOut: "M6 3v10 M8.5 8h6 M14.5 8l-2-2 M14.5 8l-2 2",
-        refresh: "M13 8a5 5 0 1 1-1.5-3.5 M13 2.5v3h-3", more: "M3.5 8h.01 M8 8h.01 M12.5 8h.01"
-    };
-    function svgIcon(d) {
-        var s = document.createElementNS(NS, "svg"); s.setAttribute("viewBox", "0 0 16 16"); s.setAttribute("aria-hidden", "true");
-        var p = document.createElementNS(NS, "path"); p.setAttribute("d", d); s.appendChild(p); return s;
+    // Sector icons: names from js/icons.js (Lucide subset).
+    var ICONS = { video: "mic", file: "file", subs: "captions", text: "type", style: "palette", format: "format", gear: "settings", create: "create", eye: "eye",
+        check: "check", reveal: "reveal", save: "save", place: "place", move: "move", time: "time", animIn: "animIn", animOut: "animOut", refresh: "refresh", more: "more" };
+    function svgIcon(name) {
+        var s = document.createElementNS(NS, "svg"); s.setAttribute("viewBox", "0 0 24 24"); s.setAttribute("aria-hidden", "true");
+        s.innerHTML = (window.NoirIcons || {})[name] || ""; return s;
     }
     function el(tag, cls, parent, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; if (parent) parent.appendChild(e); return e; }
 
