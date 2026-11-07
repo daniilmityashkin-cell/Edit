@@ -27,6 +27,13 @@ html, body { height: 100%; margin: 0; }
 body { background: var(--bg); color: var(--text); font: 400 var(--fs-m)/1.45 "Inter", "Segoe UI", system-ui, sans-serif; -webkit-font-smoothing: antialiased; overflow: hidden; }
 button, input, select, textarea { font: inherit; color: inherit; }
 [hidden] { display: none !important; }
+/* thin scrollbars (the AE browser draws thick grey ones by default) */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--line-strong); border-radius: 8px; border: 2px solid transparent; background-clip: padding-box; }
+::-webkit-scrollbar-thumb:hover { background: var(--faint); background-clip: padding-box; }
+::-webkit-scrollbar-button { display: none; width: 0; height: 0; }
+::-webkit-scrollbar-corner { background: transparent; }
 :focus { outline: none; }
 :focus-visible { outline: 2px solid var(--accent-hi); outline-offset: 2px; }
 .muted { color: var(--muted); } .small { font-size: var(--fs-s); } .spacer { flex: 1; }
@@ -168,9 +175,12 @@ select.input option { background: var(--surface); color: var(--text); }
 .sticky-actions { position: -webkit-sticky; position: sticky; bottom: calc(-1 * var(--s4)); z-index: 2; margin: 0 0 var(--s2); padding: var(--s2); border-radius: var(--r-l); background: var(--surface); border: 1px solid var(--line); box-shadow: var(--shadow); }
 
 /* ---------- issues ---------- */
-.issues { flex: none; margin: 0 var(--s2) var(--s2); padding: var(--s2) var(--s3); border: 1px solid var(--accent-line); border-radius: var(--r-l); background: var(--accent-soft); max-height: 40vh; overflow: auto; animation: pageIn var(--dur) var(--ease); }
-.issues-head { margin-bottom: var(--s1); } .issue { padding: var(--s1) 0; border-top: 1px solid var(--line); } .issue span { flex: 1; min-width: 0; }
-.issues .btn.primary { margin-top: var(--s2); }
+.issues { flex: none; display: flex; flex-direction: column; margin: 0 var(--s2) var(--s2); padding: var(--s2) var(--s2) 0 var(--s3); border: 1px solid var(--accent-line); border-radius: var(--r-l); background: var(--accent-soft); max-height: 42vh; overflow: hidden; animation: pageIn var(--dur) var(--ease); }
+.issues-head { flex: none; flex-wrap: wrap; gap: 6px; padding-bottom: var(--s2); }
+.issue-list { min-height: 0; overflow-y: auto; padding-right: var(--s2); }
+.issue { padding: 6px 0; border-top: 1px solid var(--line); }
+.issue-text > span:first-child { font-weight: 600; } .issue .chips { margin-top: 4px; }
+.issue-list .hint { margin: var(--s1) 0 var(--s2); }
 
 /* ---------- style page ---------- */
 .filters { flex-wrap: wrap; } .filters .segmented { flex: none; }

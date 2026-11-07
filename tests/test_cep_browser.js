@@ -285,13 +285,14 @@ function layoutProblems() {
                 const n = await page.locator(".rw-tile").count(); assert.ok(n >= 4 && n <= 8, "sectors " + n);
                 for (let k = 1; k <= n; k++) {
                     await page.keyboard.press(String(k)); if (!(await page.evaluate(() => NoirWheel.isOpen()))) { await page.evaluate(([x, y]) => NoirWheel.open(x, y, "sticky"), [x, y]); continue; }
-                    await page.waitForTimeout(30);
+                    await page.waitForTimeout(320);          // after the pop-in animation
                     const r = await page.evaluate(() => {
                         const boxes = [...document.querySelectorAll(".rw-item, .rw-tile, .rw-orb, .rw-card")].map(e => ({ c: e.className, t: e.textContent || e.className, r: e.getBoundingClientRect() })), out = [];
                         for (let i = 0; i < boxes.length; i++) {
                             const a = boxes[i].r; if (a.left < -1 || a.top < -1 || a.right > innerWidth + 1 || a.bottom > innerHeight + 1) out.push("за краем: " + boxes[i].t);
                             for (let j = i + 1; j < boxes.length; j++) { const b = boxes[j].r;
                                 if (/rw-card/.test(boxes[i].c + boxes[j].c) && /rw-item/.test(boxes[i].c + boxes[j].c)) continue;   // rows live inside the card
+                                if (document.querySelector(".rw-card.over") && /rw-tile|rw-orb/.test(boxes[i].c + boxes[j].c)) continue;   // tiny panel: the card is a sheet over the ring
                                 const round = (q) => /rw-tile|rw-orb/.test(boxes[q].c); if (round(i) && round(j)) { const d = Math.hypot((a.left + a.right - b.left - b.right) / 2, (a.top + a.bottom - b.top - b.bottom) / 2); if (d < (a.width + b.width) / 2 - 1) out.push(boxes[i].t + " ○ " + boxes[j].t); continue; }
                                 if (Math.min(a.right, b.right) - Math.max(a.left, b.left) > 1 && Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top) > 1) out.push(boxes[i].t + " × " + boxes[j].t); }
                         }
@@ -303,6 +304,11 @@ function layoutProblems() {
                 await page.keyboard.press("Escape"); await page.keyboard.press("Escape");
             }
         }
+        await page.setViewportSize({ width: 400, height: 720 });
+        await page.evaluate(() => NoirWheel.open(200, 360, "sticky")); await page.waitForTimeout(600);
+        const tileW = await page.locator(".rw-tile").first().evaluate(e => e.getBoundingClientRect().width);
+        assert.ok(tileW >= 50, "узкая панель: кружки не мельчают (" + tileW + " px)");
+        await page.keyboard.press("Escape");
         await page.setViewportSize({ width: 460, height: 640 });
         if (bad.length) console.log([...new Set(bad)].slice(0, 30).map(x => "       · " + x).join("\n"));
         assert.strictEqual(bad.length, 0);

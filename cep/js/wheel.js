@@ -86,28 +86,41 @@
     // Ring 2 is one glass card next to the chosen sector: a tidy list (two columns for long lists), uniform rows, key hints.
     // The card sits on the outer side of its tile and is pushed outwards until it touches no other tile and not the centre.
     var ROW = 30, PAD = 6, COLGAP = 4;
-    function cardLayout(sizes, A, tiles, own) {
-        var n = sizes.length, cols = n > 6 ? 2 : 1, rows = Math.ceil(n / cols), colW = 0, i;
+    function cardLayout(sizes, A, tiles, own, bounds) {
+        var n = sizes.length, colW = 0, i, ext = R1 + TILE / 2 + 6;
         for (i = 0; i < n; i++) colW = Math.max(colW, sizes[i].w);
-        colW = Math.max(110, colW);
-        var w = cols * colW + (cols - 1) * COLGAP + 2 * PAD, h = rows * ROW + (rows - 1) * 2 + 2 * PAD;
-        var th = A * Math.PI / 180, dx = Math.sin(th), dy = -Math.cos(th), x, y, gap = 10;
-        if (Math.abs(dx) > 0.42) { x = dx > 0 ? own.x + TILE / 2 + gap : own.x - TILE / 2 - gap - w; y = own.y - h / 2 + dy * h * 0.3; }
-        else { y = dy > 0 ? own.y + TILE / 2 + gap : own.y - TILE / 2 - gap - h; x = own.x - w / 2; }
-        var card = { x: x, y: y, w: w, h: h };
-        function clash() {
-            var c = { x: card.x + w / 2, y: card.y + h / 2, w: w, h: h };
-            for (var t = 0; t < tiles.length; t++) if (tiles[t] !== own && overlaps(c, tiles[t], 8)) return true;
-            return overlaps(c, { x: 0, y: 0, w: ORB, h: ORB }, 8);
+        colW = Math.max(110, Math.min(colW, bounds.R - bounds.L - 2 * PAD));
+        function dims(cols) { var rows = Math.ceil(n / cols); return { cols: cols, w: cols * colW + (cols - 1) * COLGAP + 2 * PAD, h: rows * ROW + (rows - 1) * 2 + 2 * PAD }; }
+        function inside(c) { return c.x >= bounds.L - 0.5 && c.x + c.w <= bounds.R + 0.5 && c.y >= bounds.T - 0.5 && c.y + c.h <= bounds.B + 0.5; }
+        function clash(c) {
+            var m = { x: c.x + c.w / 2, y: c.y + c.h / 2, w: c.w, h: c.h };
+            for (var t = 0; t < tiles.length; t++) if (tiles[t] !== own && overlaps(m, tiles[t], 8)) return true;
+            return overlaps(m, { x: 0, y: 0, w: ORB, h: ORB }, 8);
         }
-        for (var k = 0; k < 80 && clash(); k++) { card.x += dx * 6; card.y += dy * 6; }
+        var th = A * Math.PI / 180, dx = Math.sin(th), dy = -Math.cos(th), tries = [], d, card = null;
+        [n > 6 ? 2 : 1, n > 6 ? 1 : 2].forEach(function (cols) {
+            d = dims(cols); if (d.w > bounds.R - bounds.L) return;
+            // 1) beside its tile, pushed outwards until it touches nothing
+            var c = { cols: cols, w: d.w, h: d.h }, gap = 10;
+            if (Math.abs(dx) > 0.42) { c.x = dx > 0 ? own.x + TILE / 2 + gap : own.x - TILE / 2 - gap - d.w; c.y = own.y - d.h / 2 + dy * d.h * 0.3; }
+            else { c.y = dy > 0 ? own.y + TILE / 2 + gap : own.y - TILE / 2 - gap - d.h; c.x = own.x - d.w / 2; }
+            for (var k = 0; k < 80 && clash(c); k++) { c.x += dx * 6; c.y += dy * 6; }
+            tries.push(c);
+            // 2) under or above the ring (narrow panels), centred under the tile's side
+            var cxu = Math.max(bounds.L, Math.min(bounds.R - d.w, own.x - d.w / 2));
+            tries.push({ cols: cols, w: d.w, h: d.h, x: cxu, y: ext + 10 }, { cols: cols, w: d.w, h: d.h, x: cxu, y: -ext - 10 - d.h });
+        });
+        for (i = 0; i < tries.length && !card; i++) if (inside(tries[i]) && !clash(tries[i])) card = tries[i];
+        if (!card) {          // a tiny panel: the card lies over the ring like a sheet
+            d = dims(2).w <= bounds.R - bounds.L ? dims(2) : dims(1);
+            card = { cols: d.cols, w: d.w, h: d.h, x: Math.max(bounds.L, Math.min(bounds.R - d.w, -d.w / 2)), y: Math.max(bounds.T, Math.min(bounds.B - d.h, -d.h / 2)), over: true };
+        }
         var items = [];
         for (i = 0; i < n; i++) {
-            var r = Math.floor(i / cols), c = i % cols;
-            items.push({ x: card.x + PAD + c * (colW + COLGAP) + colW / 2, y: card.y + PAD + r * (ROW + 2) + ROW / 2, w: colW, h: ROW });
+            var r = Math.floor(i / card.cols), cc = i % card.cols;
+            items.push({ x: card.x + PAD + cc * (colW + COLGAP) + colW / 2, y: card.y + PAD + r * (ROW + 2) + ROW / 2, w: colW, h: ROW });
         }
-        // pivot of the pop-in animation: the side that faces the tile
-        card.origin = Math.round((own.x - card.x) / w * 100) + "% " + Math.round((own.y - card.y) / h * 100) + "%";
+        card.origin = Math.round((own.x - card.x) / card.w * 100) + "% " + Math.round((own.y - card.y) / card.h * 100) + "%";
         items.card = card;
         return items;
     }
@@ -146,22 +159,22 @@
         orb.style.cssText = "width:" + ORB + "px;height:" + ORB + "px;left:" + -ORB / 2 + "px;top:" + -ORB / 2 + "px";
         st.label = el("span", "rw-label", orb, ""); st.status = el("span", "rw-status", orb, ""); st.orb = orb;
         st.items = el("div", "rw-items", rw);
-        // Measure every sector's pills once, lay them out, then fit the whole menu into the panel (scale + shift) for the largest one,
-        // so the centre never jumps while the pointer travels.
-        var probe = el("div", "rw-items probe", rw), ext = R1 + TILE / 2 + 4, minX = -ext, maxX = ext, minY = -ext, maxY = ext;
+        // The ring alone decides the size (about 60% of the smaller side, never below 1× unless the panel is tinier than the ring);
+        // each sector's card is then placed where it fits: beside its tile, under or above the ring, or over it in a tiny panel.
+        var vw = window.innerWidth, vh = window.innerHeight, pad = 8, ext = R1 + TILE / 2 + 6;
+        var k = Math.max(1, Math.min(2.2, Math.min(vw, vh) * 0.6 / (2 * ext)));
+        k = Math.min(k, (vw - 2 * pad) / (2 * ext), (vh - 2 * pad) / (2 * ext)); st.k = k;
+        var cx = vw >= 2 * (pad + ext * k) ? Math.min(vw - pad - ext * k, Math.max(pad + ext * k, x)) : vw / 2;
+        var cy = vh >= 2 * (pad + ext * k) ? Math.min(vh - pad - ext * k, Math.max(pad + ext * k, y)) : vh / 2;
+        var bounds = { L: (pad - cx) / k, R: (vw - pad - cx) / k, T: (pad - cy) / k, B: (vh - pad - cy) / k };
+        var probe = el("div", "rw-items probe", rw);
         list.forEach(function (sec, i) {
             if (!sec.items) return;
             var sizes = sec.items.map(function (it) { var e = el("span", "rw-item", probe, it.t); return { w: Math.ceil(e.offsetWidth) + 42, h: ROW }; });
-            sec.layout = cardLayout(sizes, i * 360 / n, st.tiles, st.tiles[i]);
-            var cd = sec.layout.card;
-            minX = Math.min(minX, cd.x); maxX = Math.max(maxX, cd.x + cd.w); minY = Math.min(minY, cd.y); maxY = Math.max(maxY, cd.y + cd.h);
+            sec.layout = cardLayout(sizes, i * 360 / n, st.tiles, st.tiles[i], bounds);
         });
         rw.removeChild(probe);
-        var vw = window.innerWidth, vh = window.innerHeight, pad = 8;
-        // bigger in a bigger panel (up to 1.7×), never larger than the panel allows
-        var grow = Math.max(1.1, Math.min(2.2, Math.min(vw, vh) / 360));
-        var k = Math.min(grow, (vw - 2 * pad) / (maxX - minX), (vh - 2 * pad) / (maxY - minY)); st.k = k;
-        var cx = Math.min(vw - pad - maxX * k, Math.max(pad - minX * k, x)), cy = Math.min(vh - pad - maxY * k, Math.max(pad - minY * k, y));
+        rw.style.transform = "scale(" + k + ")";
         st.cx = cx; st.cy = cy; rw.style.left = cx + "px"; rw.style.top = cy + "px"; rw.style.transform = "scale(" + k + ")";
         if (!st.bound) {
             st.bound = true;
@@ -176,7 +189,7 @@
         var box = st.items; box.textContent = "";
         if (i >= 0 && st.list[i].items) {
             var sec = st.list[i], cd = sec.layout.card;
-            var card = el("div", "rw-card", box);
+            var card = el("div", "rw-card" + (cd.over ? " over" : ""), box);
             card.style.cssText = "left:" + cd.x + "px;top:" + cd.y + "px;width:" + cd.w + "px;height:" + cd.h + "px;transform-origin:" + cd.origin;
             sec.items.forEach(function (it, j) {
                 var q = sec.layout[j], b = el("button", "rw-item" + (it.on ? " on" : "") + (it.danger ? " danger" : ""), box); b.type = "button"; b.setAttribute("role", "menuitem");

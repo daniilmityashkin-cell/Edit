@@ -386,24 +386,35 @@
         var sig = JSON.stringify(list) + (S && S.pending);
         if (box.hidden || box.dataset.sig === sig) return;
         box.dataset.sig = sig; box.textContent = "";
+        // header: title and the actions, always visible; below it a scrolling list where one remark for many phrases is one line
+        var fixable = list.some(function (it) { return it.code === "safe_area" || it.code === "font"; }), wasPending = !!S.pending;
         var head = U.row(box, "issues-head"); U.icon("warn", head); el("b", "", head, t("issues.title")); el("span", "spacer", head);
+        if (fixable) U.button(t("act.autoFix"), "primary small", head, function () {
+            act("issues.fix").then(function (r) {
+                if (!r) return;
+                if (!r.left.length) { showIssues(false); if (wasPending) generate(lastMode); }
+            });
+        }, "wand");
+        if (S.pending) U.button(t("act.createAnyway"), "small" + (fixable ? " ghost" : " primary"), head, function () { generate(lastMode, true).then(function (r) { if (r && !r.pending) showIssues(false); }); });
         U.iconButton("close", "×", head, function () { showIssues(false); });
+        var groups = [], byKey = {};
         list.forEach(function (it) {
-            var r = U.row(box, "issue"); el("span", "", r, NoirI18n.host(it.message));
-            if (it.segment !== undefined) U.button(t("text.phrase") + " " + (it.segment + 1), "ghost small", r, function () { go("text"); act("phrase.select", { index: it.segment }); });
-            else if (it.code === "font" || it.code === "font_unknown") U.button(t("set.font"), "ghost small", r, function () { go("settings", false, "set-font"); });
-            else if (it.code === "safe_area") U.button(t("style.position"), "ghost small", r, function () { go("style", false, "style-quick"); });
+            var msg = NoirI18n.host(String(it.message).replace(/^(Фраза|Phrase) \d+: /, "")), key = it.code + "|" + msg;
+            if (!byKey[key]) { byKey[key] = { code: it.code, msg: msg, segs: [], target: it.target }; groups.push(byKey[key]); }
+            if (it.segment !== undefined) byKey[key].segs.push(it.segment);
         });
-        el("p", "hint", box, t("issues.note"));
-        var acts = U.row(box, "actions wrap"), wasPending = !!S.pending;
-        if (list.some(function (it) { return it.code === "safe_area" || it.code === "font"; }))
-            U.button(t("act.autoFix"), "primary small", acts, function () {
-                act("issues.fix").then(function (r) {
-                    if (!r) return;
-                    if (!r.left.length) { showIssues(false); if (wasPending) generate(lastMode); }
-                });
-            }, "wand");
-        if (S.pending) U.button(t("act.createAnyway"), "small" + (list.some(function (it) { return it.code === "safe_area" || it.code === "font"; }) ? " ghost" : " primary"), acts, function () { generate(lastMode, true).then(function (r) { if (r && !r.pending) showIssues(false); }); });
+        var body = el("div", "issue-list", box);
+        groups.forEach(function (g) {
+            var r = el("div", "issue", body), txt = el("div", "issue-text", r);
+            el("span", "", txt, (g.segs.length ? (g.segs.length > 1 ? t("issues.phrases") : t("text.phrase")) + " " : "") + "");
+            txt.firstChild.textContent = g.segs.length ? (g.segs.length > 1 ? t("issues.phrases", { n: g.segs.length }) : t("text.phrase") + " " + (g.segs[0] + 1)) + ": " : "";
+            el("span", "", txt, g.msg);
+            var chips = el("div", "chips", r);
+            g.segs.slice(0, 8).forEach(function (sg) { U.button(String(sg + 1), "chip small", chips, function () { go("text"); act("phrase.select", { index: sg }); }).title = t("text.phrase") + " " + (sg + 1); });
+            if (g.segs.length > 8) el("span", "muted small", chips, "+" + (g.segs.length - 8));
+            if (!g.segs.length && (g.code === "font" || g.code === "font_unknown")) U.button(t("set.font"), "ghost small", chips, function () { go("settings", false, "set-font"); });
+        });
+        el("p", "hint", body, t("issues.note"));
     }
 
     // ---------- style: gallery with live previews ----------

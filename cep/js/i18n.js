@@ -94,6 +94,7 @@
         "tl.zoomIn": ["Крупнее", "Zoom in"], "tl.zoomOut": ["Мельче", "Zoom out"],
         "act.recNew": ["Распознать выделенный слой", "Recognize selected layer"], "text.source": ["Видео: {name}", "Video: {name}"],
         "text.recNewHint": ["Для другого видео выделите его слой со звуком в таймлайне и нажмите кнопку. Текст здесь заменится, а уже созданные субтитры прошлого видео останутся в композиции.", "For another video select its audio layer in the timeline and press the button. The text here is replaced; captions already made for the previous video stay in the comp."],
+        "issues.phrases": ["Фраз: {n}", "Phrases: {n}"],
         "act.autoFix": ["Исправить автоматически", "Fix automatically"],
         "set.mode": ["Вид панели", "Panel view"], "set.modeHint": ["Компактный — без пояснений и плотнее; подробный — все параметры, инструменты и звуки.", "Compact — no explanations, denser; detailed — every parameter, tools and sounds."],
         "mode.compact": ["Компактный", "Compact"], "mode.normal": ["Обычный", "Normal"], "mode.detailed": ["Подробный", "Detailed"],
