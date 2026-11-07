@@ -386,7 +386,15 @@
             else if (it.code === "safe_area") U.button(t("style.position"), "ghost small", r, function () { go("style", false, "style-quick"); });
         });
         el("p", "hint", box, t("issues.note"));
-        if (S.pending) U.button(t("act.createAnyway"), "primary small", box, function () { generate(lastMode, true).then(function (r) { if (r && !r.pending) showIssues(false); }); });
+        var acts = U.row(box, "actions wrap"), wasPending = !!S.pending;
+        if (list.some(function (it) { return it.code === "safe_area" || it.code === "font"; }))
+            U.button(t("act.autoFix"), "primary small", acts, function () {
+                act("issues.fix").then(function (r) {
+                    if (!r) return;
+                    if (!r.left.length) { showIssues(false); if (wasPending) generate(lastMode); }
+                });
+            }, "wand");
+        if (S.pending) U.button(t("act.createAnyway"), "small" + (list.some(function (it) { return it.code === "safe_area" || it.code === "font"; }) ? " ghost" : " primary"), acts, function () { generate(lastMode, true).then(function (r) { if (r && !r.pending) showIssues(false); }); });
     }
 
     // ---------- style: gallery with live previews ----------

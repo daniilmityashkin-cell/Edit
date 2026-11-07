@@ -94,6 +94,19 @@ const accept = (a, mode) => { let r = a.call("generate", { mode: mode || "all" }
     a.call("generate", { mode: "all", accept: true }); assert.ok(subs(c).length > 0); assert.strictEqual(a.state().pending, false);
     const chk = a.call("generate", { mode: "check" }); assert.ok(chk.issues.length >= 1);
   });
+  await test("замечания без повторов; «исправить автоматически» ставит текст в безопасную зону и меняет недоступный шрифт на установленный", () => {
+    const c = mkComp(), a = freshApp();
+    a.call("settings.set", { path: "quick.position", value: "75" }); a.call("settings.set", { path: "style.layout.posY", value: 99 }); a.call("settings.set", { path: "quick.size", value: 300 });
+    a.call("settings.set", { path: "style.base.fonts", value: ["NoSuchFont-Bold", "Inter-SemiBold"] });
+    const r0 = a.call("generate", { mode: "check" }), keys = r0.issues.map(x => x.code + x.segment + x.message);
+    assert.strictEqual(new Set(keys).size, keys.length, "нет повторов"); assert.ok(r0.issues.some(x => x.code === "safe_area") && r0.issues.some(x => x.code === "font"));
+    const r = a.call("issues.fix"); assert.ok(r.fixed.length >= 2, r.fixed.join("; "));
+    assert.ok(!r.left.some(x => x.code === "safe_area"), "безопасная зона исправлена: " + JSON.stringify(r.left));
+    assert.ok(!r.left.some(x => x.code === "font")); assert.strictEqual(a.settings().style.base.fonts[0], "Inter-SemiBold");
+    assert.strictEqual(a.settings().quick.position, "preset"); assert.ok(a.settings().style.layout.posY < 99);
+    assert.strictEqual(a.call("generate", { mode: "check" }).issues.filter(x => x.code === "safe_area").length, 0);
+    accept(a); assert.ok(subs(c).length > 0);
+  });
   await test("обновить одну фразу: только её слои, остальные на месте; до создания — понятная ошибка", () => {
     const c = mkComp(), a = freshApp();
     assert.throws(() => a.call("generate", { mode: "phrase" }), /Сначала создайте/);

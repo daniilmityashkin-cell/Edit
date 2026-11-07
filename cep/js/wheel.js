@@ -83,34 +83,33 @@
     function overlaps(a, b, pad) { return Math.abs(a.x - b.x) * 2 < a.w + b.w + pad && Math.abs(a.y - b.y) * 2 < a.h + b.h + pad; }
     // Places pills (sizes known) on arcs around angle A, outside ring 1. Grows the radius (and the number of arcs) until no pill
     // overlaps another pill, a sector tile or the centre.
-    function arcLayout(sizes, A, tiles) {
-        var n = sizes.length, th = A * Math.PI / 180, out = [];
-        // extent of a pill along the radius and along the arc at this angle
-        function radial(z) { return z.w * Math.abs(Math.sin(th)) + z.h * Math.abs(Math.cos(th)); }
-        function along(z) { return z.w * Math.abs(Math.cos(th)) + z.h * Math.abs(Math.sin(th)); }
-        var depth = 0; sizes.forEach(function (z) { depth = Math.max(depth, radial(z)); });
-        for (var rows = n > 5 ? 2 : 1; rows <= 4; rows++) {
-            var perRow = Math.ceil(n / rows);
-            for (var R = R1 + TILE / 2 + 10 + depth / 2; R < 700; R += 8) {
-                var ok = true; out = [];
-                for (var row = 0; row < rows && ok; row++) {
-                    var idx = []; for (var k = row * perRow; k < Math.min(n, (row + 1) * perRow); k++) idx.push(k);
-                    var r = R + row * (depth + GAP);
-                    var spans = idx.map(function (k2) { return (along(sizes[k2]) + GAP) / r; });
-                    var total = spans.reduce(function (sum, v) { return sum + v; }, 0) * 180 / Math.PI, deg = A - total / 2;
-                    if (total > 140) { ok = false; break; }
-                    idx.forEach(function (k2, j) { var d = spans[j] * 180 / Math.PI, p = pos(r, deg + d / 2); out[k2] = { x: p[0], y: p[1], w: sizes[k2].w, h: sizes[k2].h }; deg += d; });
-                }
-                if (!ok) continue;
-                for (var i = 0; i < n && ok; i++) {
-                    for (var j = i + 1; j < n && ok; j++) if (overlaps(out[i], out[j], GAP)) ok = false;
-                    for (var t = 0; t < tiles.length && ok; t++) if (overlaps(out[i], tiles[t], GAP)) ok = false;
-                }
-                if (ok) return out;
-                if (R > R1 + 260) break;      // a wider fan will not help: try more rows
-            }
+    // Ring 2 is one glass card next to the chosen sector: a tidy list (two columns for long lists), uniform rows, key hints.
+    // The card sits on the outer side of its tile and is pushed outwards until it touches no other tile and not the centre.
+    var ROW = 30, PAD = 6, COLGAP = 4;
+    function cardLayout(sizes, A, tiles, own) {
+        var n = sizes.length, cols = n > 6 ? 2 : 1, rows = Math.ceil(n / cols), colW = 0, i;
+        for (i = 0; i < n; i++) colW = Math.max(colW, sizes[i].w);
+        colW = Math.max(110, colW);
+        var w = cols * colW + (cols - 1) * COLGAP + 2 * PAD, h = rows * ROW + (rows - 1) * 2 + 2 * PAD;
+        var th = A * Math.PI / 180, dx = Math.sin(th), dy = -Math.cos(th), x, y, gap = 10;
+        if (Math.abs(dx) > 0.42) { x = dx > 0 ? own.x + TILE / 2 + gap : own.x - TILE / 2 - gap - w; y = own.y - h / 2 + dy * h * 0.3; }
+        else { y = dy > 0 ? own.y + TILE / 2 + gap : own.y - TILE / 2 - gap - h; x = own.x - w / 2; }
+        var card = { x: x, y: y, w: w, h: h };
+        function clash() {
+            var c = { x: card.x + w / 2, y: card.y + h / 2, w: w, h: h };
+            for (var t = 0; t < tiles.length; t++) if (tiles[t] !== own && overlaps(c, tiles[t], 8)) return true;
+            return overlaps(c, { x: 0, y: 0, w: ORB, h: ORB }, 8);
         }
-        return out;
+        for (var k = 0; k < 80 && clash(); k++) { card.x += dx * 6; card.y += dy * 6; }
+        var items = [];
+        for (i = 0; i < n; i++) {
+            var r = Math.floor(i / cols), c = i % cols;
+            items.push({ x: card.x + PAD + c * (colW + COLGAP) + colW / 2, y: card.y + PAD + r * (ROW + 2) + ROW / 2, w: colW, h: ROW });
+        }
+        // pivot of the pop-in animation: the side that faces the tile
+        card.origin = Math.round((own.x - card.x) / w * 100) + "% " + Math.round((own.y - card.y) / h * 100) + "%";
+        items.card = card;
+        return items;
     }
 
     // ---------- open / render ----------
@@ -152,9 +151,10 @@
         var probe = el("div", "rw-items probe", rw), ext = R1 + TILE / 2 + 4, minX = -ext, maxX = ext, minY = -ext, maxY = ext;
         list.forEach(function (sec, i) {
             if (!sec.items) return;
-            var sizes = sec.items.map(function (it) { var e = el("span", "rw-item", probe, it.t); return { w: Math.ceil(e.offsetWidth), h: Math.ceil(e.offsetHeight) }; });
-            sec.layout = arcLayout(sizes, i * 360 / n, st.tiles);
-            sec.layout.forEach(function (q) { minX = Math.min(minX, q.x - q.w / 2); maxX = Math.max(maxX, q.x + q.w / 2); minY = Math.min(minY, q.y - q.h / 2); maxY = Math.max(maxY, q.y + q.h / 2); });
+            var sizes = sec.items.map(function (it) { var e = el("span", "rw-item", probe, it.t); return { w: Math.ceil(e.offsetWidth) + 42, h: ROW }; });
+            sec.layout = cardLayout(sizes, i * 360 / n, st.tiles, st.tiles[i]);
+            var cd = sec.layout.card;
+            minX = Math.min(minX, cd.x); maxX = Math.max(maxX, cd.x + cd.w); minY = Math.min(minY, cd.y); maxY = Math.max(maxY, cd.y + cd.h);
         });
         rw.removeChild(probe);
         var vw = window.innerWidth, vh = window.innerHeight, pad = 8;
@@ -175,10 +175,13 @@
         st.sector = i; st.item = -1; st.keyLevel = 0;
         var box = st.items; box.textContent = "";
         if (i >= 0 && st.list[i].items) {
-            var sec = st.list[i];
+            var sec = st.list[i], cd = sec.layout.card;
+            var card = el("div", "rw-card", box);
+            card.style.cssText = "left:" + cd.x + "px;top:" + cd.y + "px;width:" + cd.w + "px;height:" + cd.h + "px;transform-origin:" + cd.origin;
             sec.items.forEach(function (it, j) {
-                var q = sec.layout[j], b = el("button", "rw-item" + (it.on ? " on" : "") + (it.danger ? " danger" : ""), box, it.t); b.type = "button"; b.setAttribute("role", "menuitem");
-                b.style.left = (q.x - q.w / 2) + "px"; b.style.top = (q.y - q.h / 2) + "px"; b.style.setProperty("--j", j);
+                var q = sec.layout[j], b = el("button", "rw-item" + (it.on ? " on" : "") + (it.danger ? " danger" : ""), box); b.type = "button"; b.setAttribute("role", "menuitem");
+                el("span", "rw-item-text", b, it.t); if (j < 9) el("span", "rw-key", b, String(j + 1));
+                b.style.left = (q.x - q.w / 2) + "px"; b.style.top = (q.y - q.h / 2) + "px"; b.style.width = q.w + "px"; b.style.setProperty("--j", j);
             });
         }
         paint();
@@ -186,7 +189,7 @@
     function paint() {
         if (!st) return;
         st.tiles.forEach(function (t, i) { t.el.classList.toggle("active", i === st.sector); });
-        Array.prototype.forEach.call(st.items.children, function (b, j) { b.classList.toggle("hover", j === st.item); });
+        Array.prototype.forEach.call(st.items.querySelectorAll(".rw-item"), function (b, j) { b.classList.toggle("hover", j === st.item); });
         var sec = st.sector >= 0 ? st.list[st.sector] : null, it = sec && sec.items && st.item >= 0 ? sec.items[st.item] : null;
         st.label.textContent = it ? it.t : sec ? sec.label : st.hoverOrb ? (window.NoirI18n ? NoirI18n.ui("Помощник") : "Помощник") : "NOIR";
         var ps = api.status ? api.status() : ["", ""], sel = st.sel && st.sel.noir ? (window.NoirI18n ? NoirI18n.ui("Выделено слоёв: ") : "Выделено слоёв: ") + st.sel.noir : "";
@@ -292,6 +295,6 @@
         },
         open: open, close: close, isOpen: function () { return !!st; },
         openAssistant: function () { if (window.NoirAssistant) NoirAssistant.open(); },
-        _layout: arcLayout
+        _layout: cardLayout
     };
 })();

@@ -10,7 +10,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
 (function (N) {
     var SECTION = "NOIR Captions";
     var SETTINGS_KEY = "settings.v2";
-    N.VERSION = "0.34.0";
+    N.VERSION = "0.35.0";
 
     function clone(o) { return N.parseJSON(N.stringify(o)); }
 
@@ -959,6 +959,32 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
                 return undo("маска по тексту", function () { var o = clone(S.tools.mask); o.color = S.style.base.color; var r = N.maskTextLayers(comp, texts, source, o); status("Масок создано: " + r.made.length); return r.made.length; });
             },
             "tool.maskRemove": function () { var comp = activeComp(); return undo("убрать маски", function () { var n = N.removeMasks(comp); status("Убрано масок: " + n); return n; }); },
+            // Fixes what can be fixed safely (position / width / size inside the safe area, a missing font → the first installed
+            // one of the style's list) and re-checks. Reading speed and very long words need a person.
+            "issues.fix": function () {
+                if (!st.data) throw new Error("Нет текста.");
+                var comp = activeComp(), words = N.applyEdits(st.data, st.text, []), out = renderStyle(), groups = buildGroups(words, out, comp).groups;
+                var before = N.checkCaptions(groups, out, comp), done = [], i, codes = {};
+                for (i = 0; i < before.length; i++) codes[before[i].code + (before[i].target ? ":" + before[i].target : "")] = true;
+                if (codes.safe_area) {
+                    var plan = N.safeAreaPlan(groups, out, comp);
+                    S.quick.position = "preset"; S.style.layout.posY = plan.posY; S.style.layout.posX = plan.posX; S.style.layout.safeWidth = plan.safeWidth;
+                    if (plan.scale < 1) S.quick.size = Math.max(25, Math.floor(Number(S.quick.size || 100) * plan.scale));
+                    done.push("положение " + Math.round(plan.posY) + "% высоты" + (plan.scale < 1 ? ", размер " + S.quick.size + "%" : ""));
+                }
+                var sides = ["base", "accent"];
+                for (i = 0; i < sides.length; i++) {
+                    if (!codes["font:" + sides[i]]) continue;
+                    var list = S.style[sides[i]].fonts, ok = null;
+                    for (var f = 1; f < list.length && !ok; f++) if (N.fontInstalled(list[f]) === true) ok = list[f];
+                    if (ok) { setFont(sides[i], ok); done.push((sides[i] === "base" ? "шрифт слов" : "шрифт акцентов") + " → " + ok); }
+                }
+                if (done.length) { S.presetId = ""; saveSettings(S); }
+                var out2 = renderStyle(), after = N.checkCaptions(buildGroups(words, out2, comp).groups, out2, comp);
+                st.issues = after; st.pending = null;
+                status((done.length ? "Исправлено: " + done.join("; ") + "." : "Автоматически исправить нечего.") + (after.length ? " Осталось замечаний: " + after.length + " — их нужно поправить вручную." : " Замечаний больше нет."));
+                return { fixed: done, left: after };
+            },
             "layers.select": function (a) {
                 var r = selectTarget(String(a.target || "captions"));
                 status(r.n ? "Выделено: " + r.what + (r.n > 1 ? " (" + r.n + ")" : "") : "Выделение снято."); return r.n;

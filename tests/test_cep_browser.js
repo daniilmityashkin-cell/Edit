@@ -180,7 +180,12 @@ function layoutProblems() {
     });
     await step("создание: замечания, «создать с замечаниями», затем «Обновить все»", async () => {
         await page.locator(".sticky-actions .btn.primary").click(); await settle();
-        if (await page.locator(".issues").isVisible()) { await shot("issues"); await page.locator(".issues .btn.primary").click(); await settle(); }
+        if (await page.locator(".issues").isVisible()) {
+            await shot("issues");
+            const fix = page.getByRole("button", { name: "Исправить автоматически" });
+            if (await fix.count()) { await fix.click(); await settle(); await page.waitForTimeout(200); await settle(); }
+            if (await page.locator(".issues").isVisible()) { await page.getByRole("button", { name: "Создать с замечаниями" }).click(); await settle(); }
+        }
         assert.ok(subs().length > 0, "layers made");
         await page.waitForFunction(() => document.querySelector(".topbar .btn.primary").textContent.indexOf("Обновить") >= 0);
         assert.strictEqual((await hostState()).dirty, false);
@@ -278,10 +283,11 @@ function layoutProblems() {
                     await page.keyboard.press(String(k)); if (!(await page.evaluate(() => NoirWheel.isOpen()))) { await page.evaluate(([x, y]) => NoirWheel.open(x, y, "sticky"), [x, y]); continue; }
                     await page.waitForTimeout(30);
                     const r = await page.evaluate(() => {
-                        const boxes = [...document.querySelectorAll(".rw-item, .rw-tile, .rw-orb")].map(e => ({ c: e.className, t: e.textContent, r: e.getBoundingClientRect() })), out = [];
+                        const boxes = [...document.querySelectorAll(".rw-item, .rw-tile, .rw-orb, .rw-card")].map(e => ({ c: e.className, t: e.textContent || e.className, r: e.getBoundingClientRect() })), out = [];
                         for (let i = 0; i < boxes.length; i++) {
                             const a = boxes[i].r; if (a.left < -1 || a.top < -1 || a.right > innerWidth + 1 || a.bottom > innerHeight + 1) out.push("за краем: " + boxes[i].t);
                             for (let j = i + 1; j < boxes.length; j++) { const b = boxes[j].r;
+                                if (/rw-card/.test(boxes[i].c + boxes[j].c) && /rw-item/.test(boxes[i].c + boxes[j].c)) continue;   // rows live inside the card
                                 const round = (q) => /rw-tile|rw-orb/.test(boxes[q].c); if (round(i) && round(j)) { const d = Math.hypot((a.left + a.right - b.left - b.right) / 2, (a.top + a.bottom - b.top - b.bottom) / 2); if (d < (a.width + b.width) / 2 - 1) out.push(boxes[i].t + " ○ " + boxes[j].t); continue; }
                                 if (Math.min(a.right, b.right) - Math.max(a.left, b.left) > 1 && Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top) > 1) out.push(boxes[i].t + " × " + boxes[j].t); }
                         }

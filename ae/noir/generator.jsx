@@ -1355,8 +1355,29 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         return { name: f.label, removed: removed, safe: s };
     };
 
+    function blockHeight(g, style, scale) {
+        var L = style.layout, lines = N.splitLines(g.words, L), h = 0;
+        for (var j = 0; j < lines.length; j++) {
+            var maxSize = 0;
+            for (var k = 0; k < lines[j].length; k++) maxSize = Math.max(maxSize, style[lines[j][k].accent ? "accent" : "base"].size * scale);
+            h += maxSize * 1.2;
+        }
+        return h + Math.max(0, lines.length - 1) * L.lineGap * style.base.size * scale;
+    }
+    function safeOf(comp, L) { var fmt = N.formatFor(comp, L.format); return { fmt: fmt, sa: fmt && fmt.safe ? fmt.safe : { top: .05, bottom: .05, left: .05, right: .05 } }; }
+    // What fixes the safe-area remarks: the nearest height inside the safe area, a line width that fits between the side margins,
+    // and (only when the tallest phrase is taller than the safe area) a size factor below 1.
+    N.safeAreaPlan = function (groups, style, comp) {
+        var L = style.layout, scale = comp.width / N.REF_WIDTH, bh = 0, i, s = safeOf(comp, L).sa;
+        for (i = 0; i < groups.length; i++) bh = Math.max(bh, blockHeight(groups[i], style, scale));
+        var safeWidth = Math.min(L.safeWidth, Math.max(0.3, 1 - s.left - s.right - 0.02)), half = safeWidth * 50;
+        var posX = Math.max(s.left * 100 + half, Math.min((1 - s.right) * 100 - half, L.posX));
+        var room = comp.height * (1 - s.top - s.bottom), k = bh > room * 0.96 ? room * 0.94 / bh : 1, h = bh * k / comp.height * 100;
+        var posY = Math.max(s.top * 100 + h / 2 + 0.5, Math.min((1 - s.bottom) * 100 - h / 2 - 0.5, L.posY));
+        return { posX: Math.round(posX * 10) / 10, posY: Math.round(posY * 10) / 10, safeWidth: Math.round(safeWidth * 100) / 100, scale: k };
+    };
     N.checkCaptions = function (groups, style, comp) {
-        var issues = [], sides = ["base"], i, j, hasAccent = false, L = style.layout;
+        var issues = [], sides = ["base"], i, j, hasAccent = false, L = style.layout, seen = {};
         for (i = 0; i < groups.length; i++) for (j = 0; j < groups[i].words.length; j++) if (groups[i].words[j].accent) hasAccent = true;
         if (hasAccent) sides.push("accent");
         for (i = 0; i < sides.length; i++) {
@@ -1389,7 +1410,9 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             if (g.compOut <= 0 || g.compStart >= comp.duration)
                 issues.push({code: "outside", segment: g.seg, message: label + "находится вне композиции."});
         }
-        return issues;
+        var unique = [];        // one remark per phrase and kind: a phrase split into several groups used to repeat it
+        for (i = 0; i < issues.length; i++) { var key = issues[i].code + "|" + issues[i].segment + "|" + issues[i].message; if (!seen[key]) { seen[key] = true; unique.push(issues[i]); } }
+        return unique;
     };
     N.styleExamples = function (presets) {
         if (!presets.length) throw new Error("Нет стилей для примера.");
