@@ -273,7 +273,7 @@
     var measureCtx = null;
     function textWidth(s) {
         if (!measureCtx) { var cv = document.createElement("canvas"); measureCtx = cv.getContext("2d"); }
-        measureCtx.font = "500 12px Inter, sans-serif"; return measureCtx.measureText(s).width;
+        measureCtx.font = "500 12px " + getComputedStyle(document.body).fontFamily; return measureCtx.measureText(s).width;
     }
     function zoomTimeline(f) { prefs.tlZoom = Math.max(0.5, Math.min(8, (prefs.tlZoom || 1) * f)); savePrefs(); view.text.tlSig = null; renderTimeline(); }
     window.addEventListener("resize", function () { if (view.text && view.text.tlScroll) { view.text.tlSig = null; if (S) renderTimeline(); } });

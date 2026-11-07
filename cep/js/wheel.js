@@ -78,52 +78,10 @@
     }
 
     // ---------- geometry ----------
-    var R1 = 86, TILE = 50, ORB = 86, GAP = 6, ROW = 36;
+    // Base sizes at scale 1; the ring is drawn at its real pixel size (no CSS scaling, so text stays sharp).
+    var R1 = 86, TILE = 50, ORB = 86;
     function pos(r, deg) { var a = deg * Math.PI / 180; return [r * Math.sin(a), -r * Math.cos(a)]; }
     function overlaps(a, b, pad) { return Math.abs(a.x - b.x) * 2 < a.w + b.w + pad && Math.abs(a.y - b.y) * 2 < a.h + b.h + pad; }
-    // Places pills (sizes known) on arcs around angle A, outside ring 1. Grows the radius (and the number of arcs) until no pill
-    // overlaps another pill, a sector tile or the centre.
-    // Ring 2 is one glass card next to the chosen sector: a tidy list (two columns for long lists), uniform rows, key hints.
-    // The card sits on the outer side of its tile and is pushed outwards until it touches no other tile and not the centre.
-    var ROW = 30, PAD = 6, COLGAP = 4;
-    function cardLayout(sizes, A, tiles, own, bounds) {
-        var n = sizes.length, colW = 0, i, ext = R1 + TILE / 2 + 6;
-        for (i = 0; i < n; i++) colW = Math.max(colW, sizes[i].w);
-        colW = Math.max(110, Math.min(colW, bounds.R - bounds.L - 2 * PAD));
-        function dims(cols) { var rows = Math.ceil(n / cols); return { cols: cols, w: cols * colW + (cols - 1) * COLGAP + 2 * PAD, h: rows * ROW + (rows - 1) * 2 + 2 * PAD }; }
-        function inside(c) { return c.x >= bounds.L - 0.5 && c.x + c.w <= bounds.R + 0.5 && c.y >= bounds.T - 0.5 && c.y + c.h <= bounds.B + 0.5; }
-        function clash(c) {
-            var m = { x: c.x + c.w / 2, y: c.y + c.h / 2, w: c.w, h: c.h };
-            for (var t = 0; t < tiles.length; t++) if (tiles[t] !== own && overlaps(m, tiles[t], 8)) return true;
-            return overlaps(m, { x: 0, y: 0, w: ORB, h: ORB }, 8);
-        }
-        var th = A * Math.PI / 180, dx = Math.sin(th), dy = -Math.cos(th), tries = [], d, card = null;
-        [n > 6 ? 2 : 1, n > 6 ? 1 : 2].forEach(function (cols) {
-            d = dims(cols); if (d.w > bounds.R - bounds.L) return;
-            // 1) beside its tile, pushed outwards until it touches nothing
-            var c = { cols: cols, w: d.w, h: d.h }, gap = 10;
-            if (Math.abs(dx) > 0.42) { c.x = dx > 0 ? own.x + TILE / 2 + gap : own.x - TILE / 2 - gap - d.w; c.y = own.y - d.h / 2 + dy * d.h * 0.3; }
-            else { c.y = dy > 0 ? own.y + TILE / 2 + gap : own.y - TILE / 2 - gap - d.h; c.x = own.x - d.w / 2; }
-            for (var k = 0; k < 80 && clash(c); k++) { c.x += dx * 6; c.y += dy * 6; }
-            tries.push(c);
-            // 2) under or above the ring (narrow panels), centred under the tile's side
-            var cxu = Math.max(bounds.L, Math.min(bounds.R - d.w, own.x - d.w / 2));
-            tries.push({ cols: cols, w: d.w, h: d.h, x: cxu, y: ext + 10 }, { cols: cols, w: d.w, h: d.h, x: cxu, y: -ext - 10 - d.h });
-        });
-        for (i = 0; i < tries.length && !card; i++) if (inside(tries[i]) && !clash(tries[i])) card = tries[i];
-        if (!card) {          // a tiny panel: the card lies over the ring like a sheet
-            d = dims(2).w <= bounds.R - bounds.L ? dims(2) : dims(1);
-            card = { cols: d.cols, w: d.w, h: d.h, x: Math.max(bounds.L, Math.min(bounds.R - d.w, -d.w / 2)), y: Math.max(bounds.T, Math.min(bounds.B - d.h, -d.h / 2)), over: true };
-        }
-        var items = [];
-        for (i = 0; i < n; i++) {
-            var r = Math.floor(i / card.cols), cc = i % card.cols;
-            items.push({ x: card.x + PAD + cc * (colW + COLGAP) + colW / 2, y: card.y + PAD + r * (ROW + 2) + ROW / 2, w: colW, h: ROW });
-        }
-        card.origin = Math.round((own.x - card.x) / card.w * 100) + "% " + Math.round((own.y - card.y) / card.h * 100) + "%";
-        items.card = card;
-        return items;
-    }
 
     // ---------- open / render ----------
     function open(x, y, mode, keyboard) {
@@ -139,43 +97,67 @@
             paint();
         }).catch(function () {});
     }
+    // The section's actions always appear in ONE place: a glass sheet beside the ring (right or left), or under it in a narrow
+    // panel. Switching sections only swaps the sheet's content.
+    var SHEET_PAD = 10, HEAD = 40, ROWH = 34, RGAP = 4, CGAP = 6;
     function build(x, y, keyboard) {
         if (st.ov && st.ov.parentNode) st.ov.parentNode.removeChild(st.ov);
         st.cx0 = x; st.cy0 = y; st.sector = -1; st.item = -1;
-        var L = window.NoirI18n && NoirI18n.ui ? NoirI18n.ui : function (x) { return x; };
+        var L = window.NoirI18n && NoirI18n.ui ? NoirI18n.ui : function (v) { return v; };
         var list = sectors(st.kind).slice(0, 8), n = list.length; st.list = list;
         list.forEach(function (sec) { sec.label = L(sec.label); (sec.items || []).forEach(function (it) { it.t = L(it.t); }); });
         var ov = el("div", "noir-wheel" + (st.mode === "sticky" ? " sticky" : ""), document.body); ov.setAttribute("role", "menu"); ov.setAttribute("aria-label", "Радиальное меню NOIR"); st.ov = ov;
-        var rw = el("div", "rw", ov); st.rw = rw;
-        var ring = el("div", "rw-ring", rw); ring.style.cssText = "width:" + 2 * R1 + "px;height:" + 2 * R1 + "px;left:" + -R1 + "px;top:" + -R1 + "px";
+
+        // sheet size from the longest label of all sections
+        var probe = el("span", "rw-item probe", ov), colW = 0, rowsMax = 1;
+        list.forEach(function (sec) { (sec.items || []).forEach(function (it) { probe.textContent = it.t; colW = Math.max(colW, probe.offsetWidth); }); });
+        ov.removeChild(probe);
+        colW = Math.max(132, Math.min(230, colW + 52));
+        var vw = window.innerWidth, vh = window.innerHeight, pad = 10;
+        var cols = 2 * colW + CGAP + 2 * SHEET_PAD <= vw - 2 * pad ? 2 : 1;
+        if (cols === 1) colW = Math.min(colW, vw - 2 * pad - 2 * SHEET_PAD);
+        list.forEach(function (sec) { if (sec.items) rowsMax = Math.max(rowsMax, Math.ceil(sec.items.length / cols)); });
+        var sw = cols * colW + (cols - 1) * CGAP + 2 * SHEET_PAD, sh = HEAD + rowsMax * ROWH + (rowsMax - 1) * RGAP + SHEET_PAD;
+
+        // ring size: ~60% of the smaller side, never below the base size unless the panel is smaller than the ring
+        var ext0 = R1 + TILE / 2 + 6, k = Math.max(1, Math.min(2.2, Math.min(vw, vh) * 0.6 / (2 * ext0)));
+        k = Math.min(k, (vw - 2 * pad) / (2 * ext0), (vh - 2 * pad) / (2 * ext0));
+        var g = { r1: R1 * k, tile: TILE * k, orb: ORB * k, ext: ext0 * k, k: k }; st.g = g;
+        function clampC(v, lo, hi) { return hi < lo ? (lo + hi) / 2 : Math.max(lo, Math.min(hi, v)); }
+        var cx = clampC(x, pad + g.ext, vw - pad - g.ext), cy = clampC(y, pad + g.ext, vh - pad - g.ext), side;
+        // where the sheet goes: right, left, below (moving the ring up if needed), or over the ring in a tiny panel
+        if (vw - pad - (cx + g.ext) >= sw + 16) side = "right";
+        else if (cx - g.ext - pad >= sw + 16) side = "left";
+        else if (vw - 2 * pad >= 2 * g.ext + sw + 16) { side = "right"; cx = (vw - (2 * g.ext + 16 + sw)) / 2 + g.ext; }     // ring + sheet centred together
+        else {
+            side = "below";
+            if (vh - pad - (cy + g.ext) < sh + 16) cy = Math.max(pad + g.ext, vh - pad - sh - 16 - g.ext);
+            if (vh - pad - (cy + g.ext) < sh + 16) side = "over";
+        }
+        var sx, sy;
+        if (side === "right") { sx = cx + g.ext + 16; sy = clampC(cy - sh / 2, pad, vh - pad - sh); }
+        else if (side === "left") { sx = cx - g.ext - 16 - sw; sy = clampC(cy - sh / 2, pad, vh - pad - sh); }
+        else if (side === "below") { sx = clampC(cx - sw / 2, pad, vw - pad - sw); sy = cy + g.ext + 16; }
+        else { sx = clampC(cx - sw / 2, pad, vw - pad - sw); sy = clampC(cy - sh / 2, pad, vh - pad - sh); }
+        st.cx = cx; st.cy = cy; st.k = 1;
+
+        var rw = el("div", "rw", ov); st.rw = rw; rw.style.left = cx + "px"; rw.style.top = cy + "px";
+        var ring = el("div", "rw-ring", rw); ring.style.cssText = "width:" + 2 * g.r1 + "px;height:" + 2 * g.r1 + "px;left:" + -g.r1 + "px;top:" + -g.r1 + "px";
         st.tiles = [];
         list.forEach(function (sec, i) {
-            var p = pos(R1, i * 360 / n), b = el("button", "rw-tile" + (sec.items ? "" : " direct"), rw); b.type = "button"; b.setAttribute("role", "menuitem"); b.setAttribute("aria-label", (i + 1) + ". " + sec.label);
-            b.style.left = (p[0] - TILE / 2) + "px"; b.style.top = (p[1] - TILE / 2) + "px"; b.style.setProperty("--i", i);
+            var p = pos(g.r1, i * 360 / n), b = el("button", "rw-tile" + (sec.items ? "" : " direct"), rw); b.type = "button"; b.setAttribute("role", "menuitem"); b.setAttribute("aria-label", (i + 1) + ". " + sec.label);
+            b.style.cssText = "left:" + (p[0] - g.tile / 2) + "px;top:" + (p[1] - g.tile / 2) + "px;width:" + g.tile + "px;height:" + g.tile + "px";
+            b.style.setProperty("--i", i); b.style.setProperty("--ic", Math.round(g.tile * 0.42) + "px");
             b.appendChild(svgIcon(sec.icon || ICONS.more)); el("span", "rw-num", b, String(i + 1));
-            st.tiles.push({ x: p[0], y: p[1], w: TILE + 8, h: TILE + 8, el: b });
+            st.tiles.push({ x: p[0], y: p[1], w: g.tile + 8, h: g.tile + 8, el: b });
         });
         var orb = el("button", "rw-orb", rw); orb.type = "button"; orb.setAttribute("aria-label", "Помощник");
-        orb.style.cssText = "width:" + ORB + "px;height:" + ORB + "px;left:" + -ORB / 2 + "px;top:" + -ORB / 2 + "px";
+        orb.style.cssText = "width:" + g.orb + "px;height:" + g.orb + "px;left:" + -g.orb / 2 + "px;top:" + -g.orb / 2 + "px;--fs:" + Math.round(11 * Math.min(1.35, k) * 10) / 10 + "px";
         st.label = el("span", "rw-label", orb, ""); st.status = el("span", "rw-status", orb, ""); st.orb = orb;
-        st.items = el("div", "rw-items", rw);
-        // The ring alone decides the size (about 60% of the smaller side, never below 1× unless the panel is tinier than the ring);
-        // each sector's card is then placed where it fits: beside its tile, under or above the ring, or over it in a tiny panel.
-        var vw = window.innerWidth, vh = window.innerHeight, pad = 8, ext = R1 + TILE / 2 + 6;
-        var k = Math.max(1, Math.min(2.2, Math.min(vw, vh) * 0.6 / (2 * ext)));
-        k = Math.min(k, (vw - 2 * pad) / (2 * ext), (vh - 2 * pad) / (2 * ext)); st.k = k;
-        var cx = vw >= 2 * (pad + ext * k) ? Math.min(vw - pad - ext * k, Math.max(pad + ext * k, x)) : vw / 2;
-        var cy = vh >= 2 * (pad + ext * k) ? Math.min(vh - pad - ext * k, Math.max(pad + ext * k, y)) : vh / 2;
-        var bounds = { L: (pad - cx) / k, R: (vw - pad - cx) / k, T: (pad - cy) / k, B: (vh - pad - cy) / k };
-        var probe = el("div", "rw-items probe", rw);
-        list.forEach(function (sec, i) {
-            if (!sec.items) return;
-            var sizes = sec.items.map(function (it) { var e = el("span", "rw-item", probe, it.t); return { w: Math.ceil(e.offsetWidth) + 42, h: ROW }; });
-            sec.layout = cardLayout(sizes, i * 360 / n, st.tiles, st.tiles[i], bounds);
-        });
-        rw.removeChild(probe);
-        rw.style.transform = "scale(" + k + ")";
-        st.cx = cx; st.cy = cy; rw.style.left = cx + "px"; rw.style.top = cy + "px"; rw.style.transform = "scale(" + k + ")";
+
+        var sheet = el("div", "rw-card rw-sheet side-" + side + (side === "over" ? " over" : ""), ov); sheet.hidden = true;
+        sheet.style.cssText = "left:" + sx + "px;top:" + sy + "px;width:" + sw + "px;--cols:" + cols + ";--colw:" + colW + "px";
+        st.sheet = sheet; st.items = sheet; st.cols = cols;
         if (!st.bound) {
             st.bound = true;
             document.addEventListener("pointermove", onMove, true); document.addEventListener("pointerup", onUp, true); document.addEventListener("keydown", onKey, true); window.addEventListener("blur", close);
@@ -185,24 +167,27 @@
     }
     function setSector(i) {
         if (!st || i === st.sector) return;
+        clearTimeout(st.intent);
         st.sector = i; st.item = -1; st.keyLevel = 0;
-        var box = st.items; box.textContent = "";
-        if (i >= 0 && st.list[i].items) {
-            var sec = st.list[i], cd = sec.layout.card;
-            var card = el("div", "rw-card" + (cd.over ? " over" : ""), box);
-            card.style.cssText = "left:" + cd.x + "px;top:" + cd.y + "px;width:" + cd.w + "px;height:" + cd.h + "px;transform-origin:" + cd.origin;
-            sec.items.forEach(function (it, j) {
-                var q = sec.layout[j], b = el("button", "rw-item" + (it.on ? " on" : "") + (it.danger ? " danger" : ""), box); b.type = "button"; b.setAttribute("role", "menuitem");
-                el("span", "rw-item-text", b, it.t); if (j < 9) el("span", "rw-key", b, String(j + 1));
-                b.style.left = (q.x - q.w / 2) + "px"; b.style.top = (q.y - q.h / 2) + "px"; b.style.width = q.w + "px"; b.style.setProperty("--j", j);
-            });
-        }
+        var sheet = st.sheet, sec = i >= 0 ? st.list[i] : null;
+        sheet.textContent = "";
+        if (!sec || !sec.items) { sheet.hidden = true; paint(); return; }
+        var wasHidden = sheet.hidden; sheet.hidden = false;
+        sheet.classList.remove("swap"); void sheet.offsetWidth; sheet.classList.add(wasHidden ? "enter" : "swap");
+        var head = el("div", "rw-sheet-head", sheet), ic = el("span", "rw-sheet-icon", head); ic.appendChild(svgIcon(sec.icon || ICONS.more));
+        el("span", "rw-sheet-title", head, sec.label); el("span", "rw-sheet-num", head, String(i + 1));
+        var grid = el("div", "rw-grid", sheet);
+        sec.items.forEach(function (it, j) {
+            var b = el("button", "rw-item" + (it.on ? " on" : "") + (it.danger ? " danger" : ""), grid); b.type = "button"; b.setAttribute("role", "menuitem");
+            el("span", "rw-item-text", b, it.t); if (j < 9) el("span", "rw-key", b, String(j + 1));
+            b.style.setProperty("--j", j);
+        });
         paint();
     }
     function paint() {
         if (!st) return;
         st.tiles.forEach(function (t, i) { t.el.classList.toggle("active", i === st.sector); });
-        Array.prototype.forEach.call(st.items.querySelectorAll(".rw-item"), function (b, j) { b.classList.toggle("hover", j === st.item); });
+        Array.prototype.forEach.call(st.sheet.querySelectorAll(".rw-item"), function (b, j) { b.classList.toggle("hover", j === st.item); });
         var sec = st.sector >= 0 ? st.list[st.sector] : null, it = sec && sec.items && st.item >= 0 ? sec.items[st.item] : null;
         st.label.textContent = it ? it.t : sec ? sec.label : st.hoverOrb ? (window.NoirI18n ? NoirI18n.ui("Помощник") : "Помощник") : "NOIR";
         var ps = api.status ? api.status() : ["", ""], sel = st.sel && st.sel.noir ? (window.NoirI18n ? NoirI18n.ui("Выделено слоёв: ") : "Выделено слоёв: ") + st.sel.noir : "";
@@ -210,19 +195,27 @@
     }
 
     // ---------- input ----------
-    function local(e) { return { x: (e.clientX - st.cx) / st.k, y: (e.clientY - st.cy) / st.k }; }
     function hit(e) {
-        var p = local(e), sec = st.sector >= 0 ? st.list[st.sector] : null;
-        if (sec && sec.items) for (var j = 0; j < sec.layout.length; j++) { var q = sec.layout[j]; if (Math.abs(p.x - q.x) <= q.w / 2 + 3 && Math.abs(p.y - q.y) <= q.h / 2 + 3) return { type: "item", index: j }; }
-        var d = Math.sqrt(p.x * p.x + p.y * p.y);
-        if (d < ORB / 2) return { type: "orb" };
-        if (d < R1 + TILE / 2 + 12) { var deg = Math.atan2(p.x, -p.y) * 180 / Math.PI; if (deg < 0) deg += 360; return { type: "sector", index: Math.round(deg / (360 / st.list.length)) % st.list.length }; }
+        var items = st.sheet.hidden ? [] : st.sheet.querySelectorAll(".rw-item"), j;
+        for (j = 0; j < items.length; j++) { var r = items[j].getBoundingClientRect(); if (e.clientX >= r.left - 2 && e.clientX <= r.right + 2 && e.clientY >= r.top - 2 && e.clientY <= r.bottom + 2) return { type: "item", index: j }; }
+        var sr = st.sheet.hidden ? null : st.sheet.getBoundingClientRect();
+        if (sr && e.clientX >= sr.left && e.clientX <= sr.right && e.clientY >= sr.top && e.clientY <= sr.bottom) return { type: "sheet" };
+        var px = e.clientX - st.cx, py = e.clientY - st.cy, d = Math.sqrt(px * px + py * py), g = st.g;
+        if (d < g.orb / 2) return { type: "orb" };
+        // sections switch only on the band of tiles (crossing the middle on the way to the sheet changes nothing)
+        if (d > g.r1 - g.tile / 2 - 8 && d < g.r1 + g.tile / 2 + 14) { var deg = Math.atan2(px, -py) * 180 / Math.PI; if (deg < 0) deg += 360; return { type: "sector", index: Math.round(deg / (360 / st.list.length)) % st.list.length }; }
+        if (d <= g.r1 - g.tile / 2 - 8) return { type: "inner" };
         return null;
     }
-    function track(e) {
+    function track(e, immediate) {
         var h = hit(e);
         st.hoverOrb = !!h && h.type === "orb";
-        if (h && h.type === "sector") setSector(h.index);
+        if (h && h.type === "sector" && h.index !== st.sector) {
+            // hover intent: a short pause before switching, so travelling past other tiles towards the sheet keeps the section
+            clearTimeout(st.intent);
+            if (immediate || st.sector < 0) setSector(h.index);
+            else { var idx = h.index; st.intent = setTimeout(function () { if (st) setSector(idx); }, 160); }
+        } else if (!h || h.type !== "sector") clearTimeout(st.intent);
         st.item = h && h.type === "item" ? h.index : -1;
         paint(); return h;
     }
@@ -234,10 +227,10 @@
         return true;
     }
     function assistant() { close(); if (window.NoirAssistant) NoirAssistant.open(); }
-    function onMove(e) { if (st) { if (Math.abs(e.clientX - st.x0) + Math.abs(e.clientY - st.y0) > 10) st.moved = true; track(e); } }
+    function onMove(e) { if (st) { if (Math.abs(e.clientX - st.x0) + Math.abs(e.clientY - st.y0) > 10) st.moved = true; track(e, false); } }
     function onUp(e) {
         if (!st) return;
-        var h = track(e);
+        var h = track(e, true);
         if (st.mode === "drag") {
             if (!st.moved) { st.mode = "sticky"; st.ov.classList.add("sticky"); return; }
             e.preventDefault();
@@ -284,6 +277,7 @@
     }
     function close() {
         if (!st) return;
+        clearTimeout(st.intent);
         document.removeEventListener("pointermove", onMove, true); document.removeEventListener("pointerup", onUp, true);
         document.removeEventListener("keydown", onKey, true); window.removeEventListener("blur", close);
         if (st.ov && st.ov.parentNode) st.ov.parentNode.removeChild(st.ov);
@@ -308,6 +302,6 @@
         },
         open: open, close: close, isOpen: function () { return !!st; },
         openAssistant: function () { if (window.NoirAssistant) NoirAssistant.open(); },
-        _layout: cardLayout
+        _geometry: function () { return st && st.g; }
     };
 })();
