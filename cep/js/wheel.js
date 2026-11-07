@@ -220,11 +220,12 @@
         else if (h) { clearTimeout(st.leave); st.leave = 0; }
         st.hoverOrb = !!h && h.type === "orb";
         if (h && h.type === "sector" && h.index !== st.sector) {
-            // hover intent: a short pause before switching, so travelling past other tiles towards the sheet keeps the section
-            clearTimeout(st.intent);
-            if (immediate || st.sector < 0) setSector(h.index);
-            else { var idx = h.index; st.intent = setTimeout(function () { if (st) setSector(idx); }, 160); }
-        } else if (!h || h.type !== "sector") clearTimeout(st.intent);
+            // Right on a tile: switch at once. Between tiles on the band: a short pause (the timer is not restarted by every
+            // pointer move), so brushing past a neighbour on the way to the sheet does not swap the section.
+            var tile = st.tiles[h.index], tx = e.clientX - st.cx - tile.x, ty = e.clientY - st.cy - tile.y, onTile = tx * tx + ty * ty <= Math.pow(st.g.tile / 2 + 2, 2);
+            if (immediate || st.sector < 0 || onTile) { clearTimeout(st.intent); st.intentIdx = -1; setSector(h.index); }
+            else if (st.intentIdx !== h.index) { clearTimeout(st.intent); var idx = h.index; st.intentIdx = idx; st.intent = setTimeout(function () { if (st) { st.intentIdx = -1; setSector(idx); } }, 90); }
+        } else if (!h || h.type !== "sector") { clearTimeout(st.intent); st.intentIdx = -1; }
         st.item = h && h.type === "item" ? h.index : -1;
         paint(); return h;
     }

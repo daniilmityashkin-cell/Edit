@@ -238,7 +238,7 @@ select.input option { background: var(--surface); color: var(--text); }
 .noir-wheel { position: fixed; top: 0; right: 0; bottom: 0; left: 0; z-index: 95; background: radial-gradient(circle at 50% 50%, rgba(8, 14, 36, .9), rgba(3, 5, 14, .84) 78%); user-select: none; touch-action: none; cursor: default; animation: fadeIn var(--dur) var(--ease); }
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 .rw { position: absolute; width: 0; height: 0; transform-origin: 0 0; }
-.rw-ring { position: absolute; border-radius: 50%; border: 1px solid rgba(255, 255, 255, .14); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .06), 0 0 60px rgba(37, 99, 235, .25); -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); background: rgba(255, 255, 255, .03); animation: ringIn 220ms var(--ease); }
+.rw-ring { position: absolute; border-radius: 50%; border: 1px solid rgba(255, 255, 255, .14); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .06), 0 0 60px rgba(37, 99, 235, .25); background: rgba(255, 255, 255, .03); animation: ringIn 220ms var(--ease); }
 @keyframes ringIn { from { opacity: 0; transform: scale(.6); } to { opacity: 1; transform: none; } }
 .rw-tile { position: absolute; width: 50px; height: 50px; padding: 0; display: flex; align-items: center; justify-content: center; border: 0; border-radius: 50%; color: #fff; cursor: pointer;
     background: linear-gradient(160deg, rgba(147, 197, 253, .9), rgba(59, 130, 246, .9) 52%, rgba(29, 78, 216, .95)); box-shadow: inset 0 2px 6px rgba(255, 255, 255, .4), inset 0 -5px 10px rgba(30, 58, 138, .45), 0 8px 18px rgba(37, 99, 235, .35);
@@ -252,8 +252,7 @@ select.input option { background: var(--surface); color: var(--text); }
 .rw-label { max-width: 100%; font-size: var(--fs, 11px); font-weight: 600; line-height: 1.15; text-align: center; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; text-shadow: 0 1px 4px rgba(15, 23, 80, .6); }
 .rw-status { max-width: 100%; font-size: 9px; line-height: 1.1; color: rgba(255, 255, 255, .85); text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* the section's actions: one glass sheet in a fixed place beside / under the ring */
-.rw-sheet { position: absolute; z-index: 2; padding: 0 10px 10px; border-radius: 18px; background: rgba(20, 27, 48, .82); border: 1px solid rgba(255, 255, 255, .12);
-    -webkit-backdrop-filter: blur(24px) saturate(170%); backdrop-filter: blur(24px) saturate(170%);
+.rw-sheet { position: absolute; z-index: 2; padding: 0 10px 10px; border-radius: 18px; background: linear-gradient(180deg, rgba(28, 37, 66, .97), rgba(18, 25, 46, .97)); border: 1px solid rgba(255, 255, 255, .12);
     box-shadow: 0 24px 60px rgba(0, 0, 0, .5), inset 0 1px 0 rgba(255, 255, 255, .07); font-family: var(--font); }
 .rw-sheet.leaving { opacity: 0; transform: scale(.98); transition: opacity 150ms ease-in, transform 150ms ease-in; }
 .rw-sheet.enter { animation: sheetIn 240ms cubic-bezier(.2, .9, .25, 1) both; }
@@ -261,8 +260,10 @@ select.input option { background: var(--surface); color: var(--text); }
 @keyframes sheetIn { from { opacity: 0; transform: translateY(8px) scale(.98); } to { opacity: 1; transform: none; } }
 @keyframes sheetInR { from { opacity: 0; transform: translateX(-10px) scale(.98); } to { opacity: 1; transform: none; } }
 @keyframes sheetInL { from { opacity: 0; transform: translateX(10px) scale(.98); } to { opacity: 1; transform: none; } }
-.rw-sheet.swap .rw-sheet-head, .rw-sheet.swap .rw-grid { animation: contentIn 180ms ease-out both; }
-@keyframes contentIn { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
+/* switching sections: the new content is there at once (no blank frame), only a light settle */
+.rw-sheet.swap .rw-grid { animation: contentIn 120ms ease-out; }
+@keyframes contentIn { from { opacity: .75; } to { opacity: 1; } }
+.rw-sheet.swap .rw-item { animation: none; }
 .rw-sheet-head { display: flex; align-items: center; gap: 10px; height: 40px; padding: 0 2px; }
 .rw-sheet-icon { flex: none; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; border-radius: 8px; background: linear-gradient(160deg, #93c5fd, #2563eb); color: #fff; }
 .rw-sheet-icon svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
@@ -271,7 +272,7 @@ select.input option { background: var(--surface); color: var(--text); }
 .rw-grid { display: grid; grid-template-columns: repeat(var(--cols, 2), var(--colw, 150px)); gap: 4px 6px; }
 .rw-item { position: relative; display: flex; align-items: center; gap: 8px; height: 34px; padding: 0 10px 0 12px; border: 0; border-radius: 10px; background: rgba(255, 255, 255, .055);
     color: #e2e8f0; font: 500 13px/1 var(--font); white-space: nowrap; text-align: left; cursor: pointer;
-    animation: rowIn 220ms cubic-bezier(.2, .9, .25, 1) both; animation-delay: calc(30ms + var(--j) * 18ms); transition: background 120ms ease-out, color 120ms ease-out, transform 120ms ease-out; }
+    animation: rowIn 160ms cubic-bezier(.2, .9, .25, 1) both; animation-delay: calc(var(--j) * 12ms); transition: background 120ms ease-out, color 120ms ease-out, transform 120ms ease-out; }
 @keyframes rowIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
 .rw-item-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; padding: 1px 0; }
 .rw-key { flex: none; min-width: 18px; height: 18px; padding: 0 4px; border-radius: 6px; background: rgba(255, 255, 255, .08); color: rgba(203, 213, 225, .7); font: 600 10.5px/18px var(--font); text-align: center; }

@@ -311,7 +311,11 @@ function layoutProblems() {
         await page.mouse.move(t2.x + t2.width / 2, t2.y + t2.height / 2); await page.waitForTimeout(250);
         assert.ok(await page.locator(".rw-sheet").isVisible(), "панель раздела показана");
         assert.strictEqual(await page.locator(".rw-sheet.over").count(), 0, "в окне 520×500 панель не поверх кольца");
-        await page.mouse.move(2, 2); await page.waitForTimeout(600);
+        // moving straight onto another tile switches the section at once, even while the pointer keeps moving
+        const t4 = await page.locator(".rw-tile").nth(3).boundingBox();
+        await page.mouse.move(t4.x + t4.width / 2 - 3, t4.y + t4.height / 2, { steps: 6 }); await page.mouse.move(t4.x + t4.width / 2 + 3, t4.y + t4.height / 2, { steps: 3 });
+        assert.ok(await page.locator(".rw-tile").nth(3).evaluate(e => e.classList.contains("active")), "раздел переключается сразу");
+                await page.mouse.move(2, 2); await page.waitForTimeout(600);
         assert.strictEqual(await page.locator(".rw-sheet").isVisible(), false, "курсор ушёл — панель спряталась");
         await page.keyboard.press("Escape");
                 await page.setViewportSize({ width: 400, height: 720 });
