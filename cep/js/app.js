@@ -57,7 +57,7 @@
         var main = el("main", "pages", shell);
         PAGES.forEach(function (id) { var p = el("section", "page page-" + id, main); p.id = "page-" + id; p.hidden = true; view.pages[id] = p; });
         buildHome(view.pages.home); buildVideo(view.pages.video); buildText(view.pages.text); buildStyle(view.pages.style); buildEdit(view.pages.edit); buildSettings(view.pages.settings);
-        if (window.NoirWheel) NoirWheel.init({ run: run, act: act, generate: generate, page: go, state: function () { return S; }, presets: function () { return presets; }, notify: U.toast });
+        if (window.NoirWheel) NoirWheel.init({ run: run, act: act, call: H.call, generate: generate, page: go, state: function () { return S; }, presets: function () { return presets; }, meta: function () { return meta; }, status: pillState, notify: U.toast });
         if (window.NoirAssistant) NoirAssistant.init({ call: H.call, idle: H.idle, state: function () { return S; }, page: go, generate: generate, notify: U.toast });
         go(page, true);
         if (S) render();
@@ -280,6 +280,7 @@
         U.field(q, { path: "quick.intensity", label: t("style.intensity"), kind: "segmented", options: [{ id: "0.5", label: t("int.soft") }, { id: "1", label: t("int.normal") }, { id: "1.5", label: t("int.strong") }] });
         U.field(q, { path: "style.layout.reveal", label: t("style.reveal"), kind: "segmented", options: meta.reveals.map(function (r) { return { id: r.id, label: r.id === "word" ? "По словам" : r.id === "group" ? "Фразой" : "Караоке" }; }) });
         U.field(q, { path: "style.layout.layerMode", label: t("style.layers"), kind: "segmented", options: meta.layerModes });
+        U.field(q, { path: "style.anim.highlightColor", label: "Цвет подсветки караоке", kind: "color", show: function (st) { return st.settings.style.layout.reveal === "karaoke"; }, value: function (st) { return st.settings.style.anim.highlightColor || st.settings.style.accent.color; } });
         var fmt = U.card(p, t("style.format"));
         U.field(fmt, { path: "format", label: t("style.format"), kind: "select", options: meta.formats });
         var gr = U.row(fmt, "actions wrap");

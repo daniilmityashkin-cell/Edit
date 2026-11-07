@@ -468,21 +468,70 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         return c;
     }
 
+    // «Слой на фразу»: слова одной строки с одинаковым видом (обычные / один и тот же акцент / инверсия) — один слой.
+    // Фраза без акцентов и зон — один слой на все строки (перенос строки внутри слоя).
+    // Каждый такой слой помнит свои слова (words) — их время нужно аниматорам появления и караоке.
+    function sameLook(a, b) { return a.accent === b.accent && !!a.invert === !!b.invert && (!a.accent || a.ord === b.ord || a.ord === undefined); }
+    function mergeRuns(items, layout, zones) {
+        var lines = N.splitLines(items, layout), out = [], plain = !zones, i, j;
+        for (i = 0; i < items.length; i++) if (items[i].accent || items[i].invert) plain = false;
+        if (plain) {
+            var text = [], wordsAll = [];
+            for (i = 0; i < lines.length; i++) { var t = []; for (j = 0; j < lines[i].length; j++) { t.push(lines[i][j].text); wordsAll.push(lines[i][j]); } text.push(t.join(" ")); }
+            return [{ text: text.join("\r"), accent: false, invert: false, start: items[0].start, order: 0, words: wordsAll, lines: lines.length }];
+        }
+        for (i = 0; i < lines.length; i++) {
+            var run = null;
+            for (j = 0; j < lines[i].length; j++) {
+                var it = lines[i][j];
+                if (run && sameLook(run.words[0], it) && !(layout.accentOwnLine && it.accent)) { run.text += " " + it.text; run.words.push(it); continue; }
+                run = { text: it.text, accent: it.accent, invert: it.invert, ord: it.ord, start: it.start, order: it.order, lineBefore: j === 0 && i > 0, words: [it] };
+                out.push(run);
+            }
+        }
+        return out;
+    }
+    // Текстовый аниматор с селектором-выражением по словам. kind: reveal — слова проявляются в момент произнесения;
+    // karaoke — текущее слово окрашивается в color. Время в выражении — от начала слоя, поэтому сдвиг слоя по времени его не ломает.
+    N.wordAnimator = function (layer, kind, words, tIn, color) {
+        var t = [], e = [], i;
+        for (i = 0; i < words.length; i++) { t.push(Math.round((words[i].wStart - tIn) * 1000) / 1000); e.push(Math.round((words[i].wEnd - tIn) * 1000) / 1000); }
+        var expr = kind === "reveal" ?
+            "var t=[" + t.join(",") + "];var i=Math.min(textIndex,t.length)-1;selectorValue*linear(time-inPoint,t[i],t[i]+0.08,1,0);" :
+            "var t=[" + t.join(",") + "],e=[" + e.join(",") + "];var i=Math.min(textIndex,t.length)-1;var s=time-inPoint;var n=i+1<t.length?t[i+1]:e[i];selectorValue*((s>=t[i]&&s<Math.max(e[i],n))?1:0);";
+        try {
+            var an = layer.property("ADBE Text Properties").property("ADBE Text Animators").addProperty("ADBE Text Animator");
+            an.name = kind === "reveal" ? "NOIR Words" : "NOIR Karaoke";
+            var props = an.property("ADBE Text Animator Properties");
+            if (kind === "reveal") props.addProperty("ADBE Text Opacity").setValue(0);
+            else props.addProperty("ADBE Text Fill Color").setValue(color || [1, 0.85, 0.2]);
+            var sel = an.property("ADBE Text Selectors").addProperty("ADBE Text Expressible Selector");
+            try { sel.property("ADBE Text Range Type2").setValue(3); } catch (eType) {}       // по словам
+            sel.property("ADBE Text Expressible Amount").expression = expr;
+            return expr;
+        } catch (err) { return null; }
+    };
+
     function buildGroup(comp, g, style, anim, ctx) {
         var layout = style.layout;
         var hasAccent = false, i, j;
         for (i = 0; i < g.words.length; i++) if (g.words[i].accent || g.words[i].invert || g.words[i].lineBefore) hasAccent = true;
 
         if (layout.lineChars && g.text.length > layout.lineChars) hasAccent = true;
+        var phraseMode = layout.layerMode === "phrase", karaoke = layout.reveal === "karaoke", wordReveal = layout.reveal === "word" || !layout.reveal;
         var items = [];
-        if (layout.reveal === "group" && !hasAccent) {
+        if (layout.reveal === "group" && !hasAccent && !phraseMode) {
             items.push({ text: g.text, accent: false, start: g.compStart, order: 0 });
         } else {
-            for (i = 0; i < g.words.length; i++) items.push({
-                text: g.words[i].text, accent: !!g.words[i].accent, invert: !!g.words[i].invert, lineBefore: !!g.words[i].lineBefore, ord: g.words[i].ord,
-                start: layout.reveal === "group" ? g.compStart : g.words[i].compStart, order: i
-            });
+            for (i = 0; i < g.words.length; i++) {
+                var ws = g.words[i].compStart, we = g.words[i].compEnd !== undefined ? g.words[i].compEnd : (i + 1 < g.words.length ? g.words[i + 1].compStart : g.compOut);
+                items.push({
+                    text: g.words[i].text, accent: !!g.words[i].accent, invert: !!g.words[i].invert, lineBefore: !!g.words[i].lineBefore, ord: g.words[i].ord,
+                    start: wordReveal ? ws : g.compStart, wStart: ws, wEnd: Math.max(ws + 0.04, we), order: i
+                });
+            }
         }
+        if (phraseMode) items = mergeRuns(items, layout, hasZones(layout));
 
         var tOut = g.compOut;
         var safeW = comp.width * layout.safeWidth;
@@ -532,6 +581,9 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
                 L.startTime = 0;
                 L.inPoint = tIn;
                 L.outPoint = tOut;
+                if (w.words && w.words.length > 1 && wordReveal) N.wordAnimator(L, "reveal", w.words, tIn, null);
+                if (karaoke && w.words) N.wordAnimator(L, "karaoke", w.words, tIn, anim.highlightColor || style.accent.color);
+                else if (karaoke) N.wordAnimator(L, "karaoke", [{ wStart: w.wStart, wEnd: w.wEnd }], tIn, anim.highlightColor || style.accent.color);
 
                 if (w.st.shadow) addShadow(L, w.st.shadow, "NOIR Shadow", ctx.scale);
                 if (w.st.glow) addShadow(L, { color: w.st.glow.color || w.st.color, opacity: w.st.glow.opacity,

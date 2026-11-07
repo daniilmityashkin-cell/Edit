@@ -166,6 +166,40 @@ async function step(name, fn) {
         await page.waitForSelector(".noir-wheel"); await shot("wheel");
         await page.keyboard.press("Escape"); assert.strictEqual(await page.locator(".noir-wheel").count(), 0);
     });
+    await step("радиальное меню v2: до 8 секторов, клавиши 1–8, пункты второго кольца не налезают друг на друга и не выходят за панель", async () => {
+        const bad = [];
+        for (const [w, h] of [[300, 520], [460, 640], [820, 700]]) {
+            await page.setViewportSize({ width: w, height: h });
+            for (const [x, y] of [[w / 2, h / 2], [20, 20], [w - 10, h - 10]]) {
+                await page.evaluate(([x, y]) => NoirWheel.open(x, y, "sticky"), [x, y]);
+                const n = await page.locator(".rw-tile").count(); assert.ok(n >= 4 && n <= 8, "sectors " + n);
+                for (let k = 1; k <= n; k++) {
+                    await page.keyboard.press(String(k)); if (!(await page.evaluate(() => NoirWheel.isOpen()))) { await page.evaluate(([x, y]) => NoirWheel.open(x, y, "sticky"), [x, y]); continue; }
+                    await page.waitForTimeout(30);
+                    const r = await page.evaluate(() => {
+                        const boxes = [...document.querySelectorAll(".rw-item, .rw-tile, .rw-orb")].map(e => ({ c: e.className, t: e.textContent, r: e.getBoundingClientRect() })), out = [];
+                        for (let i = 0; i < boxes.length; i++) {
+                            const a = boxes[i].r; if (a.left < -1 || a.top < -1 || a.right > innerWidth + 1 || a.bottom > innerHeight + 1) out.push("за краем: " + boxes[i].t);
+                            for (let j = i + 1; j < boxes.length; j++) { const b = boxes[j].r;
+                                const round = (k) => /rw-tile|rw-orb/.test(boxes[k].c); if (round(i) && round(j)) { const d = Math.hypot((a.left + a.right - b.left - b.right) / 2, (a.top + a.bottom - b.top - b.bottom) / 2); if (d < (a.width + b.width) / 2 - 1) out.push(boxes[i].t + " ○ " + boxes[j].t); continue; }
+                                if (Math.min(a.right, b.right) - Math.max(a.left, b.left) > 1 && Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top) > 1) out.push(boxes[i].t + " × " + boxes[j].t); }
+                        }
+                        return out;
+                    });
+                    r.forEach(m => bad.push(w + "px @" + Math.round(x) + "," + Math.round(y) + " сектор " + k + ": " + m));
+                    await page.keyboard.press("Backspace");
+                }
+                await page.keyboard.press("Escape"); await page.keyboard.press("Escape");
+            }
+        }
+        await page.setViewportSize({ width: 460, height: 640 });
+        if (bad.length) console.log([...new Set(bad)].slice(0, 30).map(x => "       · " + x).join("\n"));
+        assert.strictEqual(bad.length, 0);
+        // keyboard: 1 opens the first sector (Позиция), 3 = Внизу moves captions
+        await page.evaluate(() => NoirWheel.open(230, 320, "sticky")); await page.keyboard.press("1"); await page.keyboard.press("3"); await settle();
+        assert.ok(/Фраз перемещено/.test(await page.evaluate(() => NoirHost.state().status)));
+        assert.strictEqual(await page.evaluate(() => NoirWheel.isOpen()), false);
+    });
     await step("помощник: план показывается до выполнения; «Отмена» ничего не меняет, «Применить» выполняет", async () => {
         await page.evaluate(() => NoirAssistant.setSettings({ endpoint: "http://127.0.0.1:59999" }));
         await page.evaluate(() => NoirAssistant.open());
@@ -190,6 +224,44 @@ async function step(name, fn) {
             assert.ok(over <= 1, p + " overflows by " + over);
         }
         await tab("text"); await page.waitForTimeout(300); await shot("narrow-text");
+    });
+    await step("ничего не налезает: тексты, иконки и поля не пересекаются и не вылезают из кнопок (все страницы, 4 ширины)", async () => {
+        const problems = [];
+        for (const [w, h] of [[300, 560], [380, 640], [460, 700], [820, 760]]) {
+            await page.setViewportSize({ width: w, height: h });
+            for (const p of ["home", "video", "text", "style", "edit", "settings"]) {
+                await tab(p); await page.waitForTimeout(p === "home" ? 50 : 220);
+                if (p === "home") { const orb = await page.locator(".orbit-orb").boundingBox(); await page.mouse.move(orb.x + orb.width / 2, orb.y + orb.height / 2); await page.waitForTimeout(900); }
+                const found = await page.evaluate(() => {
+                    const out = [], vis = (e) => { const r = e.getBoundingClientRect(), cs = getComputedStyle(e); return r.width > 0 && r.height > 0 && cs.visibility !== "hidden" && cs.opacity !== "0" && e.offsetParent !== null; };
+                    const name = (e) => (e.className && e.className.baseVal !== undefined ? e.getAttribute("class") : e.className) + ":" + (e.textContent || e.getAttribute("aria-label") || "").trim().slice(0, 24);
+                    const scope = document.querySelector(".shell");
+                    // 1) text that does not fit its box (and is not deliberately cut with an ellipsis)
+                    [...scope.querySelectorAll("button, .btn-label, .field-label, .tile-label, .style-name, .seg, .tab, .chip, label, .pill, .title")].filter(e => !e.classList.contains("orbit-tile") && !e.classList.contains("orbit-orb")).forEach(e => {
+                        if (!vis(e)) return; const cs = getComputedStyle(e);
+                        if (cs.textOverflow === "ellipsis" || cs.overflow === "hidden" && e.classList.contains("btn-label")) return;
+                        if (e.scrollWidth > e.clientWidth + 1 && cs.overflowX !== "auto" && cs.overflowX !== "scroll") out.push("вылезает " + name(e) + " " + e.scrollWidth + ">" + e.clientWidth);
+                    });
+                    // 2) leaf things that overlap each other
+                    const leaves = [...scope.querySelectorAll(".btn-label, .icon, .tile-label, .tile-icon, .field-label, input, select, textarea, .seg, .style-name, .range-value, .pill, .title, .brand, .lead, .hint, .orbit-orb, .orbit-tile")].filter(vis)
+                        .filter(e => !e.closest(".topbar .btn.primary .icon"));
+                    const rects = leaves.map(e => e.getBoundingClientRect());
+                    for (let i = 0; i < leaves.length; i++) for (let j = i + 1; j < leaves.length; j++) {
+                        const a = leaves[i], b = leaves[j]; if (a.contains(b) || b.contains(a)) continue;
+                        if (a.closest(".orbit-tile") && a.closest(".orbit-tile") === b.closest(".orbit-tile")) continue;
+                        if (!!a.closest(".sticky-actions") !== !!b.closest(".sticky-actions")) continue;   // the sticky action bar floats over the page by design
+                        if ((a.classList.contains("orbit-tile") && b.closest(".orbit-tile")) || (b.classList.contains("orbit-tile") && a.closest(".orbit-tile"))) continue;
+                        const r = rects[i], q = rects[j], ox = Math.min(r.right, q.right) - Math.max(r.left, q.left), oy = Math.min(r.bottom, q.bottom) - Math.max(r.top, q.top);
+                        if (ox > 1.5 && oy > 1.5) out.push("наложение " + name(a) + " × " + name(b));
+                    }
+                    return out;
+                });
+                found.forEach(f => problems.push(w + "px " + p + ": " + f));
+                if (p === "home") await page.mouse.move(1, 1);
+            }
+        }
+        await page.setViewportSize({ width: 460, height: 640 });
+        const uniq = [...new Set(problems)]; if (uniq.length) console.log(uniq.map(x => "       · " + x).join("\n")); assert.strictEqual(uniq.length, 0, uniq.length + " problems");
     });
     await step("нет ошибок в консоли", async () => { assert.deepStrictEqual(errors, [], errors.join("\n")); });
 

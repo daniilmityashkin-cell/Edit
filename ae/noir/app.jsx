@@ -10,7 +10,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
 (function (N) {
     var SECTION = "NOIR Captions";
     var SETTINGS_KEY = "settings.v2";
-    N.VERSION = "0.30.0";
+    N.VERSION = "0.31.0";
 
     function clone(o) { return N.parseJSON(N.stringify(o)); }
 
@@ -202,7 +202,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         }
         function choosePreset(p) {
             S.style = { layout: clone(p.layout), base: clone(p.base), accent: clone(p.accent), anim: clone(p.anim) };
-            if (!S.style.layout.layerMode) S.style.layout.layerMode = "word";
+            if (!S.style.layout.layerMode) S.style.layout.layerMode = "phrase";       // since 0.31 the default; a style may ask for "word"
             S.presetId = p.id; S.quick = clone(DEFAULTS.quick); saveSettings(S);
         }
         function setFont(side, ps) {

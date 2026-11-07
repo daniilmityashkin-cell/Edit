@@ -270,6 +270,57 @@ const GOPTS = { maxWords: 1, maxChars: 99, pauseBreak: 0.35, punctBreak: true, s
     assert.strictEqual(r.created, 3); assert.ok(subs(c).every(l => l.outPoint <= 2.5));
   });
 
+  console.log("слой на фразу и караоке");
+  const evalSel = (expr, time, inPoint, textIndex) => new Function("time", "inPoint", "textIndex", "selectorValue", "linear",
+    expr.replace(/;([^;]*);?$/, ";return $1;"))(time, inPoint, textIndex, 1, (x, a, b, c, d) => x <= a ? c : x >= b ? d : c + (d - c) * (x - a) / (b - a));
+  const animByName = (l, nm) => l.textProps.property("ADBE Text Animators").kids.find(x => x.name === nm);
+  const exprOf = (an) => an.property("ADBE Text Selectors").kids[0].property("ADBE Text Expressible Amount").expression;
+  const phraseGen = (c, id, tweak) => { const st = styleOf(id || "reels-glow"); st.layout.autoAccent = false; st.layout.layerMode = "phrase"; if (tweak) tweak(st); return { st, r: N.generate(c, prep(N.flattenWords(sample()), st.layout), st, st.anim, true) }; };
+  await test("слой на фразу: фраза без акцентов — один слой, слова в нём по порядку; слои не по словам", () => {
+    const c = mkComp(); const { st } = phraseGen(c, "reels-glow", st => { st.layout.reveal = "word"; st.layout.maxWords = 6; st.layout.maxChars = 99; st.layout.lineChars = 0; st.layout.punctBreak = false; st.layout.pauseBreak = 5; });
+    const ls = subs(c), groups = prep(N.flattenWords(sample()), st.layout);
+    assert.strictEqual(ls.length, groups.length, "по слою на фразу: " + ls.map(l => l.src.value.text).join(" | "));
+    ls.forEach(l => assert.ok(/ /.test(l.src.value.text), "в слое несколько слов"));
+  });
+  await test("слой на фразу: слова проявляются в момент произнесения (селектор по словам, время от начала слоя)", () => {
+    const c = mkComp(); phraseGen(c, "reels-glow", st => { st.layout.reveal = "word"; st.layout.maxWords = 6; st.layout.maxChars = 99; st.layout.lineChars = 0; st.layout.punctBreak = false; st.layout.pauseBreak = 5; });
+    const l = subs(c).sort((a, b) => a.inPoint - b.inPoint)[0], an = animByName(l, "NOIR Words"); assert.ok(an, "аниматор появления слов");
+    const sel = an.property("ADBE Text Selectors").kids[0]; assert.strictEqual(sel.matchName, "ADBE Text Expressible Selector");
+    assert.strictEqual(sel.property("ADBE Text Range Type2").value, 3);
+    const e = exprOf(an), n = l.src.value.text.split(" ").length, t0 = l.inPoint;
+    assert.strictEqual(evalSel(e, t0, t0, 1), 1, "первое слово ещё скрыто ровно в начале"); assert.strictEqual(evalSel(e, t0 + 0.2, t0, 1), 0, "первое слово видно");
+    assert.strictEqual(evalSel(e, t0 + 0.05, t0, n), 1, "последнее слово ещё скрыто");
+    assert.strictEqual(evalSel(e, l.outPoint - 0.01, t0, n), 0, "к концу фразы видно всё");
+    assert.strictEqual(evalSel(e, t0 + 10 + 0.2, t0 + 10, 1), 0, "сдвиг слоя по времени не ломает тайминг");
+  });
+  await test("караоке: все слова видны сразу, текущее слово подсвечивается цветом подсветки", () => {
+    const c = mkComp(); const { st } = phraseGen(c, "reels-glow", st => { st.layout.reveal = "karaoke"; st.anim.highlightColor = [1, 0.8, 0]; st.layout.maxWords = 6; st.layout.maxChars = 99; st.layout.lineChars = 0; st.layout.punctBreak = false; st.layout.pauseBreak = 5; });
+    const l = subs(c).sort((a, b) => a.inPoint - b.inPoint)[0];
+    assert.ok(!animByName(l, "NOIR Words"), "в караоке слова не прячутся");
+    const an = animByName(l, "NOIR Karaoke"); assert.ok(an);
+    assert.deepStrictEqual(an.property("ADBE Text Animator Properties").kids.find(k => k.matchName === "ADBE Text Fill Color").value, [1, 0.8, 0]);
+    const words = sample().segments[0].words, e = exprOf(an), t0 = l.inPoint;
+    assert.strictEqual(evalSel(e, words[0].start + 0.05, t0, 1), 1); assert.strictEqual(evalSel(e, words[0].start + 0.05, t0, 2), 0);
+    assert.strictEqual(evalSel(e, words[1].start + 0.01, t0, 1), 0); assert.strictEqual(evalSel(e, words[1].start + 0.01, t0, 2), 1);
+  });
+  await test("караоке со слоем на слово: каждое слово — свой слой, видны с начала фразы, подсветка в своё время", () => {
+    const c = mkComp(); phraseGen(c, "reels-glow", st => { st.layout.layerMode = "word"; st.layout.reveal = "karaoke"; st.layout.maxWords = 6; st.layout.maxChars = 99; st.layout.lineChars = 0; st.layout.punctBreak = false; st.layout.pauseBreak = 5; });
+    const ls = subs(c); assert.ok(ls.every(l => !/ /.test(l.src.value.text)));
+    const g0 = ls.filter(l => N.groupInfo(l).gid === N.groupInfo(ls[ls.length - 1]).gid);
+    assert.ok(g0.every(l => Math.abs(l.inPoint - g0[0].inPoint) < 1e-9), "слова видны с начала фразы");
+    assert.ok(ls.every(l => animByName(l, "NOIR Karaoke")));
+  });
+  await test("слой на фразу с акцентами: акцент — отдельный слой своего стиля, обычные слова строки — один слой", () => {
+    const c = mkComp(); const st = styleOf("kinetic-stack"); st.layout.autoAccent = false; st.layout.layerMode = "phrase"; st.layout.lineChars = 40; st.layout.maxChars = 99; st.layout.maxWords = 9;
+    const d = { segments: [{ words: "мы продаём *дома* у моря".split(" ").map((t, i) => ({ text: t.replace(/\*/g, ""), start: i * 0.3, end: i * 0.3 + 0.25 })) }] };
+    const words = N.applyEdits(d, "мы продаём *дома* у моря", []); N.generate(c, prep(words, st.layout), st, st.anim, true);
+    const ls = subs(c), acc = ls.filter(l => l.label === 11);
+    assert.strictEqual(acc.length, 1); assert.ok(/дома/i.test(acc[0].src.value.text));
+    assert.ok(ls.length <= 4 && ls.length >= 2, ls.map(l => l.src.value.text).join(" | "));
+  });
+  await test("стиль выбранный в панели получает «слой на фразу», старые настройки без режима — «слой на слово»", () => {
+    const a = N.createApp(ROOT); a.call("preset.choose", { id: "reels-glow" }); assert.strictEqual(a.settings().style.layout.layerMode, "phrase");
+  });
   console.log("правка выделенных слоёв");
   const gen = (c, id, anim) => { const st = styleOf(id || "reels-glow"); st.layout.autoAccent = false; return N.generate(c, prep(N.flattenWords(sample()), st.layout), st, anim || st.anim, true); };
   const NOANIM = { animIn: "none", inDur: 0, animOut: "none", outDur: 0, distance: 0, blur: 0, easeInfluence: 80 };
