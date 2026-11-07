@@ -10,7 +10,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
 (function (N) {
     var SECTION = "NOIR Captions";
     var SETTINGS_KEY = "settings.v2";
-    N.VERSION = "0.33.0";
+    N.VERSION = "0.33.1";
 
     function clone(o) { return N.parseJSON(N.stringify(o)); }
 
@@ -965,6 +965,12 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             for (var i = 1; i <= comp.numLayers; i++) { var info = N.groupInfo(comp.layer(i)); if (info && info.sourceKey === key) return true; }
             return false;
         }
+        function sourceName() {
+            if (!st.data) return "";
+            if (st.link && st.link.layerName) return String(st.link.layerName);
+            var f = st.data.source && st.data.source.file ? String(st.data.source.file) : "";
+            return f ? f.replace(/^.*[\\\/]/, "") : "";
+        }
         function hasControl() { try { var c = app.project.activeItem; return c instanceof CompItem && !!N.findControl(c); } catch (e) { return false; } }
         function state() {
             var ls = lines(), phrases = [], words = [], i;
@@ -974,7 +980,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             return { version: N.VERSION, status: st.status, progress: st.progress, recognizing: st.recognizing, scanning: st.scanning,
                 hasData: !!st.data, dataRevision: st.dataRevision, text: st.text, dirty: dirty(), phraseDirty: !!st.data && (ls[st.phrase] !== st.cleanLines[st.phrase] || !!st.timing[st.phrase]),
                 phrase: st.phrase, phrases: phrases, words: words, canUpdate: canUpdate(), completed: st.completed, issues: st.issues, pending: !!st.pending,
-                settings: S, face: st.face, historyLength: st.history.length, control: hasControl() };
+                settings: S, face: st.face, historyLength: st.history.length, control: hasControl(), source: sourceName() };
         }
 
         return {

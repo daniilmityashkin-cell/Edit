@@ -158,7 +158,9 @@
         });
         rw.removeChild(probe);
         var vw = window.innerWidth, vh = window.innerHeight, pad = 8;
-        var k = Math.min(1, (vw - 2 * pad) / (maxX - minX), (vh - 2 * pad) / (maxY - minY)); st.k = k;
+        // bigger in a bigger panel (up to 1.7×), never larger than the panel allows
+        var grow = Math.max(1, Math.min(1.7, Math.min(vw, vh) / 430));
+        var k = Math.min(grow, (vw - 2 * pad) / (maxX - minX), (vh - 2 * pad) / (maxY - minY)); st.k = k;
         var cx = Math.min(vw - pad - maxX * k, Math.max(pad - minX * k, x)), cy = Math.min(vh - pad - maxY * k, Math.max(pad - minY * k, y));
         st.cx = cx; st.cy = cy; rw.style.left = cx + "px"; rw.style.top = cy + "px"; rw.style.transform = "scale(" + k + ")";
         if (!st.bound) {

@@ -169,6 +169,11 @@
         U.button(t("act.importSubs"), "ghost small", other, function () { act("subs.import"); }, "fileIn");
         // with text
         v.body = el("div", "text-body", p);
+        var src = U.card(v.body, null, null, "source-card");
+        var sr = U.row(src, "source-row"); U.icon("mic", sr);
+        v.source = el("span", "source-name", sr); el("span", "spacer", sr);
+        v.reRec = U.button(t("act.recNew"), "small", sr, function () { if (S && S.recognizing) act("cancel"); else recognize(); }, "mic");
+        el("p", "hint", src, t("text.recNewHint"));
         var c = U.card(v.body, null, t("text.lead"));
         var nav = U.row(c, "phrase-nav");
         U.iconButton("prev", "←", nav, function () { if (S && S.phrase > 0) act("phrase.select", { index: S.phrase - 1 }); });
@@ -193,7 +198,11 @@
         // word timing of the selected phrase
         var tl = el("div", "timeline", c);
         var th = U.row(tl, "tl-head"); el("span", "field-label", th, t("tl.title")); el("span", "spacer", th); v.tlRange = el("span", "muted small", th);
-        v.track = el("div", "tl-track", tl); v.track.setAttribute("role", "group"); v.track.setAttribute("aria-label", t("tl.title"));
+        U.iconButton("minus", t("tl.zoomOut"), th, function () { zoomTimeline(1 / 1.5); }, "small");
+        U.iconButton("plus", t("tl.zoomIn"), th, function () { zoomTimeline(1.5); }, "small");
+        v.tlScroll = el("div", "tl-scroll", tl);
+        v.ruler = el("div", "tl-ruler", v.tlScroll);
+        v.track = el("div", "tl-track", v.tlScroll); v.track.setAttribute("role", "group"); v.track.setAttribute("aria-label", t("tl.title"));
         el("p", "hint", tl, t("tl.hint"));
         var gen = U.row(v.body, "actions wrap sticky-actions");
         v.create = U.button(t("act.create"), "primary", gen, function () { generate("all"); });
@@ -243,6 +252,8 @@
         if (v.lastPhrase !== S.phrase && document.activeElement !== v.editor) selectLine(S.phrase);
         v.lastPhrase = S.phrase;
         renderTimeline();
+        v.source.textContent = t("text.source", { name: S.source || "—" });
+        label(v.reRec, S.recognizing ? t("act.cancel") + (S.progress ? " · " + Math.round(S.progress * 100) + "%" : "") : t("act.recNew"));
         v.undo.disabled = !S.historyLength;
         v.update.hidden = !S.canUpdate;
         label(v.create, S.canUpdate ? t("act.updateAll") : t("act.create"));
@@ -257,20 +268,45 @@
     // Word timeline: blocks on a time axis. Drag the edges to trim, the body to move; click — playhead to the word in AE;
     // double click — fix the word's text. Keys on a focused word: ←/→ move, Alt+←/→ start, Shift+←/→ end (20 ms).
     var MIN_WORD = 0.04;
+    // Pixels per second: the phrase fits the width, but never so tight that a word cannot show its text;
+    // then the user's zoom. A wider track scrolls sideways.
+    var measureCtx = null;
+    function textWidth(s) {
+        if (!measureCtx) { var cv = document.createElement("canvas"); measureCtx = cv.getContext("2d"); }
+        measureCtx.font = "500 12px Inter, sans-serif"; return measureCtx.measureText(s).width;
+    }
+    function zoomTimeline(f) { prefs.tlZoom = Math.max(0.5, Math.min(8, (prefs.tlZoom || 1) * f)); savePrefs(); view.text.tlSig = null; renderTimeline(); }
+    window.addEventListener("resize", function () { if (view.text && view.text.tlScroll) { view.text.tlSig = null; if (S) renderTimeline(); } });
     function renderTimeline() {
-        var v = view.text, words = S.words || [], sig = JSON.stringify(words) + "|" + S.phrase;
+        var v = view.text, words = S.words || [], width = v.tlScroll.clientWidth || 300, sig = JSON.stringify(words) + "|" + S.phrase + "|" + width + "|" + (prefs.tlZoom || 1);
         if (v.tlSig === sig || v.dragging) return;
-        v.tlSig = sig; v.track.textContent = "";
+        v.tlSig = sig; v.track.textContent = ""; v.ruler.textContent = "";
         if (!words.length) { v.tlRange.textContent = ""; return; }
-        var t0 = words[0].start - 0.15, t1 = words[words.length - 1].end + 0.15;
+        var t0 = words[0].start - 0.2, t1 = words[words.length - 1].end + 0.2;
         if (t1 - t0 < 0.8) { var mid = (t0 + t1) / 2; t0 = mid - 0.4; t1 = mid + 0.4; }
-        v.tl = { t0: t0, t1: t1, words: words.map(function (w) { return { start: w.start, end: w.end }; }) };
+        // two lanes (like an editing timeline): a word's label may run past its block up to the next word in the same lane
+        var pps = (width - 2) / (t1 - t0);
+        words.forEach(function (w, i) {
+            var room = (i + 2 < words.length ? words[i + 2].start : t1) - w.start;
+            var need = (Math.min(textWidth(w.text.replace(/[*~|]/g, "")), 140) + 18) / Math.max(0.04, room); if (need > pps) pps = need;
+        });
+        pps = Math.min(pps, 900) * (prefs.tlZoom || 1);
+        var full = Math.max(width - 2, Math.ceil((t1 - t0) * pps));
+        v.track.style.width = full + "px"; v.ruler.style.width = full + "px";
+        v.tl = { t0: t0, t1: t1, pps: pps, words: words.map(function (w) { return { start: w.start, end: w.end }; }) };
+        var step = pps > 400 ? 0.1 : pps > 160 ? 0.25 : pps > 70 ? 0.5 : 1;
+        for (var tt = Math.ceil(t0 / step) * step; tt <= t1; tt += step) {
+            var major = Math.abs(tt / (step * 2) - Math.round(tt / (step * 2))) < 1e-6 || step >= 1, tick = el("span", "tl-tick" + (major ? " major" : ""), v.ruler);
+            tick.style.left = Math.round((tt - t0) * pps) + "px"; if (major) tick.textContent = (Math.round(tt * 100) / 100).toFixed(step < 0.25 ? 1 : step < 1 ? 1 : 0);
+        }
         v.tlRange.textContent = words[0].start.toFixed(2) + " – " + words[words.length - 1].end.toFixed(2) + " с";
         words.forEach(function (w, i) {
             var b = el("button", "tl-word" + (w.accent ? " accent" : "") + (w.low ? " low" : ""), v.track); b.type = "button";
             b.dataset.index = i; b.title = w.text + " · " + w.start.toFixed(2) + "–" + w.end.toFixed(2) + " с" + (w.low ? " · " + t("text.low") : "");
             b.setAttribute("aria-label", w.text + ", " + w.start.toFixed(2) + "–" + w.end.toFixed(2));
-            el("span", "tl-text", b, w.text.replace(/[*~|]/g, ""));
+            b.classList.add(i % 2 ? "lane1" : "lane0");
+            var label = el("span", "tl-text", b, w.text.replace(/[*~|]/g, ""));
+            label.style.maxWidth = Math.max(10, Math.round(((i + 2 < words.length ? words[i + 2].start : t1) - w.start) * pps) - 14) + "px";
             el("span", "tl-h l", b); el("span", "tl-h r", b);
             placeWord(b, i);
             b.addEventListener("pointerdown", function (e) { startDrag(e, b, i); });
@@ -279,8 +315,8 @@
         });
     }
     function placeWord(b, i) {
-        var tl = view.text.tl, w = tl.words[i], span = tl.t1 - tl.t0;
-        b.style.left = ((w.start - tl.t0) / span * 100) + "%"; b.style.width = Math.max(0.5, (w.end - w.start) / span * 100) + "%";
+        var tl = view.text.tl, w = tl.words[i];
+        b.style.left = Math.round((w.start - tl.t0) * tl.pps) + "px"; b.style.width = Math.max(4, Math.round((w.end - w.start) * tl.pps) - 2) + "px";
     }
     function clampWord(i, s, e) {
         var ws = view.text.tl.words, lo = i > 0 ? ws[i - 1].start + MIN_WORD : 0, hi = i + 1 < ws.length ? ws[i + 1].end - MIN_WORD : e + 30;
@@ -289,7 +325,7 @@
     }
     function startDrag(e, b, i) {
         if (e.button !== 0) return;
-        var v = view.text, tl = v.tl, w = tl.words[i], rect = v.track.getBoundingClientRect(), perPx = (tl.t1 - tl.t0) / rect.width;
+        var v = view.text, tl = v.tl, w = tl.words[i], perPx = 1 / tl.pps;
         var mode = e.target.classList.contains("l") ? "start" : e.target.classList.contains("r") ? "end" : "move", x0 = e.clientX, s0 = w.start, e0 = w.end, moved = false;
         b.setPointerCapture && b.setPointerCapture(e.pointerId);
         v.dragging = true; b.classList.add("drag");

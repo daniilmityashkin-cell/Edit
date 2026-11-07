@@ -159,9 +159,12 @@ function layoutProblems() {
         await page.evaluate(() => NoirHost.call("phrase.select", { index: 0 })); await settle();
         assert.strictEqual(await page.locator(".tl-word").count(), 3);
         const end0 = (await hostState()).words[0].end;
+        await page.locator(".timeline").evaluate(e => e.scrollIntoView({ block: "start" })); await page.waitForTimeout(100);
+        const pps = await page.evaluate(() => { const t = document.querySelector(".tl-track"); return t.getBoundingClientRect().width; });
+        assert.ok(await page.evaluate(() => [...document.querySelectorAll(".tl-word .tl-text")].every(x => x.scrollWidth <= x.clientWidth + 1)), "слова в таймлайне не обрезаны");
         const h = await page.locator('.tl-word[data-index="0"] .tl-h.r').boundingBox();
         await page.mouse.move(h.x + h.width / 2, h.y + h.height / 2); await page.mouse.down();
-        await page.mouse.move(h.x + h.width / 2 + 12, h.y + h.height / 2, { steps: 4 }); await page.mouse.move(h.x + h.width / 2 + 25, h.y + h.height / 2, { steps: 4 }); await page.mouse.up(); await settle();
+        await page.mouse.move(h.x + h.width / 2 + 12, h.y + h.height / 2, { steps: 4 }); await page.mouse.move(h.x + h.width / 2 + 40, h.y + h.height / 2, { steps: 4 }); await page.mouse.up(); await settle();
         const s1 = await hostState();
         assert.ok(s1.words[0].end > end0 + 0.03, end0 + " → " + s1.words[0].end); assert.ok(s1.words[0].end <= s1.words[1].start + 1e-9, "порядок слов сохранён");
         assert.strictEqual(s1.phraseDirty, true);
