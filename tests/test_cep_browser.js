@@ -406,6 +406,51 @@ function layoutProblems() {
         await page.evaluate(() => NoirAssistant.setSettings({ endpoint: "http://127.0.0.1:59999" }));
         await page.unroute("http://127.0.0.1:11434/**");
     });
+    await step("память помощника: «запомни», «что ты помнишь», принятый ответ ИИ повторяется без ИИ, предпочтения уходят в ИИ; список в настройках с удалением", async () => {
+        const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "Content-Type", "Access-Control-Allow-Methods": "GET, POST, OPTIONS" };
+        let sent = null;
+        await page.route("http://127.0.0.1:11434/**", async (route) => {
+            const req = route.request();
+            if (req.method() === "OPTIONS") return route.fulfill({ status: 204, headers: cors });
+            if (req.url().endsWith("/api/tags")) return route.fulfill({ status: 200, headers: Object.assign({ "Content-Type": "application/json" }, cors), body: JSON.stringify({ models: [{ name: "qwen2.5:7b" }] }) });
+            sent = JSON.parse(req.postData());
+            return route.fulfill({ status: 200, headers: Object.assign({ "Content-Type": "application/json" }, cors), body: JSON.stringify({ message: { content: JSON.stringify({ say: "Поставлю внизу.", commands: [{ op: "place", y: 80 }] }) } }) });
+        });
+        await page.evaluate(() => NoirAssistant.setSettings({ endpoint: "http://127.0.0.1:11434" }));
+        await page.evaluate(() => NoirAssistant.open());
+        await page.waitForFunction(() => /qwen/.test(document.querySelector(".as-mode").textContent));
+        const input = page.locator(".as-form input"), last = () => page.evaluate(() => [...document.querySelectorAll(".as-msg")].pop().textContent);
+        await input.fill("запомни: субтитры всегда внизу"); await input.press("Enter");
+        await page.waitForFunction(() => /Запомнил/.test([...document.querySelectorAll(".as-msg")].pop().textContent));
+        await input.fill("Запомни: нуар пишется NOIR"); await input.press("Enter");
+        await page.waitForFunction(() => /«нуар» → «NOIR»/.test([...document.querySelectorAll(".as-msg")].pop().textContent));
+        await input.fill("сделай красиво как я люблю"); await input.press("Enter");
+        await page.waitForFunction(() => /высоту 80%/.test(([...document.querySelectorAll(".as-plan")].pop() || {}).textContent || ""));
+        assert.ok(/субтитры всегда внизу/.test(sent.messages[1].content), "предпочтения переданы ИИ");
+        await page.locator(".as-plan").last().locator(".btn.primary").click(); await page.waitForTimeout(400); await settle();
+        await page.keyboard.press("Escape");
+        await page.unroute("http://127.0.0.1:11434/**");
+        await page.evaluate(() => NoirAssistant.setSettings({ endpoint: "http://127.0.0.1:59999" }));
+        await page.evaluate(() => NoirAssistant.open());
+        await input.fill("Сделай красиво, как я люблю!"); await input.press("Enter");
+        await page.waitForFunction(() => /высоту 80%/.test(([...document.querySelectorAll(".as-plan")].pop() || {}).textContent || ""));
+        assert.ok(/из памяти/.test(await page.evaluate(() => [...document.querySelectorAll(".as-msg.ai")].pop().textContent)));
+        await page.locator(".as-plan").last().locator(".btn.ghost").click();
+        await input.fill("что ты помнишь?"); await input.press("Enter");
+        await page.waitForFunction(() => /нуар → NOIR/.test(([...document.querySelectorAll(".as-plan")].pop() || {}).textContent || ""));
+        await shot("assistant-memory");
+        await input.fill("забудь про внизу"); await input.press("Enter");
+        await page.waitForFunction(() => /Забыл записей: 1/.test([...document.querySelectorAll(".as-msg")].pop().textContent));
+        await page.keyboard.press("Escape");
+        await tab("settings"); await page.locator("#set-memory summary").click();
+        await page.waitForSelector("#set-memory .mem-item");
+        const items = await page.locator("#set-memory .mem-text").allTextContents();
+        assert.ok(items.some(x => /нуар → NOIR/.test(x)) && items.some(x => /как я люблю/.test(x)) && !items.some(x => /всегда внизу/.test(x)), items.join(" | "));
+        await shot("settings-memory");
+        await page.locator("#set-memory .mem-item .icon-btn").first().click();
+        await page.waitForFunction((n) => document.querySelectorAll("#set-memory .mem-item").length === n - 1, items.length);
+        await page.locator("#set-memory summary").click(); await tab("text");
+    });
     await step("помощник: нарезка по речи — сначала замер «было → стало», «Отмена» ничего не режет, «Применить» режет видео и пересоздаёт субтитры", async () => {
         const v = new mock.AVLayer(comp, "clip.mp4"); v.source = { hasVideo: true }; comp._l.push(v); comp._l.forEach(l => { l.selected = l === v; });
         await page.evaluate(() => NoirAssistant.open());
@@ -432,6 +477,7 @@ function layoutProblems() {
             await tab(p); await page.waitForTimeout(80);
             assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), p);
             const over = await page.evaluate(() => { const pg = document.querySelector(".page:not([hidden])"); return pg.scrollWidth - pg.clientWidth; });
+            if (over > 1) console.log(await page.evaluate(() => { const pg = document.querySelector(".page:not([hidden])"), W = pg.getBoundingClientRect().right; return [...pg.querySelectorAll("*")].filter(e => e.getBoundingClientRect().right > W + 1 && e.offsetParent).slice(0, 6).map(e => e.tagName + "." + e.className + ":" + (e.textContent || "").slice(0, 30)).join("\n"); }));
             assert.ok(over <= 1, p + " overflows by " + over);
         }
         await tab("text"); await page.waitForTimeout(300); await shot("narrow-text");

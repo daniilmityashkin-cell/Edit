@@ -78,6 +78,13 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .card { margin: 0 0 var(--s2); padding: var(--s3); border: 1px solid var(--line); border-radius: var(--r-l); background: var(--surface); }
 .card.flash { animation: flash 900ms var(--ease); }
 @keyframes flash { 0% { box-shadow: 0 0 0 2px var(--accent-line); } 100% { box-shadow: 0 0 0 0 transparent; } }
+.mem-details > summary { cursor: pointer; margin-top: var(--s2); font-size: var(--fs-s); color: var(--muted); }
+.mem-list { display: grid; grid-template-columns: minmax(0, 1fr); gap: 2px; margin: var(--s2) 0; }
+.mem-head { margin: var(--s2) 0 2px; font-size: var(--fs-s); font-weight: 600; color: var(--muted); }
+.mem-items { margin: 0; padding: 0; list-style: none; display: grid; grid-template-columns: minmax(0, 1fr); gap: 2px; }
+.mem-item { display: flex; align-items: center; gap: var(--s1); min-height: 28px; padding: 2px 2px 2px 8px; border-radius: var(--r-s, 6px); background: var(--surface-2, rgba(127,127,127,.08)); }
+.mem-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-s); }
+.mem-item .icon-btn { flex: none; width: 24px; height: 24px; min-height: 24px; padding: 0; }
 .card-title { margin: 0 0 var(--s2); font-size: var(--fs-l); font-weight: 600; letter-spacing: -.01em; }
 .lead { margin: 0 0 var(--s3); color: var(--muted); }
 .card > .lead:last-child { margin-bottom: 0; }
@@ -297,6 +304,7 @@ select.input option { background: var(--surface); color: var(--text); }
 .as-plan { align-self: stretch; padding: var(--s2) 10px; border: 1px solid rgba(96, 165, 250, .5); border-radius: var(--r-m); background: rgba(59, 130, 246, .12); }
 .as-plan ol { margin: 0 0 var(--s2); padding-left: 18px; } .as-plan li { margin: 2px 0; }
 .as-plan-title { display: block; margin-bottom: var(--s2); }
+.as-mem-h { display: block; margin: var(--s1) 0 2px; font-size: var(--fs-s); } .as-mem { margin: 0 0 var(--s1); padding-left: 18px; font-size: var(--fs-s); }
 .as-cut { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; margin-bottom: var(--s1); } .as-cut-big { font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .as-diff { display: flex; flex-direction: column; gap: 6px; margin-bottom: var(--s2); }
 .as-diff-row { display: flex; gap: var(--s2); align-items: baseline; }

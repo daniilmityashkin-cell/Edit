@@ -120,6 +120,7 @@
         "{\"op\":\"mask\",\"shape\":\"ellipse|rect\",\"x\":10,\"y\":10,\"w\":80,\"h\":80,\"feather\":10,\"invert\":false} — маска на выделенном слое (или на видео), x/y/w/h в % слоя, feather в %.",
         "{\"op\":\"roto\"} — подготовить «текст за человеком»: копия видео над субтитрами, открыта для Roto Brush (обвести человека кистью пользователь делает сам — скрипты AE этого не умеют).",
         "Нарезка видео по речи (режет сам слой видео, субтитры едут следом): {\"op\":\"cut\",\"mode\":\"pauses\",\"minPause\":0.5} — убрать паузы длиннее minPause секунд; mode \"fillers\" — вырезать из видео слова-паразиты; \"both\" — паузы и паразиты; \"range\" с \"from\" и \"to\" (секунды) — оставить только этот отрезок; \"phrases\" — разрезать на куски по фразам, ничего не удаляя.",
+        "Если в context есть userPreferences — это то, что пользователь просил запомнить: учитывай их в каждом ответе, если просьба не говорит иначе.",
         "Правила: не придумывай команд, которых нет в списке. Не больше 6 команд. Сначала текст, потом расположение, размер, анимация.",
         "Примеры:",
         "«настрой красиво, чтобы лицо не закрывали» → {\"say\":\"Найду лицо и уберу с него субтитры.\",\"commands\":[{\"op\":\"avoidFace\"}]}",
@@ -160,8 +161,27 @@
         return fetchJson(base() + "/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }, timeout || 120000)
             .then(function (j) { return j && j.message && j.message.content; });
     }
-    function askModel(text, context) {
-        return chat(SYSTEM, "Состояние (context):\n" + JSON.stringify(context) + "\n\nПросьба: " + text).then(parseReply);
+    function askModel(text, context, examples) {
+        var shots = (examples || []).slice(-6).map(function (e) { return "«" + e.q + "» → " + JSON.stringify({ say: e.say, commands: e.commands }); });
+        return chat(SYSTEM + (shots.length ? "\nОтветы, которые пользователь уже принимал (так ему нравится):\n" + shots.join("\n") : ""),
+            "Состояние (context):\n" + JSON.stringify(context) + "\n\nПросьба: " + text).then(parseReply);
+    }
+    // «запомни …», «забудь …», «что ты помнишь» → {kind, …} or null
+    function memoryIntent(raw) {
+        var text = String(raw).trim(), low = text.toLowerCase().replace(/ё/g, "е"), m;
+        if (/^(что ты (помнишь|запомнил|знаешь обо мне)|покажи (свою )?память|твоя память|память$|what do you remember|show memory)/.test(low)) return { kind: "list" };
+        if ((m = /^(?:запомни|remember)\s*[:,—-]?\s*(.+)$/i.exec(text))) {
+            var rest = m[1].trim(), f;
+            if ((f = /^(?:что\s+)?(?:слово\s+)?[«"']?([^\s«»"']+)[»"']?\s+(?:пишется|пиши|писать|=|→|->)\s+(?:как\s+)?[«"']?([^\s«»"']+?)[»"']?[.!]?$/i.exec(rest)) ||
+                (f = /^вместо\s+[«"']?([^\s«»"']+)[»"']?\s+(?:пиши|писать|ставь)\s+[«"']?([^\s«»"']+?)[»"']?[.!]?$/i.exec(rest)))
+                return { kind: "fix", from: f[1], to: f[2] };
+            return { kind: "pref", text: rest };
+        }
+        if ((m = /^(?:забудь|forget)\s*(.*)$/i.exec(text))) {
+            var what = m[1].replace(/^(?:про|о|об|that|about)\s+/i, "").replace(/[.!]+$/, "").trim();
+            return /^(все|всё|everything|all)?$/i.test(what) ? { kind: "clear" } : { kind: "forget", text: what };
+        }
+        return null;
     }
     // Text tasks go in chunks of 30 lines; the answer is matched back by line index.
     function askLines(kind, lines, extra) {
@@ -441,7 +461,7 @@
         var refreshBtn = el("button", "as-refresh", body, t("as.check")); refreshBtn.type = "button";
         var note = el("p", "as-note", body);
         document.body.appendChild(box);
-        var busy = false;
+        var busy = false, applied = false;
         function say(text, who) { if (!text) return; el("div", "as-msg " + who, log, text); log.scrollTop = log.scrollHeight; }
         function paintMode() {
             modeEl.textContent = online ? t("as.ai", { model: settings.model }) : t("as.noAi");
@@ -456,7 +476,7 @@
             var row = el("div", "as-plan-actions", c), yes = button(t("as.apply"), "primary", row), no = button(t("as.cancel"), "ghost", row);
             log.scrollTop = log.scrollHeight;
             return new Promise(function (resolve) {
-                yes.onclick = function () { yes.disabled = no.disabled = true; c.classList.add("applied"); resolve(true); };
+                yes.onclick = function () { yes.disabled = no.disabled = true; c.classList.add("applied"); applied = true; resolve(true); };
                 no.onclick = function () { yes.disabled = no.disabled = true; c.classList.add("cancelled"); say(t("as.cancelled"), "note"); resolve(false); };
                 yes.focus();
             });
@@ -503,6 +523,24 @@
                 });
             }, function (e) { say("⚠ " + (window.NoirI18n ? NoirI18n.host(e && e.message || String(e)) : (e && e.message || e)), "ai"); });
         }
+        function memoryCommand(mi) {
+            if (mi.kind === "pref") return api.call("memory.add", { kind: "prefs", text: mi.text }).then(function () { say(t("mem.savedPref", { text: mi.text }), "ai"); });
+            if (mi.kind === "fix") return api.call("memory.add", { kind: "fixes", from: mi.from, to: mi.to }).then(function () { say(t("mem.savedFix", { from: mi.from, to: mi.to }), "ai"); });
+            if (mi.kind === "forget") return api.call("memory.forget", { text: mi.text }).then(function (n) { say(n ? t("mem.forgot", { n: n }) : t("mem.notFound"), "ai"); });
+            if (mi.kind === "clear") {
+                var c = card(t("mem.clearAll")); el("p", "as-note", c, t("mem.clearNote"));
+                return confirmRow(c).then(function (ok) { if (ok) return api.call("memory.clear").then(function () { say(t("mem.cleared"), "note"); }); });
+            }
+            return api.call("memory.get").then(function (m) {
+                if (!m.prefs.length && !m.fixes.length && !m.examples.length) { say(t("mem.empty"), "ai"); return; }
+                var c = card(t("mem.title"));
+                if (m.prefs.length) { el("b", "as-mem-h", c, t("mem.prefs")); var ul = el("ul", "as-mem", c); m.prefs.slice(-10).forEach(function (p) { el("li", "", ul, p.text); }); }
+                if (m.fixes.length) { el("b", "as-mem-h", c, t("mem.fixes")); var ul2 = el("ul", "as-mem", c); m.fixes.slice(-12).reverse().forEach(function (f) { el("li", "", ul2, f.from + " → " + f.to); }); }
+                if (m.examples.length) el("p", "as-note", c, t("mem.examplesN", { n: m.examples.length }));
+                el("p", "as-note", c, t("mem.howForget"));
+                log.scrollTop = log.scrollHeight;
+            });
+        }
         function run(reply) {
             var cmds = mergeCuts(expand(reply.commands)), cuts = cmds.filter(function (c) { return c.op === "cut"; });
             cmds = cmds.filter(function (c) { return c.op !== "cut"; });
@@ -516,13 +554,28 @@
         function submit(text) {
             text = String(text || "").trim(); if (!text || busy) return;
             busy = true; say(text, "me"); input.value = "";
+            var mi = memoryIntent(text);
+            if (mi) { memoryCommand(mi).catch(function (e) { say("⚠ " + (e && e.message || e), "ai"); }).then(function () { busy = false; input.focus(); }); return; }
+            api.call("memory.find", { q: text }).catch(function () { return null; }).then(function (known) {
+                if (known && known.commands && known.commands.length) {
+                    var cmds = known.commands.map(sanitize).filter(Boolean);
+                    if (cmds.length) return { say: (known.say || t("as.planReady")) + " " + t("mem.fromMemory"), commands: cmds, fromMemory: true };
+                }
+                return null;
+            }).then(function (fromMem) { proceed(text, fromMem); });
+        }
+        function proceed(text, fromMem) {
             var local = understand(text), wantAi = online && settings.mode !== "local" && !(local.known && local.commands.length && !/лиц|красив|правильн|настро|подбер|сам/.test(text.toLowerCase()));
             var job;
-            if (wantAi) {
+            if (fromMem) job = Promise.resolve(fromMem);
+            else if (wantAi) {
                 say(t("as.thinking"), "ai"); var thinking = log.lastChild;
-                job = api.call("context").then(function (ctx) { return askModel(text, ctx || {}); }).then(function (reply) {
+                var examples = [];
+                job = api.call("memory.get").then(function (m) { examples = m && m.examples || []; }, function () {}).then(function () { return api.call("context"); })
+                    .then(function (ctx) { return askModel(text, ctx || {}, examples); }).then(function (reply) {
                     if (thinking.parentNode) thinking.parentNode.removeChild(thinking);
                     if (!reply) throw new Error(t("as.badFormat"));
+                    reply.fromAi = true;
                     return reply;
                 }).catch(function (e) {
                     if (thinking.parentNode) thinking.parentNode.removeChild(thinking);
@@ -536,7 +589,11 @@
                 say(reply.say || (reply.commands.length ? t("as.planReady") : t("as.nothing")), "ai");
                 if (reply.dropped) say(t("as.dropped", { n: reply.dropped }), "ai");
                 if (!reply.commands.length) return;
-                return run(reply);
+                applied = false;
+                return run(reply).then(function () {
+                    // an AI answer the user applied is kept: the same request next time works at once, even without the model
+                    if (reply.fromAi && applied) return api.call("memory.add", { kind: "examples", q: text, say: reply.say, commands: reply.commands }).catch(function () {});
+                });
             }).catch(function (e) { say("⚠ " + (e && e.message || e), "ai"); }).then(function () { busy = false; input.focus(); });
         }
         say(t("as.hello"), "ai");
@@ -553,6 +610,6 @@
         input.focus();
     }
 
-    window.NoirAssistant = { init: function (options) { api = options; }, open: open, close: close, understand: understand, mergeCuts: mergeCuts, parseReply: parseReply, sanitize: sanitize, describe: describe, system: SYSTEM,
+    window.NoirAssistant = { init: function (options) { api = options; }, open: open, close: close, understand: understand, memoryIntent: memoryIntent, mergeCuts: mergeCuts, parseReply: parseReply, sanitize: sanitize, describe: describe, system: SYSTEM,
         localEmoji: localEmoji, expand: expand, setSettings: function (o) { for (var k in o) settings[k] = o[k]; saveSettings(settings); } };
 })();

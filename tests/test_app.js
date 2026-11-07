@@ -22,6 +22,7 @@ const mkComp = (o) => { const c = new mock.CompItem(Object.assign({ _fonts: ["Ti
 const subs = (c) => c._l.filter(l => N.isGenerated(l));
 function freshApp(data) {
   for (const k of Object.keys(env.settings)) delete env.settings[k];
+  fs.rmSync(path.join(TMP, "userData", "NOIR Captions", "memory.json"), { force: true });
   const a = N.createApp(ROOT);
   if (data !== false) {
     const jf = path.join(TMP, "in-" + Math.random().toString(36).slice(2) + ".json"); fs.writeFileSync(jf, JSON.stringify(data || sample()));
@@ -309,6 +310,45 @@ const accept = (a, mode) => { let r = a.call("generate", { mode: mode || "all" }
     c = mkComp({ duration: 12 }); a = freshApp(); v = new mock.AVLayer(c, "clip.mp4"); c._l.push(v); v.selected = true; v.timeRemapEnabled = true;
     assert.throws(() => a.call("cut.apply", { mode: "pauses" }), /Time Remap/);
     assert.throws(() => { const b = freshApp(false); mkComp(); b.call("cut.apply", {}); }, /распознайте/);
+  });
+  await test("память: исправления слов учатся при создании и при замене слова, подставляются после распознавания (с отменой) и уходят подсказкой в Whisper", () => {
+    const c = mkComp(), a = freshApp(), l0 = a.state().text.split("\n");
+    a.call("text.replace", { text: ["Привет, это НУАР.", "Субтитрики сами"].join("\n") });
+    accept(a);
+    a.call("text.replace", { text: ["Привет, это НУАР.", "Субтитрики деньги"].join("\n") }); accept(a);
+    let m = a.call("memory.get"); assert.deepStrictEqual(m.fixes.map(f => [f.from, f.to, f.n]), [["noir", "НУАР", 1], ["субтитры", "Субтитрики", 1]], "«сами → деньги» — не ошибка распознавания, не учится");
+    accept(a); assert.strictEqual(a.call("memory.get").fixes[0].n, 1, "одна и та же правка не считается дважды");
+    a.call("text.replace", { text: ["Пока, тот мир!", "Субтитрики деньги"].join("\n") }); accept(a);
+    assert.strictEqual(a.call("memory.get").fixes.length, 2, "переписанная строка — не исправление");
+    a.call("text.replace", { text: ["Привет, это НУАР.", "Субтитрики сами"].join("\n") });
+    a.call("phrase.select", { index: 1 }); a.call("word.replace", { index: 1, text: "сам" });
+    m = a.call("memory.get"); assert.ok(m.fixes.some(f => f.from === "сами" && f.to === "сам"));
+    const keep = [N.getAudioSource, N.modelCached, N.startRecognition]; let cb, opts;
+    N.getAudioSource = () => ({ file: "x.wav" }); N.modelCached = () => true; N.startRecognition = (s, o, callbacks) => { cb = callbacks; opts = o; };
+    try { a.call("recognize"); cb.onDone(sample(), { link: null }); } finally { N.getAudioSource = keep[0]; N.modelCached = keep[1]; N.startRecognition = keep[2]; }
+    assert.ok(/НУАР/.test(opts.prompt) && /Субтитрики/.test(opts.prompt), "подсказка Whisper: " + opts.prompt);
+    const tx = a.state().text.split("\n"); assert.strictEqual(tx[0], "Привет, это НУАР."); assert.strictEqual(tx[1], "Субтитрики сам");
+    assert.ok(/по памяти слов: 3/.test(a.call("status")));
+    near(a.state().words[2].start, 1.5); a.call("text.undo"); assert.strictEqual(a.state().text, l0.join("\n"));
+    accept(a); assert.ok(a.call("memory.get").fixes.some(f => f.from === "нуар" && f.to === "NOIR"), "отменённая подстановка учит обратному");
+    a.call("settings.set", { path: "memoryLearn", value: false });
+    a.call("text.replace", { text: ["Привет, это NOIRE.", l0[1]].join("\n") }); accept(a);
+    assert.ok(!a.call("memory.get").fixes.some(f => f.to === "NOIRE"), "выключено — не учится");
+  });
+  await test("память: предпочтения и принятые ответы; «забудь»; удаление и очистка; предпочтения видит ИИ", () => {
+    const a = freshApp(); mkComp();
+    a.call("memory.add", { kind: "prefs", text: "Субтитры всегда внизу" }); a.call("memory.add", { kind: "prefs", text: "субтитры всегда внизу!" });
+    assert.strictEqual(a.call("memory.get").prefs.length, 1);
+    assert.deepStrictEqual(a.call("context").userPreferences, ["субтитры всегда внизу!"]);
+    a.call("memory.add", { kind: "examples", q: "Сделай как я люблю!", say: "Ок", commands: [{ op: "place", y: 75 }] });
+    assert.deepStrictEqual(a.call("memory.find", { q: "сделай как я люблю" }).commands, [{ op: "place", y: 75 }]);
+    assert.strictEqual(a.call("memory.find", { q: "другое" }), null);
+    a.call("memory.add", { kind: "fixes", from: "нуар", to: "NOIR" });
+    assert.strictEqual(a.call("memory.forget", { text: "внизу" }), 1); assert.strictEqual(a.call("memory.get").prefs.length, 0);
+    a.call("memory.remove", { kind: "fixes", index: 0 }); assert.strictEqual(a.call("memory.get").fixes.length, 0);
+    assert.throws(() => a.call("memory.remove", { kind: "fixes", index: 0 }), /Нет такой записи/);
+    a.call("memory.clear"); const m = a.call("memory.get"); assert.strictEqual(m.examples.length + m.prefs.length + m.fixes.length, 0);
+    assert.throws(() => a.call("memory.add", { kind: "fixes", from: "", to: "x" }), /одно слово/);
   });
   await test("превью: отдельная композиция, исходник не меняется", () => {
     const c = mkComp({ duration: 12 }), a = freshApp(); let copy;

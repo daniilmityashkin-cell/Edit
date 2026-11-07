@@ -716,6 +716,14 @@
         U.field(g2, { path: A + "blur", label: "Размытие", kind: "number", min: 0, max: 500, step: 1 });
         U.field(g2, { path: A + "easeInfluence", label: "Плавность, %", kind: "number", min: 0.1, max: 100, step: 1 });
 
+        var mem = U.card(p, t("mem.title"), t("mem.lead")); mem.id = "set-memory";
+        U.field(mem, { path: "memoryLearn", label: t("mem.learn"), kind: "toggle", hint: t("mem.learnHint") });
+        var memDet = el("details", "mem-details", mem); el("summary", "", memDet, t("mem.show"));
+        memDet.addEventListener("toggle", function () { if (memDet.open) loadMemory(); });
+        v.mem = el("div", "mem-list", memDet);
+        var mr = U.row(memDet, "actions wrap");
+        U.button(t("mem.clear"), "ghost", mr, function () { if (window.confirm(t("mem.confirmClear"))) act("memory.clear").then(loadMemory); }, "trash");
+
         var proj = U.card(p, t("set.project"));
         U.field(proj, { path: "lang", label: t("set.uiLang"), kind: "segmented", options: [{ id: "ru", label: "Русский" }, { id: "en", label: "English" }], commit: function (l) { set("lang", l); } });
         U.field(proj, { path: "mode", label: t("set.mode"), kind: "segmented", hint: t("set.modeHint"), options: [{ id: "compact", label: t("mode.compact") }, { id: "normal", label: t("mode.normal") }, { id: "detailed", label: t("mode.detailed") }],
@@ -727,6 +735,27 @@
         U.button(t("set.log"), "ghost", pr, function () { H.call("log").then(showLog).catch(noop); });
         v.log = el("pre", "log", proj); v.log.hidden = true;
         el("p", "muted small about", p, "NOIR Captions " + meta.version + " · " + t("set.aboutText"));
+    }
+    // Assistant memory: what it learned (word fixes), what it was told to remember, which answers it reuses. Each line can be deleted.
+    function loadMemory() {
+        var box = view.settings && view.settings.mem; if (!box || !box.parentNode.open) return;
+        H.call("memory.get", {}, true).then(function (m) {
+            box.textContent = "";
+            if (!m) return;
+            function group(kind, title, items, text) {
+                if (!items.length) return;
+                el("h3", "mem-head", box, title + " · " + items.length);
+                var ul = el("ul", "mem-items", box);
+                items.map(function (it, i) { return { it: it, i: i }; }).reverse().slice(0, 40).forEach(function (x) {
+                    var li = el("li", "mem-item", ul); el("span", "mem-text", li, text(x.it));
+                    U.iconButton("close", t("mem.remove"), li, function () { act("memory.remove", { kind: kind, index: x.i }).then(loadMemory); }, "small");
+                });
+            }
+            group("prefs", t("mem.prefs"), m.prefs, function (x) { return x.text; });
+            group("fixes", t("mem.fixes"), m.fixes, function (x) { return x.from + " → " + x.to + (x.n > 1 ? "  ×" + x.n : ""); });
+            group("examples", t("mem.examples"), m.examples, function (x) { return "«" + x.q + "»" + (x.say ? " — " + x.say : ""); });
+            if (!m.prefs.length && !m.fixes.length && !m.examples.length) el("p", "muted small", box, t("mem.empty"));
+        }).catch(noop);
     }
     function showLog(list) {
         var box = view.settings.log; box.hidden = false;

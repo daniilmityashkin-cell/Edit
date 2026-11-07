@@ -10,7 +10,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
 (function (N) {
     var SECTION = "NOIR Captions";
     var SETTINGS_KEY = "settings.v2";
-    N.VERSION = "0.38.0";
+    N.VERSION = "0.39.0";
 
     function clone(o) { return N.parseJSON(N.stringify(o)); }
 
@@ -31,7 +31,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         recentFonts: [], favoriteStyles: [], onboarded: false,
         quick: { size: 100, position: "preset", intensity: "1" },
         replace: true, python: "", presetId: "", style: FALLBACK_STYLE, reflow: true, scope: "source", nudgeStep: 20, sizeStep: 10, timeStep: 0.1,
-        format: "auto",
+        format: "auto", memoryLearn: true,
         tools: {
             counter: { from: 0, to: 100, duration: 2, hold: 1, step: 0, interval: 0, decimals: 0, pad: 0, thousands: "none", ease: "out",
                 prefix: "", suffix: "", side: "accent", size: 0, posX: 50, posY: 50, sound: false },
@@ -111,7 +111,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         shadow: "bool-shadow", glow: [0, 500], blend: "blend", opacity: [0, 100] };
     var PATHS = {
         "language": "lang", "model": "model", "device": "device", "prompt": "text", "lang": "uilang", "replace": "bool", "reflow": "bool", "scope": "scope",
-        "nudgeStep": [1, 2000], "sizeStep": [1, 100], "timeStep": [0.01, 30], "format": "format", "python": "text", "onboarded": "bool",
+        "nudgeStep": [1, 2000], "sizeStep": [1, 100], "timeStep": [0.01, 30], "format": "format", "python": "text", "onboarded": "bool", "memoryLearn": "bool",
         "quick.size": [25, 200], "quick.position": "qpos", "quick.intensity": "qint",
         "style.layout.reveal": "reveal", "style.layout.layerMode": "layerMode", "style.layout.maxWords": [1, 30], "style.layout.maxChars": [1, 300],
         "style.layout.lineChars": [0, 300], "style.layout.accentOwnLine": "bool", "style.layout.autoAccent": "bool", "style.layout.posX": [-50, 150],
@@ -218,7 +218,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         // ---------- text ----------
         function setData(data, link) {
             st.dataRevision++; st.history = []; st.timing = {}; st.cutMap = null; st.data = data; st.link = link; st.phrase = 0; st.issues = []; st.pending = null;
-            st.text = N.toEditorText(data); st.cleanLines = st.text.split("\n");
+            st.text = N.toEditorText(data); st.cleanLines = st.text.split("\n"); st.rawLines = st.text.split("\n");
             var n = 0;
             for (var i = 0; i < data.segments.length; i++) n += data.segments[i].words.length;
             var gpu = "";
@@ -332,6 +332,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             if (!st.data) throw new Error("Сначала распознайте речь или откройте JSON.");
             var comp = activeComp(), warnings = [], words = N.applyEdits(st.data, st.text, warnings), outputStyle = renderStyle();
             var key = sourceKey();
+            if (mode === "all" || mode === "phrase") { try { learnFromText(); } catch (eL) { log("error", "memory: " + (eL.message || eL)); } }
             if (mode === "phrase") {
                 var any = false;
                 for (var pi = 1; pi <= comp.numLayers && !any; pi++) { var ex = N.groupInfo(comp.layer(pi)); if (ex && ex.sourceKey === key) any = true; }
@@ -675,12 +676,107 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             var data = { schema: "noir-captions/1", language: st.data.language, engine: st.data.engine, warnings: [], source: { file: st.data.source ? st.data.source.file : "", cut: true }, segments: [] }, lines = [];
             for (i = 0; i < segs.length; i++) { data.segments.push({ words: segs[i].words }); lines.push(N.editorWords(segs[i].flags)); }
             setData(data, null); st.cutMap = newMap;
-            st.text = lines.join("\n"); st.cleanLines = st.text.split("\n");
+            st.text = lines.join("\n"); st.cleanLines = st.text.split("\n"); st.rawLines = st.text.split("\n");
             var msg = "Нарезано: убрано " + (Math.round(plan.removed * 10) / 10) + " с (" + (Math.round(plan.before * 10) / 10) + " → " + (Math.round(plan.after * 10) / 10) + " с), кусков " + plan.keeps.length + ". Отмена в AE — Ctrl+Z.";
             if (had) { var r = generate("all", false); if (r && r.pending) r = generate("all", true); msg += " Субтитры пересозданы под новое время."; }
             status(msg + " Звуки и другие слои не сдвигаются.");
             return { removed: plan.removed, pieces: pieces, keeps: plan.keeps.length };
         }
+
+        // ---------- memory: word fixes, preferences, accepted assistant answers ----------
+        // Stored only on this computer: <userData>/NOIR Captions/memory.json. Word fixes are learned when captions are created (recognized
+        // text vs. the text the user corrected, lines with the same word count) and when one word is replaced; after the next recognition
+        // they are put into the text right away (one «Отменить правку» returns the raw text) and their spellings are given to Whisper as a hint.
+        var MEM_LIMITS = { fixes: 300, prefs: 50, examples: 100 };
+        function memFile() { var dir = Folder(Folder.userData.fsName + "/NOIR Captions"); if (!dir.exists) dir.create(); return File(dir.fsName + "/memory.json"); }
+        function memLoad() {
+            var m = null;
+            try { var f = memFile(); if (f.exists) m = N.parseJSON(N.readText(f)); } catch (e) { m = null; }
+            if (!m || typeof m !== "object") m = {};
+            if (!(m.fixes instanceof Array)) m.fixes = [];
+            if (!(m.prefs instanceof Array)) m.prefs = [];
+            if (!(m.examples instanceof Array)) m.examples = [];
+            m.schema = "noir-memory/1";
+            return m;
+        }
+        function memSave(m) {
+            for (var k in MEM_LIMITS) if (m[k].length > MEM_LIMITS[k]) m[k] = m[k].slice(m[k].length - MEM_LIMITS[k]);
+            N.writeText(memFile(), N.stringify(m));
+        }
+        function wordParts(t) { var m = /^([^A-Za-zА-Яа-яЁё0-9]*)([\s\S]*?)([^A-Za-zА-Яа-яЁё0-9]*)$/.exec(String(t)); return m ? { lead: m[1], core: m[2], trail: m[3] } : { lead: "", core: String(t), trail: "" }; }
+        function learnFix(m, from, to) {
+            var f = bare(wordParts(from).core), core = wordParts(to).core;
+            if (!f || !core || f === bare(core) || f.length > 40 || core.length > 40 || /\s/.test(f)) return false;
+            for (var i = 0; i < m.fixes.length; i++) if (m.fixes[i].from === f) {
+                if (m.fixes[i].to === core) m.fixes[i].n++; else { m.fixes[i].to = core; m.fixes[i].n = 1; }
+                var x = m.fixes.splice(i, 1)[0]; m.fixes.push(x); return true;
+            }
+            m.fixes.push({ from: f, to: core, n: 1 }); return true;
+        }
+        // A fix learned from the text must look like a mishearing (spelling or transliteration close to the recognized word), not a rewrite:
+        // «нуар → NOIR», «тикток → TikTok», «превет → привет» — yes; «сами → деньги» — no.
+        var TR = { "а": "a", "б": "b", "в": "v", "г": "g", "д": "d", "е": "e", "ж": "zh", "з": "z", "и": "i", "й": "i", "к": "k", "л": "l", "м": "m", "н": "n", "о": "o", "п": "p", "р": "r", "с": "s",
+            "т": "t", "у": "u", "ф": "f", "х": "h", "ц": "c", "ч": "ch", "ш": "sh", "щ": "sh", "ъ": "", "ы": "y", "ь": "", "э": "e", "ю": "u", "я": "ya" };
+        function latin(w) { var o = "", i, c; w = String(w).toLowerCase().replace(/ё/g, "е"); for (i = 0; i < w.length; i++) { c = w.charAt(i); o += TR.hasOwnProperty(c) ? TR[c] : c; } return o.replace(/ph/g, "f").replace(/[^a-z0-9]/g, "").replace(/(.)\1+/g, "$1").replace(/[aeiouy]/g, function (v, k) { return k ? "" : v; }); }
+        function lev(a, b) {
+            var prev = [], cur, i, j;
+            for (j = 0; j <= b.length; j++) prev.push(j);
+            for (i = 1; i <= a.length; i++) { cur = [i]; for (j = 1; j <= b.length; j++) cur.push(Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a.charAt(i - 1) === b.charAt(j - 1) ? 0 : 1))); prev = cur; }
+            return prev[b.length];
+        }
+        function looksLikeFix(from, to) {
+            var a = bare(from), b = bare(to), la = latin(a), lb = latin(b);
+            if (lev(a, b) <= Math.max(1, Math.floor(Math.max(a.length, b.length) * 0.4))) return true;
+            return la.length > 0 && lev(la, lb) <= Math.max(1, Math.floor(Math.max(la.length, lb.length) * 0.34));
+        }
+        // recognized (or last learned) lines vs. the current ones; a line where more than half the words changed is a rewrite, not a fix
+        function learnFromText() {
+            if (!S.memoryLearn || !st.rawLines) return 0;
+            var cur = lines(), m = null, n = 0;
+            for (var i = 0; i < cur.length && i < st.rawLines.length; i++) {
+                if (cur[i] === st.rawLines[i]) continue;
+                var a = N.parseLine(st.rawLines[i]), b = N.parseLine(cur[i]), diff = [];
+                if (a.length !== b.length || !a.length) continue;
+                for (var k = 0; k < a.length; k++) if (bare(wordParts(a[k].text).core) !== bare(wordParts(b[k].text).core)) diff.push(k);
+                if (!diff.length || diff.length > Math.max(1, Math.floor(a.length / 2))) continue;
+                if (!m) m = memLoad();
+                for (k = 0; k < diff.length; k++) if (looksLikeFix(wordParts(a[diff[k]].text).core, wordParts(b[diff[k]].text).core) && learnFix(m, a[diff[k]].text, b[diff[k]].text)) n++;
+            }
+            st.rawLines = cur;
+            if (n) { try { memSave(m); } catch (e) { log("error", "memory: " + (e.message || e)); } }
+            return n;
+        }
+        // after recognition: known fixes go into the text (case of the first letter and punctuation of the recognized word are kept)
+        function applyFixes() {
+            if (!S.memoryLearn || !st.data) return 0;
+            var m = memLoad(), map = {}, i, k, n = 0;
+            if (!m.fixes.length) return 0;
+            for (i = 0; i < m.fixes.length; i++) map[m.fixes[i].from] = m.fixes[i].to;
+            var ls = lines(), out = [];
+            for (i = 0; i < ls.length; i++) {
+                var ws = N.parseLine(ls[i]), changed = false;
+                for (k = 0; k < ws.length; k++) {
+                    var p = wordParts(ws[k].text), to = map[bare(p.core)];
+                    if (!to || to === p.core) continue;
+                    var first = p.core.charAt(0);
+                    if (first !== first.toLowerCase() && to.charAt(0) === to.charAt(0).toLowerCase()) to = to.charAt(0).toUpperCase() + to.substring(1);
+                    ws[k].text = p.lead + to + p.trail; changed = true; n++;
+                }
+                out.push(changed ? N.editorWords(ws) : ls[i]);
+            }
+            if (!n) return 0;
+            remember(); st.text = out.join("\n"); st.cleanLines = st.text.split("\n"); st.rawLines = st.text.split("\n");
+            return n;
+        }
+        // spellings the user taught, as a hint for Whisper (names, brands, slang)
+        function memPrompt() {
+            if (!S.memoryLearn) return S.prompt;
+            var m = memLoad(), seen = {}, words = [];
+            for (var i = m.fixes.length - 1; i >= 0 && words.length < 40; i--) { var w = m.fixes[i].to; if (!seen[w.toLowerCase()]) { seen[w.toLowerCase()] = true; words.push(w); } }
+            return String(S.prompt || "") + (words.length ? (S.prompt ? " " : "") + words.join(", ") + "." : "");
+        }
+        function memKind(k) { if (k !== "fixes" && k !== "prefs" && k !== "examples") throw new Error("Нет такого раздела памяти."); return k; }
+        function memNorm(q) { return String(q || "").toLowerCase().replace(/ё/g, "е").replace(/[^a-zа-я0-9 ]+/g, " ").replace(/\s+/g, " ").replace(/^\s+|\s+$/g, ""); }
 
         // ---------- filler words ----------
         var FILLERS = ["э", "ээ", "эээ", "эм", "эмм", "мм", "ммм", "хм", "ну", "типа", "короче", "как бы", "это самое", "так сказать", "в общем-то",
@@ -872,9 +968,13 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
                 if (st.recognizing) throw new Error("Распознавание уже идёт.");
                 st.recognizing = true; st.progress = 0; status("Запуск распознавания…", 0);
                 try {
-                N.startRecognition(src, { root: root, python: S.python, model: S.model, language: S.language, device: S.device, prompt: S.prompt }, {
+                N.startRecognition(src, { root: root, python: S.python, model: S.model, language: S.language, device: S.device, prompt: memPrompt() }, {
                     onStatus: function (s) { var m = s.message || s.state; if (s.device) m += " · " + (s.device === "cuda" ? "GPU" : "CPU"); st.recognizing = true; status(m, s.progress); },
-                    onDone: function (data, s) { st.recognizing = false; setData(data, s.link); },
+                    onDone: function (data, s) {
+                        st.recognizing = false; setData(data, s.link);
+                        var fixed = 0; try { fixed = applyFixes(); } catch (eF) { log("error", "memory: " + (eF.message || eF)); }
+                        if (fixed) status(st.status + " Исправлено по памяти слов: " + fixed + " («Отменить правку» вернёт как было).");
+                    },
                     onError: function (msg) { st.recognizing = false; status("Ошибка распознавания: " + msg, 0); log("error", msg); }
                 });
                 } catch (e) { st.recognizing = false; status("Ошибка распознавания: " + (e.message || e), 0); throw e; }
@@ -1035,7 +1135,8 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
                 var ws = phraseWords(), w = ws[Number(a.index)], t = String(a.text || "").replace(/^\s+|\s+$/g, "");
                 if (!w) throw new Error("Нет такого слова.");
                 if (!t || /[\s*~|↵]/.test(t)) throw new Error("Одно слово без разметки.");
-                remember(); w.text = t; var ls = lines(); ls[st.phrase] = N.editorWords(ws); st.text = ls.join("\n");
+                var old = w.text; remember(); w.text = t; var ls = lines(); ls[st.phrase] = N.editorWords(ws); st.text = ls.join("\n");
+                if (S.memoryLearn) { try { var mm = memLoad(); if (learnFix(mm, old, t)) memSave(mm); if (st.rawLines && st.rawLines.length > st.phrase) st.rawLines[st.phrase] = ls[st.phrase]; } catch (eM) {} }
                 status("Слово исправлено; тайминг сохранён."); return true;
             },
             listen: function () {
@@ -1197,6 +1298,41 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
                 for (var i = 0; i < sel.length; i++) { if (sel[i] instanceof TextLayer) { t++; if (N.isGenerated(sel[i])) n++; } else o++; }
                 return { comp: true, text: t, noir: n, other: o, name: comp.name };
             },
+            "memory.get": function () { var m = memLoad(); return { fixes: m.fixes, prefs: m.prefs, examples: m.examples, learn: !!S.memoryLearn }; },
+            "memory.add": function (a) {
+                var m = memLoad(), kind = memKind(a.kind), i;
+                if (kind === "fixes") { if (!learnFix(m, a.from, a.to)) throw new Error("Нужно: какое слово на какое менять (одно слово)."); }
+                else if (kind === "prefs") {
+                    var t = String(a.text || "").replace(/^\s+|\s+$/g, "").substr(0, 300); if (!t) throw new Error("Что запомнить?");
+                    for (i = 0; i < m.prefs.length; i++) if (memNorm(m.prefs[i].text) === memNorm(t)) m.prefs.splice(i--, 1);
+                    m.prefs.push({ text: t, t: new Date().getTime() });
+                } else {
+                    var q = memNorm(a.q); if (!q || !(a.commands instanceof Array) || !a.commands.length) throw new Error("Пустой пример.");
+                    for (i = 0; i < m.examples.length; i++) if (m.examples[i].q === q) m.examples.splice(i--, 1);
+                    m.examples.push({ q: q, say: String(a.say || "").substr(0, 400), commands: a.commands.slice(0, 12) });
+                }
+                memSave(m); return true;
+            },
+            "memory.find": function (a) { var m = memLoad(), q = memNorm(a.q); for (var i = m.examples.length - 1; i >= 0; i--) if (m.examples[i].q === q) return m.examples[i]; return null; },
+            "memory.remove": function (a) {
+                var m = memLoad(), kind = memKind(a.kind), i = Number(a.index);
+                if (!(i >= 0 && i < m[kind].length)) throw new Error("Нет такой записи.");
+                m[kind].splice(i, 1); memSave(m); return true;
+            },
+            // «забудь …»: everything whose text, word or request contains the phrase
+            "memory.forget": function (a) {
+                var m = memLoad(), q = memNorm(a.text), n = 0, i;
+                if (!q) throw new Error("Что забыть?");
+                for (i = 0; i < m.prefs.length; i++) if (memNorm(m.prefs[i].text).indexOf(q) >= 0) { m.prefs.splice(i--, 1); n++; }
+                for (i = 0; i < m.fixes.length; i++) if (m.fixes[i].from.indexOf(q) >= 0 || memNorm(m.fixes[i].to).indexOf(q) >= 0) { m.fixes.splice(i--, 1); n++; }
+                for (i = 0; i < m.examples.length; i++) if (m.examples[i].q.indexOf(q) >= 0) { m.examples.splice(i--, 1); n++; }
+                if (n) memSave(m); return n;
+            },
+            "memory.clear": function (a) {
+                var m = memLoad(), kinds = a && a.kind ? [memKind(a.kind)] : ["fixes", "prefs", "examples"];
+                for (var i = 0; i < kinds.length; i++) m[kinds[i]] = [];
+                memSave(m); status("Память помощника очищена."); return true;
+            },
             context: function () {
                 var comp = null, out = { hasData: !!st.data };
                 try { comp = app.project.activeItem; } catch (e0) {}
@@ -1218,6 +1354,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
                 out.presets = [];
                 for (var pi = 0; pi < presets.length && pi < 60; pi++) out.presets.push({ id: presets[pi].id, name: presets[pi].name });
                 out.face = st.face ? { x: Math.round(st.face.x * 100) / 100, y: Math.round(st.face.y * 100) / 100, w: Math.round(st.face.w * 100) / 100, h: Math.round(st.face.h * 100) / 100 } : null;
+                try { var mem = memLoad(); if (mem.prefs.length) { out.userPreferences = []; for (var mi = 0; mi < mem.prefs.length; mi++) out.userPreferences.push(mem.prefs[mi].text); } } catch (eMem) {}
                 if (st.data) { var ws = N.applyEdits(st.data, st.text, []), sample = []; for (var wi = 0; wi < ws.length && wi < 80; wi++) sample.push(ws[wi].text); out.textSample = sample.join(" "); }
                 return out;
             },
