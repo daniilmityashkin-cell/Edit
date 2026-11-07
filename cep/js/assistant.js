@@ -46,6 +46,10 @@
                 else { if (allowed.indexOf(String(c.value)) < 0) return null; out.value = String(c.value); }
                 return out;
             case "translate": var to = String(c.to || "").toLowerCase(); if (!LANGS[to]) return null; out.to = to; return out;
+            case "select": if (["captions", "all", "accents", "base", "phrase", "video", "control", "none"].indexOf(c.target) < 0) return null; out.target = c.target; return out;
+            case "mask": out.shape = c.shape === "ellipse" ? "ellipse" : "rect"; ["x", "y", "w", "h"].forEach(function (k, i) { out[k] = clamp(c[k], i < 2 ? -50 : 1, i < 2 ? 150 : 200, i < 2 ? 10 : 80); });
+                out.feather = clamp(c.feather, 0, 100, 0); out.invert = !!c.invert; return out;
+            case "roto": return out;
             case "resetPos": case "applyStyle": case "behind": case "avoidFace": case "faceScan": case "recognize": case "create": case "update": case "updateAll":
             case "fixText": case "fillers": case "emoji": case "dynamic": case "calm": case "control": return out;
             case "delete": return out;   // always shown in the plan first; runs only after «Применить»
@@ -97,6 +101,9 @@
         "{\"op\":\"scope\",\"id\":\"source|selected|all\"} — что менять. {\"op\":\"delete\"} — удалить субтитры (только если просят явно). {\"op\":\"control\"} — добавить пульт со слайдерами в AE.",
         "Текст субтитров: {\"op\":\"translate\",\"to\":\"en\"} — перевести (to: " + Object.keys(LANGS).join(", ") + "); {\"op\":\"fixText\"} — исправить ошибки распознавания; {\"op\":\"fillers\"} — убрать слова-паразиты; {\"op\":\"emoji\"} — добавить эмодзи к ключевым словам.",
         "Настроение: {\"op\":\"dynamic\"} — динамичнее, энергичнее; {\"op\":\"calm\"} — спокойнее, мягче.",
+        "Слои: {\"op\":\"select\",\"target\":\"captions|all|accents|base|phrase|video|control|none\"} — выделить в таймлайне (субтитры этого видео, все NOIR, акценты, обычные слова, текущую фразу, видео, пульт, снять выделение).",
+        "{\"op\":\"mask\",\"shape\":\"ellipse|rect\",\"x\":10,\"y\":10,\"w\":80,\"h\":80,\"feather\":10,\"invert\":false} — маска на выделенном слое (или на видео), x/y/w/h в % слоя, feather в %.",
+        "{\"op\":\"roto\"} — подготовить «текст за человеком»: копия видео над субтитрами, открыта для Roto Brush (обвести человека кистью пользователь делает сам — скрипты AE этого не умеют).",
         "Правила: не придумывай команд, которых нет в списке. Не больше 6 команд. Сначала текст, потом расположение, размер, анимация.",
         "Примеры:",
         "«настрой красиво, чтобы лицо не закрывали» → {\"say\":\"Найду лицо и уберу с него субтитры.\",\"commands\":[{\"op\":\"avoidFace\"}]}",
@@ -251,6 +258,18 @@
         if (/ошибк|опечат|исправ.*текст|грамот|fix.*(text|typo|error)/.test(t0)) return { say: "Исправлю ошибки распознавания", commands: [{ op: "fixText" }] };
         if (/динамичн|энергичн|живее|резче|бодрее|dynamic|energetic/.test(t0)) return { say: "Сделаю динамичнее", commands: [{ op: "dynamic" }] };
         if (/спокойн|мягче|плавнее|calm|softer/.test(t0)) return { say: "Сделаю спокойнее", commands: [{ op: "calm" }] };
+        if (/roto|рото|выреж|вырез|за человек.*(сдела|настро|хочу)|текст за человеком/.test(t0)) return { say: "Подготовлю Roto Brush: копия видео над субтитрами, обвести человека нужно один раз кистью", commands: [{ op: "roto" }] };
+        if (/маск|виньет/.test(t0)) {
+            var mk = { op: "mask", shape: /круг|овал|эллипс|виньет|ellipse|circle/.test(t0) ? "ellipse" : "rect", x: 10, y: 10, w: 80, h: 80, feather: /мягк|растуш|виньет|feather/.test(t0) ? 20 : 0, invert: /инверт|снаружи|вокруг|invert/.test(t0) };
+            if (/верх/.test(t0)) { mk.x = 0; mk.y = 0; mk.w = 100; mk.h = 50; } else if (/низ/.test(t0)) { mk.x = 0; mk.y = 50; mk.w = 100; mk.h = 50; } else if (/лев/.test(t0)) { mk.x = 0; mk.y = 0; mk.w = 50; mk.h = 100; } else if (/прав/.test(t0)) { mk.x = 50; mk.y = 0; mk.w = 50; mk.h = 100; }
+            if (/виньет/.test(t0)) { mk.x = 5; mk.y = 5; mk.w = 90; mk.h = 90; mk.feather = 30; }
+            return { say: "Добавлю маску", commands: [mk] };
+        }
+        if (/выдел|select/.test(t0) && !/выделенн/.test(t0)) {
+            var tg = /акцент/.test(t0) ? "accents" : /обычн/.test(t0) ? "base" : /фраз/.test(t0) ? "phrase" : /видео|ролик|футаж|video/.test(t0) ? "video" : /пульт|control/.test(t0) ? "control" : /сним|ничего|none/.test(t0) ? "none" : /все noir|всё noir/.test(t0) ? "all" : "captions";
+            return { say: "Выделю в таймлайне", commands: [{ op: "select", target: tg }] };
+        }
+        if (/сним.*выдел/.test(t0)) return { say: "Сниму выделение", commands: [{ op: "select", target: "none" }] };
         if (/пульт|слайдер|контрол|control/.test(t0)) return { say: "Добавлю пульт со слайдерами в AE", commands: [{ op: "control" }] };
         if (/лиц|не закрыв|не загораж|не перекрыв/.test(t0)) return { say: "Ищу лицо и убираю с него субтитры", commands: [{ op: "avoidFace" }] };
         if (/распозн/.test(t0)) return { say: "Распознаю речь выбранного слоя", commands: [{ op: "recognize" }] };
@@ -305,6 +324,9 @@
             case "update": return api.generate("phrase");
             case "set": return api.call("settings.set", { path: cmd.path, value: cmd.value });
             case "control": return api.call("control.add", {});
+            case "select": return api.call("layers.select", { target: cmd.target });
+            case "mask": return api.call("mask.add", cmd);
+            case "roto": return api.call("roto.prepare");
             case "delete": return api.call("run", { command: { op: "delete", confirmed: true } });
             default: return api.call("run", { command: cmd });
         }
@@ -355,6 +377,9 @@
             case "create": case "updateAll": return "Создать / обновить все субтитры";
             case "update": return "Обновить текущую фразу";
             case "control": return "Добавить пульт NOIR Control (слайдеры размера, сдвига и цвета подсветки в AE)";
+            case "select": return "Выделить: " + ({ captions: "субтитры этого видео", all: "все субтитры NOIR", accents: "акценты", base: "обычные слова", phrase: "текущую фразу", video: "видео", control: "пульт", none: "снять выделение" })[c.target];
+            case "mask": return "Маска " + (c.shape === "ellipse" ? "овалом" : "прямоугольником") + " " + c.x + "–" + (c.x + c.w) + "% × " + c.y + "–" + (c.y + c.h) + "%" + (c.feather ? ", растушёвка " + c.feather + "%" : "") + (c.invert ? ", инвертирована" : "");
+            case "roto": return "Копия видео над субтитрами, открыть её для Roto Brush (обвести человека — один раз кистью)";
             case "delete": return "Удалить субтитры (Ctrl+Z вернёт)";
         }
         return c.op;

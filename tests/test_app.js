@@ -228,6 +228,27 @@ const accept = (a, mode) => { let r = a.call("generate", { mode: mode || "all" }
     a.call("text.undo"); a.call("text.undo"); assert.strictEqual(a.state().text, text0);
     assert.throws(() => a.call("text.replace", { text: "одна строка" }), /Число строк/);
   });
+  await test("выделение слоёв, маски и подготовка Roto Brush: помощник сам выделяет, маскирует и ставит копию видео над субтитрами", () => {
+    const c = mkComp(), a = freshApp(); accept(a);
+    const v = new mock.AVLayer(c, "clip.mp4"); v.width = 1080; v.height = 1920; v.source = { hasVideo: true }; c._l.push(v);
+    assert.strictEqual(a.call("layers.select", { target: "captions" }), subs(c).length); assert.ok(subs(c).every(l => l.selected) && !v.selected);
+    const acc = a.call("layers.select", { target: "phrase" }); assert.ok(acc > 0 && subs(c).filter(l => l.selected).every(l => N.groupInfo(l).segment === 0));
+    assert.strictEqual(a.call("layers.select", { target: "video" }), 1); assert.ok(v.selected && subs(c).every(l => !l.selected));
+    a.call("layers.select", { target: "none" }); assert.ok(c._l.every(l => !l.selected));
+    assert.throws(() => a.call("layers.select", { target: "control" }), /нет пульта/);
+    a.call("mask.add", { shape: "ellipse", x: 10, y: 20, w: 80, h: 40, feather: 10, invert: true });
+    const m = v.masks.kids[0]; assert.strictEqual(m.name, "NOIR Mask"); assert.strictEqual(m.inverted, true);
+    const sh = m.property("ADBE Mask Shape").value; assert.strictEqual(sh.vertices.length, 4); near(sh.vertices[0][0], 540); near(sh.vertices[0][1], 384);
+    assert.deepStrictEqual(m.property("ADBE Mask Feather").value, [108, 108]);
+    a.call("layers.select", { target: "video" }); a.call("mask.add", { shape: "rect", x: 0, y: 50, w: 100, h: 50 });
+    assert.deepStrictEqual(v.masks.kids[1].property("ADBE Mask Shape").value.vertices, [[0, 960], [1080, 960], [1080, 1920], [0, 1920]]);
+    const name = a.call("roto.prepare"), person = c._l.find(l => l.comment === N.PERSON_TAG);
+    assert.ok(person && person !== v && /Roto Brush/.test(name)); assert.ok(person.index < Math.min(...subs(c).map(l => l.index)), "копия над субтитрами");
+    assert.ok(person.selected && !v.selected); assert.ok(/Roto Brush/.test(a.call("status")));
+    a.call("roto.prepare"); assert.strictEqual(c._l.filter(l => l.comment === N.PERSON_TAG).length, 1, "вторая копия не создаётся");
+    a.call("layers.select", { target: "none" }); a.call("run", { command: { op: "behind" } });
+    assert.ok(subs(c).every(l => l.index > person.index), "«за человеком» без выделения берёт копию для Roto Brush");
+  });
   await test("превью: отдельная композиция, исходник не меняется", () => {
     const c = mkComp({ duration: 12 }), a = freshApp(); let copy;
     c.duplicate = () => { copy = new mock.CompItem({ duration: 12 }); copy.openInViewer = () => { copy.opened = true; }; return copy; };

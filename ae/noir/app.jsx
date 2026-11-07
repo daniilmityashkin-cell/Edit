@@ -10,7 +10,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
 (function (N) {
     var SECTION = "NOIR Captions";
     var SETTINGS_KEY = "settings.v2";
-    N.VERSION = "0.33.1";
+    N.VERSION = "0.34.0";
 
     function clone(o) { return N.parseJSON(N.stringify(o)); }
 
@@ -475,7 +475,8 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         function behind() {
             var comp = activeComp(), sel = comp.selectedLayers, over = null, list = [], i, key = sourceKey();
             for (i = 0; i < sel.length; i++) if (!N.isGenerated(sel[i])) { over = sel[i]; break; }
-            if (!over) throw new Error("Выделите слой, под которым должны оказаться субтитры (например, копию видео с вырезанным человеком).");
+            for (i = 1; !over && i <= comp.numLayers; i++) if (String(comp.layer(i).comment || "") === N.PERSON_TAG) over = comp.layer(i);   // the Roto Brush copy, if prepared
+            if (!over) throw new Error("Выделите слой, под которым должны оказаться субтитры (например, копию видео с вырезанным человеком), или попросите помощника «вырежи человека» — он подготовит такую копию.");
             for (i = 1; i <= comp.numLayers; i++) { var l = comp.layer(i); if (l instanceof TextLayer && N.isGenerated(l) && (!key || N.layerSource(l) === key)) list.push(l); }
             if (!list.length) throw new Error("В композиции нет субтитров NOIR.");
             return undo("субтитры под слой", function () { status("Субтитры под слоем «" + over.name + "»: " + N.placeBehind(comp, list, over).moved); return st.status; });
@@ -494,6 +495,69 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
                 ls[i] = N.editorWords(ws);
             }
             st.text = ls.join("\n"); status("Выделено слов: " + changed + ". Обновите субтитры, чтобы применить."); return st.status;
+        }
+
+        // ---------- selection, masks, Roto Brush preparation (for the assistant and the radial menu) ----------
+        N.PERSON_TAG = "noir-captions:person";
+        function sourceLayer(comp) {
+            var L = st.link, i;
+            if (L && comp.id === L.compId) {
+                if (L.layerId) try { var byId = comp.layerByID ? comp.layerByID(L.layerId) : null; if (byId) return byId; } catch (e) {}
+                for (i = 1; i <= comp.numLayers; i++) if (comp.layer(i).name === L.layerName) return comp.layer(i);
+            }
+            return null;
+        }
+        // The footage the user means: a selected non-NOIR AV layer, else the recognized audio/video layer, else the lowest video layer.
+        function videoLayer(comp) {
+            var sel = comp.selectedLayers, i, l;
+            for (i = 0; i < sel.length; i++) if (!(sel[i] instanceof TextLayer) && !N.isGenerated(sel[i]) && String(sel[i].comment || "") !== N.CONTROL_TAG && !sel[i].nullLayer) return sel[i];
+            var src = sourceLayer(comp); if (src) return src;
+            for (i = comp.numLayers; i >= 1; i--) { l = comp.layer(i); if (l instanceof AVLayer && !(l instanceof TextLayer) && !l.nullLayer && String(l.comment || "").indexOf("noir-captions") !== 0 && l.source && l.source.hasVideo !== false && l.width) return l; }
+            return null;
+        }
+        function selectOnly(comp, list) {
+            for (var i = 1; i <= comp.numLayers; i++) comp.layer(i).selected = false;
+            for (var j = 0; j < list.length; j++) list[j].selected = true;
+            return list.length;
+        }
+        function selectTarget(target) {
+            var comp = activeComp(), list = [], i, key = sourceKey();
+            if (target === "none") { selectOnly(comp, []); return { n: 0, what: "ничего" }; }
+            if (target === "video") { var v = videoLayer(comp); if (!v) throw new Error("Не нашёл слой видео в композиции."); selectOnly(comp, [v]); return { n: 1, what: "видео «" + v.name + "»" }; }
+            if (target === "control") { var c = N.findControl(comp); if (!c) throw new Error("В композиции нет пульта NOIR Control."); selectOnly(comp, [c]); return { n: 1, what: "пульт" }; }
+            for (i = 1; i <= comp.numLayers; i++) {
+                var l = comp.layer(i);
+                if (!(l instanceof TextLayer) || !N.isGenerated(l) || (key && N.layerSource(l) !== key && target !== "all")) continue;
+                var gi = N.groupInfo(l);
+                if (target === "accents" && l.label !== 11) continue;
+                if (target === "base" && l.label === 11) continue;
+                if (target === "phrase" && (!gi || gi.segment !== st.phrase)) continue;
+                list.push(l);
+            }
+            if (!list.length) throw new Error(target === "phrase" ? "У выбранной фразы ещё нет слоёв — создайте или обновите субтитры." : "В композиции нет таких субтитров.");
+            selectOnly(comp, list);
+            return { n: list.length, what: { captions: "субтитры этого видео", all: "все субтитры NOIR", accents: "акценты", base: "обычные слова", phrase: "фраза " + (st.phrase + 1) }[target] || target };
+        }
+        // Mask in % of the layer: rect or ellipse; feather in % of the smaller side; invert keeps the outside.
+        function addMask(layer, a) {
+            var w = layer.width || (layer.source && layer.source.width) || 1920, h = layer.height || (layer.source && layer.source.height) || 1080;
+            var x = w * Math.max(-50, Math.min(150, Number(a.x === undefined ? 10 : a.x))) / 100, y = h * Math.max(-50, Math.min(150, Number(a.y === undefined ? 10 : a.y))) / 100;
+            var mw = w * Math.max(1, Math.min(200, Number(a.w === undefined ? 80 : a.w))) / 100, mh = h * Math.max(1, Math.min(200, Number(a.h === undefined ? 80 : a.h))) / 100;
+            var sh = new Shape();
+            if (a.shape === "ellipse") {
+                var k = 0.5523, rx = mw / 2, ry = mh / 2, cx = x + rx, cy = y + ry;
+                sh.vertices = [[cx, cy - ry], [cx + rx, cy], [cx, cy + ry], [cx - rx, cy]];
+                sh.inTangents = [[-rx * k, 0], [0, -ry * k], [rx * k, 0], [0, ry * k]];
+                sh.outTangents = [[rx * k, 0], [0, ry * k], [-rx * k, 0], [0, -ry * k]];
+            } else sh.vertices = [[x, y], [x + mw, y], [x + mw, y + mh], [x, y + mh]];
+            sh.closed = true;
+            var m = layer.property("ADBE Mask Parade").addProperty("ADBE Mask Atom");
+            m.name = "NOIR Mask";
+            m.property("ADBE Mask Shape").setValue(sh);
+            var f = Math.min(w, h) * Math.max(0, Math.min(100, Number(a.feather) || 0)) / 100;
+            m.property("ADBE Mask Feather").setValue([f, f]);
+            try { m.inverted = !!a.invert; } catch (e) {}
+            return m;
         }
 
         // ---------- filler words ----------
@@ -895,6 +959,38 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
                 return undo("маска по тексту", function () { var o = clone(S.tools.mask); o.color = S.style.base.color; var r = N.maskTextLayers(comp, texts, source, o); status("Масок создано: " + r.made.length); return r.made.length; });
             },
             "tool.maskRemove": function () { var comp = activeComp(); return undo("убрать маски", function () { var n = N.removeMasks(comp); status("Убрано масок: " + n); return n; }); },
+            "layers.select": function (a) {
+                var r = selectTarget(String(a.target || "captions"));
+                status(r.n ? "Выделено: " + r.what + (r.n > 1 ? " (" + r.n + ")" : "") : "Выделение снято."); return r.n;
+            },
+            "mask.add": function (a) {
+                var comp = activeComp(), targets = [], sel = comp.selectedLayers, i;
+                for (i = 0; i < sel.length; i++) if (!(sel[i] instanceof TextLayer) && !sel[i].nullLayer) targets.push(sel[i]);
+                if (!targets.length) { var v = videoLayer(comp); if (v) targets.push(v); }
+                if (!targets.length) throw new Error("Выделите слой для маски (видео, фото, фигуру).");
+                return undo("маска", function () {
+                    for (var k = 0; k < targets.length; k++) addMask(targets[k], a);
+                    status("Маска " + (a.shape === "ellipse" ? "овалом" : "прямоугольником") + (a.invert ? ", инвертирована" : "") + ": слоёв " + targets.length + " («" + targets[0].name + "»). Двигать — в AE, инструментом выделения.");
+                    return targets.length;
+                });
+            },
+            // Roto Brush cannot be driven by scripts: the panel prepares everything around it.
+            "roto.prepare": function () {
+                var comp = activeComp(), i, person = null, top = null;
+                for (i = 1; i <= comp.numLayers; i++) { var l = comp.layer(i); if (String(l.comment || "") === N.PERSON_TAG) person = l; if (!top && l instanceof TextLayer && N.isGenerated(l)) top = l; }
+                return undo("копия видео для Roto Brush", function () {
+                    if (!person) {
+                        var v = videoLayer(comp);
+                        if (!v) throw new Error("Не нашёл слой видео: выделите его в таймлайне.");
+                        person = v.duplicate(); person.name = "NOIR · Человек (Roto Brush)"; person.comment = N.PERSON_TAG; person.label = 11;
+                    }
+                    if (top && person.index > top.index) person.moveBefore(top);
+                    selectOnly(comp, [person]);
+                    try { person.openInViewer(); } catch (e) {}
+                    status("Копия видео «" + person.name + "» над субтитрами открыта в окне слоя. Возьмите Roto Brush (Alt+W), обведите человека, нажмите Freeze — текст окажется за человеком. Обводить кистью скрипты в AE не умеют, это один ручной шаг.");
+                    return person.name;
+                });
+            },
             "control.add": function (a) {
                 var sel = scopeLayers(a.scope);
                 return undo("пульт NOIR Control", function () {

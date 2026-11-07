@@ -96,7 +96,8 @@ class Layer {
     if (typeof n === "number") return [this._transformGroup(), this._effectsGroup(), this.textProps][n - 1];
     if (n === "Transform") return { property: k => this.transform[k] };
     if (this.src && n === "Source Text") return this.src;
-    if (n === "ADBE Root Vectors Group") { this.vectors = this.vectors || new PG("ADBE Root Vectors Group"); return this.vectors; }
+    if (n === "ADBE Mask Parade") { this.masks = this.masks || new PG("ADBE Mask Parade"); return this.masks; }
+        if (n === "ADBE Root Vectors Group") { this.vectors = this.vectors || new PG("ADBE Root Vectors Group"); return this.vectors; }
     if (n === "ADBE Text Properties") { this.textProps = this.textProps || new PG("ADBE Text Properties"); return this.textProps; }
     if (n === "ADBE Audio Group") { this.audioLevels = this.audioLevels || new Prop(PropertyValueType.TwoD, [0, 0]); return { property: () => this.audioLevels }; }
     if (n === "ADBE Effect Parade") {
@@ -240,7 +241,8 @@ function install(opts = {}) {
     FolderItem, ImportOptions, TrackMatteType: { NO_TRACK_MATTE: 0, ALPHA: 1, ALPHA_INVERTED: 2 },
     PropertyValueType, ParagraphJustification, KeyframeEase, CompItem, AVLayer, TextLayer, FootageItem,
     File, Folder, Panel, Window,
-    alert: (m) => { log.alerts.push(String(m)); if (opts.verbose) console.log("ALERT:", m); },
+    Shape: function () { this.vertices = []; this.inTangents = []; this.outTangents = []; this.closed = true; },
+        alert: (m) => { log.alerts.push(String(m)); if (opts.verbose) console.log("ALERT:", m); },
     confirm: () => true,
     prompt: (m, d) => (opts.promptAnswer !== undefined ? opts.promptAnswer : d),
   });
