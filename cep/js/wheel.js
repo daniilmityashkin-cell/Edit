@@ -121,20 +121,23 @@
 
         // Ring size and where the sheet goes. The ring wants ~60% of the smaller side (not below the base size); in a small panel it
         // shrinks (down to ~0.62×) so that the sheet fits beside or under it. Only a really tiny panel puts the sheet over the ring.
-        var ext0 = R1 + TILE / 2 + 6, want = Math.max(1, Math.min(2.2, Math.min(vw, vh) * 0.6 / (2 * ext0)));
-        var kSide = Math.min(want, (vw - 2 * pad - sw - 16) / (2 * ext0), (vh - 2 * pad) / (2 * ext0));
-        var kBelow = Math.min(want, (vh - 2 * pad - sh - 16) / (2 * ext0), (vw - 2 * pad) / (2 * ext0));
+        // ext0: tiles' edge; vis0: with the outer circle and the section name along it (what must stay inside the panel)
+        var ext0 = R1 + TILE / 2 + 6, vis0 = ext0 + 23, want = Math.max(1, Math.min(2.2, Math.min(vw, vh) * 0.6 / (2 * ext0)));
+        var kSide = Math.min(want, (vw - 2 * pad - sw - 16) / (ext0 + vis0), (vh - 2 * pad) / (2 * vis0));
+        var kBelow = Math.min(want, (vh - 2 * pad - sh - 16) / (ext0 + vis0), (vw - 2 * pad) / (2 * vis0));
         var side = kSide >= kBelow ? "right" : "below", k = Math.max(kSide, kBelow);
-        if (k < 0.62) { side = "over"; k = Math.min(want, (vw - 2 * pad) / (2 * ext0), (vh - 2 * pad) / (2 * ext0)); }
+        if (k < 0.62) { side = "over"; k = Math.min(want, (vw - 2 * pad) / (2 * vis0), (vh - 2 * pad) / (2 * vis0)); }
         var g = { r1: R1 * k, tile: TILE * k, orb: ORB * k, ext: ext0 * k, k: k }; st.g = g;
         function clampC(v, lo, hi) { return hi < lo ? (lo + hi) / 2 : Math.max(lo, Math.min(hi, v)); }
-        var cx = clampC(x, pad + g.ext, vw - pad - g.ext), cy = clampC(y, pad + g.ext, vh - pad - g.ext);
+        // keep the whole ring on screen, with the outer circle and the section name written along it (≈ ext + 9 + text)
+        var vis = vis0 * k;
+        var cx = clampC(x, pad + vis, vw - pad - vis), cy = clampC(y, pad + vis, vh - pad - vis);
         if (side === "right") {
             if (vw - pad - (cx + g.ext) < sw + 16) {
                 if (cx - g.ext - pad >= sw + 16) side = "left";
                 else cx = (vw - (2 * g.ext + 16 + sw)) / 2 + g.ext;          // ring + sheet centred together
             }
-        } else if (side === "below") cy = clampC(cy, pad + g.ext, vh - pad - sh - 16 - g.ext);
+        } else if (side === "below") cy = clampC(cy, pad + vis, vh - pad - sh - 16 - g.ext);
         var sx, sy;
         if (side === "right") { sx = cx + g.ext + 16; sy = clampC(cy - sh / 2, pad, vh - pad - sh); }
         else if (side === "left") { sx = cx - g.ext - 16 - sw; sy = clampC(cy - sh / 2, pad, vh - pad - sh); }
