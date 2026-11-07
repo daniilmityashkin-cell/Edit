@@ -178,6 +178,12 @@
         var p0 = pos(r, a0), p1 = pos(r, a1), large = a1 - a0 > 180 ? 1 : 0;
         return "M" + p0[0].toFixed(2) + " " + p0[1].toFixed(2) + " A" + r.toFixed(2) + " " + r.toFixed(2) + " 0 " + large + " 1 " + p1[0].toFixed(2) + " " + p1[1].toFixed(2);
     }
+    // a text path along the circle centred on angle a, upright on both halves (clockwise on top, counter-clockwise below)
+    function textArc(R, a, span) {
+        if (Math.cos(a * Math.PI / 180) >= -0.01) return arc(R, a - span, a + span);
+        var p0 = pos(R, a + span), p1 = pos(R, a - span);
+        return "M" + p0[0].toFixed(2) + " " + p0[1].toFixed(2) + " A" + R.toFixed(2) + " " + R.toFixed(2) + " 0 0 0 " + p1[0].toFixed(2) + " " + p1[1].toFixed(2);
+    }
     function drawRing(rw, g, list) {
         var n = list.length, step = 360 / n, bw = g.tile * 0.74, gapDeg = Math.max(2.2, 360 * 5 / (2 * Math.PI * g.r1)), R = g.ext + 9, half = R + 30;
         var glow = el("div", "rw-glow", rw), gs = g.r1 * 2.3; glow.style.cssText = "width:" + gs + "px;height:" + gs + "px;left:" + -gs / 2 + "px;top:" + -gs / 2 + "px"; st.glow = glow;
@@ -197,22 +203,35 @@
         [45, 135, 225, 315].forEach(function (d) { var p = pos(R, d); h += "<circle class='rw-node' cx='" + p[0].toFixed(2) + "' cy='" + p[1].toFixed(2) + "' r='" + Math.max(3, 4 * g.k).toFixed(1) + "'/>"; });
         var rn = g.r1 - bw / 2 - Math.max(9, 10 * g.k), fs = Math.max(8.5, Math.min(11, 9 * g.k));
         for (i = 0; i < n; i++) { var p = pos(rn, i * step); h += "<text class='rw-n' data-i='" + i + "' x='" + p[0].toFixed(2) + "' y='" + p[1].toFixed(2) + "' style='font-size:" + fs.toFixed(1) + "px'>" + (i < 9 ? "0" : "") + (i + 1) + "</text>"; }
+        // every section's name along the outer circle (dim; shortened to its own arc), the chosen one bright on top
+        var lfs = Math.max(8.5, Math.min(11, 9 * g.k));
+        for (i = 0; i < n; i++) h += "<path id='" + u + "l" + i + "' d='" + textArc(R, i * step, Math.min(170, step * 1.5)) + "' fill='none'/><text class='rw-curve dim' data-i='" + i + "' style='font-size:" + lfs.toFixed(1) + "px'><textPath href='#" + u + "l" + i + "' startOffset='50%' text-anchor='middle'></textPath></text>";
         h += "<path id='" + u + "p' d='' fill='none'/><text class='rw-curve' style='font-size:" + Math.max(9, Math.min(12, 10 * g.k)).toFixed(1) + "px'><textPath href='#" + u + "p' startOffset='50%' text-anchor='middle'></textPath></text>";
         svg.innerHTML = h; rw.appendChild(svg);
-        st.ring = { svg: svg, R: R, step: step, pathEl: svg.querySelector("[id='" + u + "p']"), tp: svg.querySelector("textPath") };
+        st.ring = { svg: svg, R: R, step: step, pathEl: svg.querySelector("[id='" + u + "p']"), tp: svg.querySelector(".rw-curve:not(.dim) textPath") };
         st.ring.tp.setAttributeNS("http://www.w3.org/1999/xlink", "xlink:href", "#" + u + "p");
+        var avail = R * (step - 7) * Math.PI / 180;
+        Array.prototype.forEach.call(svg.querySelectorAll(".rw-curve.dim"), function (t, j) {
+            var tp = t.querySelector("textPath"), label = list[j].label.toUpperCase();
+            tp.setAttributeNS("http://www.w3.org/1999/xlink", "xlink:href", "#" + u + "l" + j);
+            tp.textContent = label;
+            var w = 0; try { w = t.getComputedTextLength(); } catch (e) {}
+            if (w > avail) { t.classList.add("tight"); try { w = t.getComputedTextLength(); } catch (e2) {} }
+            for (var cut = label.length; w > avail && cut > 3; cut--) { tp.textContent = label.slice(0, cut - 1).replace(/\s+$/, "") + "…"; try { w = t.getComputedTextLength(); } catch (e3) { break; } }
+        });
     }
     function paintRing() {
         var r = st.ring; if (!r) return;
         var i = st.sector, segs = r.svg.querySelectorAll(".rw-seg, .rw-cap, .rw-n"), k;
         for (k = 0; k < segs.length; k++) segs[k].classList.toggle("on", Number(segs[k].getAttribute("data-i")) === i);
+        var dims = r.svg.querySelectorAll(".rw-curve.dim");
+        for (k = 0; k < dims.length; k++) dims[k].classList.toggle("hide", k === i);
         var sec = i >= 0 ? st.list[i] : null;
         if (st.glow) { st.glow.classList.toggle("on", !!sec); var gp = sec ? pos(st.g.r1 * 0.55, i * r.step) : [0, 0]; st.glow.style.transform = "translate(" + gp[0].toFixed(1) + "px," + gp[1].toFixed(1) + "px)"; }
         if (r.shown === i) return; r.shown = i;
         if (!sec) { r.tp.textContent = ""; return; }
         // text along the outer circle, centred on the section; upright on both halves (clockwise on top, counter-clockwise below)
-        var a = i * r.step, top = Math.cos(a * Math.PI / 180) >= -0.01, span = 80, R = r.R;
-        r.pathEl.setAttribute("d", top ? arc(R, a - span, a + span) : (function () { var p0 = pos(R, a + span), p1 = pos(R, a - span); return "M" + p0[0].toFixed(2) + " " + p0[1].toFixed(2) + " A" + R + " " + R + " 0 0 0 " + p1[0].toFixed(2) + " " + p1[1].toFixed(2); })());
+        r.pathEl.setAttribute("d", textArc(r.R, i * r.step, 80));
         r.tp.textContent = sec.label;
     }
     function hideSheet() {
