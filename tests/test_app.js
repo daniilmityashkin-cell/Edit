@@ -437,6 +437,29 @@ const accept = (a, mode) => { let r = a.call("generate", { mode: mode || "all" }
     try { a.call("settings.set", { path: "speakers", value: true }); a.call("recognize"); } finally { N.getAudioSource = keep[0]; N.modelCached = keep[1]; N.startRecognition = keep[2]; a.call("cancel"); }
     assert.strictEqual(opts.speakers, true);
   });
+  await test("стиль из референса: замеры видео ложатся на ближайший встроенный стиль, стиль сохраняется и выбирается; без субтитров — понятное сообщение", () => {
+    const a = freshApp(); mkComp();
+    const ref = path.join(TMP, "ref clip.mp4"); fs.writeFileSync(ref, "");
+    const m = { posY: 16, size: 380, color: [0.78, 0.02, 0.0], caps: true, maxWords: 1, condensed: false, shadow: false, animIn: "none", lines: 1 };
+    const keep = N.styleScan; let job;
+    N.styleScan = (root, py, src, cb) => { job = { src, cb }; };
+    try {
+      assert.ok(/Изучаю/.test(a.call("style.fromVideo", { path: ref })));
+      assert.throws(() => a.call("style.fromVideo", { path: ref }), /Уже идёт/);
+      job.cb.onDone({ found: true, style: m, report: ["x", "Субтитры найдены на 32% кадров"] });
+    } finally { N.styleScan = keep; }
+    const s = a.state().settings, st = s.style;
+    assert.ok(/^ref-/.test(s.presetId)); assert.strictEqual(a.state().presetsRev, 1);
+    assert.strictEqual(st.layout.posY, 16); assert.strictEqual(st.base.size, 380); assert.deepStrictEqual(st.base.color, [0.78, 0.02, 0]);
+    assert.strictEqual(st.base.caps, true); assert.strictEqual(st.layout.maxWords, 1); assert.strictEqual(st.anim.animIn, "none");
+    assert.ok(a.call("presets").some(p => p.id === s.presetId && /Из референса · ref clip/.test(p.name)));
+    assert.ok(/создан и выбран/.test(a.call("status")));
+    N.styleScan = (root, py, src, cb) => cb.onDone({ found: false, report: ["x", "Отрисованного текста не найдено."] });
+    try { a.call("style.fromVideo", { path: ref }); } finally { N.styleScan = keep; }
+    assert.ok(/не нашёл субтитров/.test(a.call("status")));
+    const z = N.styleFromMeasure(Object.assign({}, m, { color: [1, 1, 1], animIn: "zoomBlur", accent: { color: [0.9, 0.06, 0.09], scale: 1.9 }, maxWords: 3, posY: 47, size: 64 }), a.call("presets"), "street.mp4");
+    assert.strictEqual(z.anim.accentIn, "zoomBlur"); assert.deepStrictEqual(z.accent.color, [0.9, 0.06, 0.09]); assert.strictEqual(z.accent.size, Math.round(64 * 1.9));
+  });
   await test("превью: отдельная композиция, исходник не меняется", () => {
     const c = mkComp({ duration: 12 }), a = freshApp(); let copy;
     c.duplicate = () => { copy = new mock.CompItem({ duration: 12 }); copy.openInViewer = () => { copy.opened = true; }; return copy; };

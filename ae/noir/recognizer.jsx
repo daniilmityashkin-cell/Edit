@@ -93,6 +93,35 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         N.faceJob = { status: status, started: new Date().getTime(), cb: cb };
         N.faceJob.task = app.scheduleTask("NOIR.pollFaceScan()", 500, true);
     };
+    // Стиль по видео-референсу (recognition/style_from_video.py, OpenCV). cb: {onDone(result), onError(text)}.
+    N.styleScan = function (root, override, source, cb) {
+        if (!isWin) { cb.onError("Анализ референса из панели поддерживается на Windows."); return; }
+        if (N.styleJob) { cb.onError("Анализ референса уже идёт."); return; }
+        var py = File(N.pythonPath(root, override)), script = File(root + "/recognition/style_from_video.py");
+        if (!py.exists || !File(source).exists || !script.exists) { cb.onError("Не найден Python, видеофайл или recognition/style_from_video.py."); return; }
+        var dir = Folder(Folder.temp.fsName + "/NOIR_Captions"); if (!dir.exists) dir.create();
+        var base = dir.fsName + "/style_" + new Date().getTime();
+        var job = File(base + ".json"), status = File(base + "_status.json"), vbs = File(base + ".vbs");
+        N.writeText(job, N.stringify({ input: source, status: status.fsName }));
+        var command = '"' + py.fsName + '" "' + script.fsName + '" "' + job.fsName + '"';
+        N.writeText(vbs, 'CreateObject("WScript.Shell").Run "' + command.replace(/"/g, '""') + '", 0, False\r\n');
+        if (!vbs.execute()) { cb.onError("Не удалось запустить анализ референса."); return; }
+        N.styleJob = { status: status, started: new Date().getTime(), cb: cb };
+        N.styleJob.task = app.scheduleTask("NOIR.pollStyleScan()", 700, true);
+    };
+    N.pollStyleScan = function () {
+        var j = N.styleJob; if (!j) return;
+        try {
+            var text = readText(j.status);
+            if (text === null) {
+                if (new Date().getTime() - j.started < 240000) return;
+                app.cancelTask(j.task); N.styleJob = null; j.cb.onError("Анализ референса занял больше 4 минут."); return;
+            }
+            var result; try { result = N.parseJSON(text); } catch (e0) { return; }
+            app.cancelTask(j.task); N.styleJob = null;
+            if (result.state === "error") j.cb.onError(result.message); else j.cb.onDone(result);
+        } catch (e) { try { app.cancelTask(j.task); } catch (e2) {} N.styleJob = null; j.cb.onError(String(e)); }
+    };
     N.pollFaceScan = function () {
         var j = N.faceJob; if (!j) return;
         try {

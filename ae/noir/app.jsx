@@ -10,7 +10,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
 (function (N) {
     var SECTION = "NOIR Captions";
     var SETTINGS_KEY = "settings.v2";
-    N.VERSION = "0.41.3";
+    N.VERSION = "0.42.0";
 
     function clone(o) { return N.parseJSON(N.stringify(o)); }
 
@@ -702,6 +702,62 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             if (had) { var r = generate("all", false); if (r && r.pending) r = generate("all", true); msg += " Субтитры пересозданы под новое время."; }
             status(msg + (a.ripple === false ? " Другие слои не сдвигались." : (moved ? " Другие слои сдвинуты за вырезанным: " + moved + "." : "")) + (locked ? " Заблокированные слои не тронуты: " + locked + "." : ""));
             return { removed: plan.removed, pieces: pieces, keeps: plan.keeps.length, moved: moved };
+        }
+
+        // ---------- style from a reference video ----------
+        // The analyser measures the captions of a video (height, size, colours, caps, words per screen, entrance); the closest
+        // built-in style is taken and these measurements are put into it; the result is saved as a user style and chosen.
+        function colorDist(a, b) { if (!a || !b) return 1; return Math.sqrt((a[0] - b[0]) * (a[0] - b[0]) + (a[1] - b[1]) * (a[1] - b[1]) + (a[2] - b[2]) * (a[2] - b[2])); }
+        N.styleFromMeasure = function (m, list, fileName) {
+            var best = null, bestD = 1e9, i;
+            for (i = 0; i < list.length; i++) {
+                var p = list[i]; if (!p.base || !p.layout || p.user) continue;
+                var d = Math.abs((p.layout.posY || 75) - m.posY) / 25 + Math.abs(p.base.size - m.size) / Math.max(60, m.size) + colorDist(p.base.color, m.color) * 1.5 +
+                    ((!!p.base.caps) !== (!!m.caps) ? 0.8 : 0) + ((p.layout.maxWords || 3) !== m.maxWords ? 0.15 * Math.min(4, Math.abs((p.layout.maxWords || 3) - m.maxWords)) : 0) +
+                    (m.accent ? colorDist(p.accent.color, m.accent.color) * 0.8 : 0);
+                if (d < bestD) { bestD = d; best = p; }
+            }
+            if (!best) throw new Error("Нет встроенных стилей для основы.");
+            var st = { layout: clone(best.layout), base: clone(best.base), accent: clone(best.accent), anim: clone(best.anim) };
+            st.layout.posY = m.posY; st.layout.maxWords = m.maxWords; st.layout.layerMode = st.layout.layerMode || "phrase";
+            if (m.lines === 1 && m.maxWords <= 3) st.layout.lineChars = 0;
+            st.base.size = m.size; st.base.color = m.color; st.base.caps = !!m.caps; st.accent.caps = !!m.caps;
+            if (m.shadow && !st.base.shadow) st.base.shadow = { color: [0, 0, 0], opacity: 55, distance: 3, softness: 12 };
+            if (m.accent) { st.accent.color = m.accent.color; st.accent.size = Math.round(m.size * Math.max(0.6, Math.min(3, m.accent.scale || 1))); }
+            else { st.accent.color = m.color; st.accent.size = Math.round(m.size * 1.12); }
+            var A = { none: ["none", "none"], fade: ["fade", "fade"], zoomBlur: ["zoomBlur", "none"], pop: ["pop", "fade"] }[m.animIn] || ["none", "none"];
+            st.anim.animIn = A[0]; st.anim.animOut = A[1]; st.anim.inDur = m.animIn === "none" ? 0 : m.animIn === "zoomBlur" ? 0.13 : 0.2; st.anim.outDur = A[1] === "none" ? 0 : 0.15;
+            if (m.animIn === "zoomBlur") { st.anim.accentIn = "zoomBlur"; st.anim.accentInDur = 0.13; }
+            st.layout.reveal = m.maxWords <= 1 ? "word" : (st.layout.reveal || "word");
+            var name = "Из референса · " + String(fileName || "видео").replace(/\.[^.]+$/, "").substr(0, 28);
+            return { schema: "noir-style/1", id: "ref-" + new Date().getTime(), name: name, description: "По референсу на основе «" + best.name + "»: высота, размер, цвета, капс, слов на экране и появление измерены по видео. Шрифт — от основы.",
+                layout: st.layout, base: st.base, accent: st.accent, anim: st.anim, basedOn: best.id };
+        };
+        function styleFromVideo(a) {
+            if (st.scanning) throw new Error("Уже идёт анализ — дождитесь конца.");
+            var f = null;
+            if (a && a.path) f = File(a.path);
+            if (!f) { try { var comp = app.project.activeItem; if (comp instanceof CompItem) { var v = videoLayer(comp); if (v && v.source && v.source.mainSource && v.source.mainSource.file && comp.selectedLayers.length) f = v.source.mainSource.file; } } catch (e0) {} }
+            if (!f) f = File.openDialog("Видео-референс с субтитрами, стиль которых нужен");
+            if (!f) return null;
+            if (!f.exists) throw new Error("Файл не найден: " + f.fsName);
+            st.scanning = true; status("Изучаю субтитры в «" + decodeURI(f.name) + "»… (до минуты)");
+            N.styleScan(root, S.python, f.fsName, {
+                onDone: function (res) {
+                    st.scanning = false;
+                    if (!res.found) { status("В референсе не нашёл субтитров. " + (res.report || []).slice(1).join(" ")); return; }
+                    try {
+                        var p = N.styleFromMeasure(res.style, presets, decodeURI(f.name));
+                        var dir = N.userPresetFolder(); if (!dir.exists) dir.create();
+                        N.writeText(File(dir.fsName + "/" + p.id + ".json"), N.stringify(p));
+                        presets = N.loadPresets(root); st.presetsRev = (st.presetsRev || 0) + 1;
+                        var made = presetById(p.id); if (made) choosePreset(made);
+                        status("Стиль «" + p.name + "» создан и выбран. " + (res.report || []).slice(1).join(" · ") + ". Основа: " + (presetById(p.basedOn) || {}).name + ".");
+                    } catch (e) { status("Не удалось собрать стиль: " + (e.message || e)); log("error", e.toString()); }
+                },
+                onError: function (text) { st.scanning = false; status(text); log("error", text); }
+            });
+            return "Изучаю референс…";
         }
 
         // ---------- batch: recognize and caption several comps one after another ----------
@@ -1489,6 +1545,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
                 for (var i = 0; i < sel.length; i++) { if (sel[i] instanceof TextLayer) { t++; if (N.isGenerated(sel[i])) n++; } else o++; }
                 return { comp: true, text: t, noir: n, other: o, name: comp.name };
             },
+            "style.fromVideo": function (a) { return styleFromVideo(a || {}); },
             "batch.list": function (a) {
                 var list = projectComps(a && a.ids), out = [];
                 for (var i = 0; i < list.length; i++) { var l = N.autoAudioLayer(list[i]); out.push({ id: list[i].id, name: list[i].name, layer: l ? l.name : null }); }
@@ -1616,7 +1673,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             if (st.data) for (i = 0; i < st.data.segments.length; i++) phrases.push(String(i + 1) + " · " + (ls[i] || "").substr(0, 48));
             try { var pw = phraseWords(); for (i = 0; i < pw.length; i++) words.push({ text: pw[i].text, accent: !!pw[i].accent, low: pw[i].conf !== undefined && pw[i].conf < 0.65,
                 start: Math.round(pw[i].start * 1000) / 1000, end: Math.round(pw[i].end * 1000) / 1000 }); } catch (e) {}
-            return { version: N.VERSION, status: st.status, progress: st.progress, recognizing: st.recognizing, scanning: st.scanning, batch: st.batch ? { total: st.batch.total, left: st.batch.queue.length, current: st.batch.current } : null,
+            return { version: N.VERSION, status: st.status, progress: st.progress, recognizing: st.recognizing, scanning: st.scanning, presetsRev: st.presetsRev || 0, batch: st.batch ? { total: st.batch.total, left: st.batch.queue.length, current: st.batch.current } : null,
                 hasData: !!st.data, dataRevision: st.dataRevision, text: st.text, dirty: dirty(), phraseDirty: !!st.data && (ls[st.phrase] !== st.cleanLines[st.phrase] || !!st.timing[st.phrase]),
                 phrase: st.phrase, phrases: phrases, words: words, speakers: spk, speaker: spk && st.data.segments[st.phrase] ? (st.data.segments[st.phrase].speaker || 0) : null, canUpdate: canUpdate(), completed: st.completed, issues: st.issues, pending: !!st.pending,
                 settings: S, face: st.face, historyLength: st.history.length, control: hasControl(), source: sourceName() };

@@ -5,7 +5,7 @@
     "use strict";
     var U = NoirUI, H = NoirHost, el = U.el, t = function (k, v) { return NoirI18n.t(k, v); };
     var root = document.getElementById("app");
-    var meta = null, presets = [], S = null, page = "text", view = {}, lastMode = "all", seenRevision = -1, lastStatus = null, ready = null;
+    var lastPresetsRev = null, meta = null, presets = [], S = null, page = "text", view = {}, lastMode = "all", seenRevision = -1, lastStatus = null, ready = null;
     var prefs = (function () { try { return JSON.parse(localStorage.getItem("noir.ui.v1")) || {}; } catch (e) { return {}; } })();
     function savePrefs() { try { localStorage.setItem("noir.ui.v1", JSON.stringify(prefs)); } catch (e) {} }
     // Panel view: compact (no explanations, tighter), normal, detailed (every parameter, tools and sounds). Old "advanced" = detailed.
@@ -518,6 +518,9 @@
             b.onclick = function () { prefs.styleFilter = x[0]; savePrefs(); v.gridSig = null; renderStyle(); };
         });
         el("span", "spacer", head); v.current = el("span", "muted small current-style", head);
+        var refRow = U.row(p, "actions wrap ref-row");
+        U.button(t("ref.btn"), "", refRow, function () { act("style.fromVideo", {}); }, "film");
+        el("span", "muted small", refRow, t("ref.hint"));
         v.grid = el("div", "style-grid", p);
         var q = U.card(p, null); q.id = "style-quick";
         U.field(q, { path: "quick.size", label: t("style.size"), kind: "range", min: 25, max: 200, step: 5, unit: "%" });
@@ -819,6 +822,7 @@
     function render() {
         if (!S || !view.pill) return;
         var ps = pillState(); view.pill.textContent = ps[1]; view.pill.dataset.state = ps[0];
+        if (S.presetsRev !== undefined && S.presetsRev !== lastPresetsRev) { var first = lastPresetsRev === null; lastPresetsRev = S.presetsRev; if (!first) { reloadPresets(); U.toast(NoirI18n.host(S.status), "ok", 9000); } }
         var a = primaryAction(); label(view.primary, a.label); view.primary.classList.toggle("busy", !!S.recognizing);
         view.primary.hidden = page === "text" && !S.hasData && !S.recognizing;      // the recognition card has its own button
         view.progress.hidden = !S.recognizing; view.progress.firstChild.style.width = Math.max(4, Math.round((S.progress || 0) * 100)) + "%";
