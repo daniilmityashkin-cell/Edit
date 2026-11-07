@@ -167,6 +167,17 @@ def run(args):
     if not segments:
         warnings.append({"code": "empty", "message": "Речь не найдена"})
 
+    speakers_info = None
+    if int(getattr(args, "speakers", 0) or 0) >= 2 and segments:
+        status.write("speakers", "Определяю, кто говорит", progress=1.0, device=device)
+        try:
+            from speakers import assign_speakers
+            speakers_info = assign_speakers(audio, segments, offset=start)
+            if speakers_info.get("speakers", 1) < 2:
+                warnings.append({"code": "one_speaker", "message": "Второй голос не найден — все фразы одного цвета."})
+        except Exception as e:  # never lose the transcript because of this step
+            warnings.append({"code": "speakers_failed", "message": str(e)[:300]})
+
     result = {
         "schema": SCHEMA,
         "language": info.language,
@@ -177,6 +188,8 @@ def run(args):
         "segments": segments,
         "warnings": warnings,
     }
+    if speakers_info:
+        result["speakers"] = speakers_info
     tmp = args.output + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(result, f, ensure_ascii=False, indent=1)
@@ -199,6 +212,7 @@ def main():
     p.add_argument("--start", type=float, default=0.0, help="начало диапазона в файле, с")
     p.add_argument("--end", type=float, default=0.0, help="конец диапазона в файле, с (0 = до конца)")
     p.add_argument("--prompt", default="", help="словарь имён/терминов подсказкой модели")
+    p.add_argument("--speakers", type=int, default=0, help="2 = различать двух говорящих (по фразам)")
     args = p.parse_args()
     if args.job:
         with open(args.job, encoding="utf-8") as f:

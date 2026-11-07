@@ -103,6 +103,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .card { margin: 0 0 var(--s2); padding: var(--s3); border: 1px solid var(--line); border-radius: var(--r-l); background: linear-gradient(180deg, rgba(255, 236, 200, .028), rgba(255, 236, 200, 0) 48px), var(--surface); box-shadow: inset 0 1px 0 rgba(255, 236, 200, .045); }
 .card.flash { animation: flash 900ms var(--ease); }
 @keyframes flash { 0% { box-shadow: 0 0 0 2px var(--accent-line); } 100% { box-shadow: 0 0 0 0 transparent; } }
+.speaker-btn.two { color: #ffcc66; box-shadow: inset 0 0 0 1px rgba(255, 204, 102, .45); }
 .mem-details > summary { cursor: pointer; margin-top: var(--s2); font-size: var(--fs-s); color: var(--muted); }
 .mem-list { display: grid; grid-template-columns: minmax(0, 1fr); gap: 2px; margin: var(--s2) 0; }
 .mem-head { margin: var(--s2) 0 2px; font-size: var(--fs-s); font-weight: 600; color: var(--muted); }

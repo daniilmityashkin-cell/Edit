@@ -545,6 +545,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
                 var it = lines[i][j];
                 var st = it.accent ? style.accent : style.base;
                 if (it.accent && st.colors && st.colors.length) st = withPaletteColor(st, it.ord);   // палитра по кругу
+                if (!it.accent && g.speaker === 1) { var sc = {}; for (var sk in st) sc[sk] = st[sk]; sc.color = layout.speaker2Color || [1, 0.8, 0.26]; st = sc; }   // второй голос — своим цветом
                 it.st = st;
                 it.size = st.size * ctx.scale;
                 it.display = displayText(it.text, st);

@@ -31,7 +31,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         recentFonts: [], favoriteStyles: [], onboarded: false,
         quick: { size: 100, position: "preset", intensity: "1" },
         replace: true, python: "", presetId: "", style: FALLBACK_STYLE, reflow: true, scope: "source", nudgeStep: 20, sizeStep: 10, timeStep: 0.1,
-        format: "auto", memoryLearn: true, assistantScripts: false,
+        format: "auto", memoryLearn: true, assistantScripts: false, speakers: false,
         tools: {
             counter: { from: 0, to: 100, duration: 2, hold: 1, step: 0, interval: 0, decimals: 0, pad: 0, thousands: "none", ease: "out",
                 prefix: "", suffix: "", side: "accent", size: 0, posX: 50, posY: 50, sound: false },
@@ -111,7 +111,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         shadow: "bool-shadow", glow: [0, 500], blend: "blend", opacity: [0, 100] };
     var PATHS = {
         "language": "lang", "model": "model", "device": "device", "prompt": "text", "lang": "uilang", "replace": "bool", "reflow": "bool", "scope": "scope",
-        "nudgeStep": [1, 2000], "sizeStep": [1, 100], "timeStep": [0.01, 30], "format": "format", "python": "text", "onboarded": "bool", "memoryLearn": "bool", "assistantScripts": "bool",
+        "nudgeStep": [1, 2000], "sizeStep": [1, 100], "timeStep": [0.01, 30], "format": "format", "python": "text", "onboarded": "bool", "memoryLearn": "bool", "assistantScripts": "bool", "speakers": "bool", "style.layout.speaker2Color": "color",
         "quick.size": [25, 200], "quick.position": "qpos", "quick.intensity": "qint",
         "style.layout.reveal": "reveal", "style.layout.layerMode": "layerMode", "style.layout.maxWords": [1, 30], "style.layout.maxChars": [1, 300],
         "style.layout.lineChars": [0, 300], "style.layout.accentOwnLine": "bool", "style.layout.autoAccent": "bool", "style.layout.posX": [-50, 150],
@@ -224,6 +224,8 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             for (var i = 0; i < data.segments.length; i++) n += data.segments[i].words.length;
             var gpu = "";
             for (var w = 0; w < (data.warnings || []).length; w++) if (data.warnings[w].code === "gpu_failed") gpu = " GPU не сработала — распознано на CPU.";
+            for (w = 0; w < (data.warnings || []).length; w++) if (data.warnings[w].code === "one_speaker") gpu += " Второй голос не найден — все фразы одного цвета.";
+            if (data.speakers && data.speakers.speakers === 2) gpu += " Голосов: 2 — фразы второго своим цветом.";
             status(n ? "Слов: " + n + ", язык " + data.language + "." + gpu + " Проверьте текст." : "Речь не найдена.", 1);
         }
         function phraseWords(index) {
@@ -323,6 +325,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
                 g.compOut = N.sourceToComp(g.outTime, map.startTime, map.stretch);
                 for (var j = 0; j < g.words.length; j++) {
                     g.words[j].compStart = N.sourceToComp(g.words[j].start, map.startTime, map.stretch);
+                    if (j === 0 && st.data && st.data.segments[g.seg] && st.data.segments[g.seg].speaker !== undefined) g.speaker = st.data.segments[g.seg].speaker;
                     g.words[j].compEnd = N.sourceToComp(g.words[j].end, map.startTime, map.stretch);
                 }
             }
@@ -687,12 +690,12 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
                 w = plan.words[i]; var j = keepOf((w.s + w.e) / 2); if (j < 0) continue;          // the word's middle decides: inside a removed part → gone
                 var kp = plan.keeps[j], t0 = starts[j] + Math.max(0, w.s - kp[0]), t1 = starts[j] + Math.min(kp[1], w.e) - kp[0];
                 if (t1 <= t0) t1 = t0 + Math.max(0.04, Math.min(w.e - w.s, 0.4));
-                if (!bySeg[w.w.seg]) { bySeg[w.w.seg] = { words: [], flags: [] }; segs.push(bySeg[w.w.seg]); }
+                if (!bySeg[w.w.seg]) { bySeg[w.w.seg] = { words: [], flags: [], speaker: st.data.segments[w.w.seg] ? st.data.segments[w.w.seg].speaker : undefined }; segs.push(bySeg[w.w.seg]); }
                 bySeg[w.w.seg].words.push({ text: w.w.text, start: Math.round(t0 * 1000) / 1000, end: Math.round(t1 * 1000) / 1000, conf: w.w.conf });
                 bySeg[w.w.seg].flags.push(w.w);
             }
             var data = { schema: "noir-captions/1", language: st.data.language, engine: st.data.engine, warnings: [], source: { file: st.data.source ? st.data.source.file : "", cut: true }, segments: [] }, lines = [];
-            for (i = 0; i < segs.length; i++) { data.segments.push({ words: segs[i].words }); lines.push(N.editorWords(segs[i].flags)); }
+            for (i = 0; i < segs.length; i++) { var sg = { words: segs[i].words }; if (segs[i].speaker !== undefined) sg.speaker = segs[i].speaker; data.segments.push(sg); lines.push(N.editorWords(segs[i].flags)); }
             setData(data, null); st.cutMap = newMap;
             st.text = lines.join("\n"); st.cleanLines = st.text.split("\n"); st.rawLines = st.text.split("\n");
             var msg = "Нарезано: убрано " + (Math.round(plan.removed * 10) / 10) + " с (" + (Math.round(plan.before * 10) / 10) + " → " + (Math.round(plan.after * 10) / 10) + " с), кусков " + plan.keeps.length + ". Отмена в AE — Ctrl+Z.";
@@ -728,7 +731,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             try { src = N.audioSourceOf(comp, layer); } catch (eS) { fail(eS.message || String(eS)); return; }
             status(tag + "запуск…", 0);
             try {
-                N.startRecognition(src, { root: root, python: S.python, model: S.model, language: S.language, device: S.device, prompt: memPrompt() }, {
+                N.startRecognition(src, { root: root, python: S.python, model: S.model, language: S.language, device: S.device, prompt: memPrompt(), speakers: S.speakers }, {
                     onStatus: function (s) { status(tag + (s.message || s.state), s.progress); },
                     onDone: function (data, s) {
                         if (!st.batch) return;
@@ -1156,7 +1159,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
                 if (st.recognizing) throw new Error("Распознавание уже идёт.");
                 st.recognizing = true; st.progress = 0; status("Запуск распознавания…", 0);
                 try {
-                N.startRecognition(src, { root: root, python: S.python, model: S.model, language: S.language, device: S.device, prompt: memPrompt() }, {
+                N.startRecognition(src, { root: root, python: S.python, model: S.model, language: S.language, device: S.device, prompt: memPrompt(), speakers: S.speakers }, {
                     onStatus: function (s) { var m = s.message || s.state; if (s.device) m += " · " + (s.device === "cuda" ? "GPU" : "CPU"); st.recognizing = true; status(m, s.progress); },
                     onDone: function (data, s) {
                         st.recognizing = false; setData(data, s.link);
@@ -1501,6 +1504,16 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
                 batchNext();
                 return { total: list.length };
             },
+            // which voice a phrase belongs to (the colour of its words); index — the current phrase by default; speaker 0 / 1 or toggle
+            "phrase.speaker": function (a) {
+                if (!st.data) throw new Error("Нет текста.");
+                var si = a && a.index !== undefined ? Number(a.index) : st.phrase, seg = st.data.segments[si];
+                if (!seg) throw new Error("Нет такой фразы.");
+                st.history.push({ text: st.text, data: clone(st.data), timingAll: clone(st.timing) });
+                seg.speaker = a && (a.speaker === 0 || a.speaker === 1) ? a.speaker : (seg.speaker === 1 ? 0 : 1);
+                st.timing[si] = true; st.issues = []; st.pending = null;
+                status("Фраза " + (si + 1) + ": голос " + (seg.speaker + 1) + ". Обновите фразу, чтобы применить."); return seg.speaker;
+            },
             "zoom.apply": function (a) { return zoomApply(a || {}); },
             "zoom.clear": function () { return zoomClear(); },
             "memory.get": function () { var m = memLoad(); return { fixes: m.fixes, prefs: m.prefs, examples: m.examples, learn: !!S.memoryLearn }; },
@@ -1598,13 +1611,14 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         }
         function hasControl() { try { var c = app.project.activeItem; return c instanceof CompItem && !!N.findControl(c); } catch (e) { return false; } }
         function state() {
-            var ls = lines(), phrases = [], words = [], i;
+            var ls = lines(), phrases = [], words = [], i, spk = false;
+            if (st.data) for (i = 0; i < st.data.segments.length; i++) if (st.data.segments[i].speaker !== undefined) spk = true;
             if (st.data) for (i = 0; i < st.data.segments.length; i++) phrases.push(String(i + 1) + " · " + (ls[i] || "").substr(0, 48));
             try { var pw = phraseWords(); for (i = 0; i < pw.length; i++) words.push({ text: pw[i].text, accent: !!pw[i].accent, low: pw[i].conf !== undefined && pw[i].conf < 0.65,
                 start: Math.round(pw[i].start * 1000) / 1000, end: Math.round(pw[i].end * 1000) / 1000 }); } catch (e) {}
             return { version: N.VERSION, status: st.status, progress: st.progress, recognizing: st.recognizing, scanning: st.scanning, batch: st.batch ? { total: st.batch.total, left: st.batch.queue.length, current: st.batch.current } : null,
                 hasData: !!st.data, dataRevision: st.dataRevision, text: st.text, dirty: dirty(), phraseDirty: !!st.data && (ls[st.phrase] !== st.cleanLines[st.phrase] || !!st.timing[st.phrase]),
-                phrase: st.phrase, phrases: phrases, words: words, canUpdate: canUpdate(), completed: st.completed, issues: st.issues, pending: !!st.pending,
+                phrase: st.phrase, phrases: phrases, words: words, speakers: spk, speaker: spk && st.data.segments[st.phrase] ? (st.data.segments[st.phrase].speaker || 0) : null, canUpdate: canUpdate(), completed: st.completed, issues: st.issues, pending: !!st.pending,
                 settings: S, face: st.face, historyLength: st.history.length, control: hasControl(), source: sourceName() };
         }
 

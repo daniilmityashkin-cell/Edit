@@ -164,6 +164,7 @@
         U.field(grid, { path: "language", label: t("video.language"), kind: "select", options: meta.languages });
         U.field(grid, { path: "model", label: t("video.model"), kind: "select", options: meta.models, commit: function (v) { set("model", v).then(checkReadiness); } });
         U.field(c, { path: "device", label: t("video.device"), kind: "segmented", options: meta.devices.map(function (d) { return { id: d.id, label: d.id === "auto" ? L("Авто") : d.id === "cuda" ? "GPU" : "CPU" }; }) });
+        U.field(c, { path: "speakers", label: t("spk.recognize"), kind: "toggle", hint: t("spk.hint") });
         U.field(c, { path: "prompt", label: t("video.prompt"), kind: "text", hint: t("video.promptHint"), placeholder: "NOIR, After Effects, …" });
     }
     function buildText(p) {
@@ -193,6 +194,7 @@
         v.phrase.onchange = function () { act("phrase.select", { index: Number(v.phrase.value) }); };
         U.iconButton("next", "→", nav, function () { if (S && S.phrase < S.phrases.length - 1) act("phrase.select", { index: S.phrase + 1 }); });
         U.iconButton("listen", t("act.listen"), nav, function () { act("listen"); });
+        v.speaker = U.button("", "ghost small speaker-btn", nav, function () { act("phrase.speaker", {}); }, "user"); v.speaker.title = t("spk.toggle");
         v.editor = el("textarea", "editor", c); v.editor.spellcheck = false; v.editor.setAttribute("aria-label", t("text.editor"));
         v.editor.addEventListener("input", function () { textDirty = true; clearTimeout(textTimer); textTimer = setTimeout(flushText, 350); });
         v.editor.addEventListener("blur", flushText);
@@ -254,6 +256,7 @@
         label(v.recognize, S.recognizing ? t("act.cancel") + (S.progress ? " · " + Math.round(S.progress * 100) + "%" : "") : t("act.recognize"));
         v.recognize.classList.toggle("busy", !!S.recognizing);
         if (!has) return;
+        v.speaker.hidden = !S.speakers; if (S.speakers) { label(v.speaker, t("spk.voice", { n: (S.speaker || 0) + 1 })); v.speaker.classList.toggle("two", S.speaker === 1); }
         if ((S.text !== seenText || v.editor.value === "" && S.text) && !textDirty) {
             var ed = v.editor, a = ed.selectionStart, b = ed.selectionEnd;
             if (ed.value !== S.text) { ed.value = S.text; if (document.activeElement === ed) ed.setSelectionRange(Math.min(a, S.text.length), Math.min(b, S.text.length)); }
@@ -714,6 +717,7 @@
         U.field(look, { path: pre + "blend", label: "Наложение", kind: "select", options: meta.blends, adv: true, value: function (st) { return st.settings.style[side].blend || "normal"; } });
 
         var lay = U.card(p, t("set.layout")); lay.id = "set-layout";
+        U.field(lay, { path: "style.layout.speaker2Color", label: t("spk.color"), kind: "color", show: function (st) { return !!st.speakers || !!st.settings.speakers; }, value: function (st) { return st.settings.style.layout.speaker2Color || [1, 0.8, 0.26]; } });
         var L = "style.layout.", g1 = el("div", "grid2", lay);
         U.field(g1, { path: L + "maxWords", label: "Слов во фразе, макс.", kind: "number", min: 1, max: 30, step: 1 });
         U.field(g1, { path: L + "lineChars", label: "Символов в строке", kind: "number", min: 0, max: 300, step: 1 });

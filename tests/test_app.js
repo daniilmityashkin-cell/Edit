@@ -420,6 +420,23 @@ const accept = (a, mode) => { let r = a.call("generate", { mode: mode || "all" }
     try { a.call("batch.start"); assert.strictEqual(a.state().batch.left, 1); a.call("cancel"); assert.strictEqual(a.state().batch, null); cbs[0].onDone(sample(), { link: null }); assert.ok(/Пакет остановлен/.test(a.call("status"))); }
     finally { N.modelCached = keep[0]; N.startRecognition = keep[1]; global.app.project.selection = []; }
   });
+  await test("два спикера: фразы второго голоса — своим цветом; голос фразы меняется вручную с отменой; флаг уходит в задание распознавания", () => {
+    const c = mkComp(), d = sample(); d.segments[1].speaker = 1; d.segments[0].speaker = 0;
+    const a = freshApp(d);
+    assert.strictEqual(a.state().speakers, true); assert.strictEqual(a.state().speaker, 0);
+    a.call("settings.set", { path: "style.layout.speaker2Color", value: [1, 0.5, 0] });
+    accept(a);
+    const ls = subs(c), first = ls.filter(l => N.groupInfo(l).segment === 0), second = ls.filter(l => N.groupInfo(l).segment === 1);
+    assert.ok(first.length && second.length);
+    assert.ok(second.every(l => l.label === 11 || JSON.stringify(l.src.value.fillColor) === "[1,0.5,0]"), "второй голос оранжевый");
+    assert.ok(first.every(l => l.label === 11 || JSON.stringify(l.src.value.fillColor) !== "[1,0.5,0]"));
+    a.call("phrase.select", { index: 0 }); assert.strictEqual(a.call("phrase.speaker", {}), 1); assert.strictEqual(a.state().speaker, 1); assert.strictEqual(a.state().phraseDirty, true);
+    a.call("text.undo"); assert.strictEqual(a.state().speaker, 0);
+    const keep = [N.getAudioSource, N.modelCached, N.startRecognition]; let opts;
+    N.getAudioSource = () => ({ file: "x.wav" }); N.modelCached = () => true; N.startRecognition = (s2, o) => { opts = o; };
+    try { a.call("settings.set", { path: "speakers", value: true }); a.call("recognize"); } finally { N.getAudioSource = keep[0]; N.modelCached = keep[1]; N.startRecognition = keep[2]; a.call("cancel"); }
+    assert.strictEqual(opts.speakers, true);
+  });
   await test("превью: отдельная композиция, исходник не меняется", () => {
     const c = mkComp({ duration: 12 }), a = freshApp(); let copy;
     c.duplicate = () => { copy = new mock.CompItem({ duration: 12 }); copy.openInViewer = () => { copy.opened = true; }; return copy; };

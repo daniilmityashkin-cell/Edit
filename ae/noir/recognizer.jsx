@@ -189,7 +189,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         N.writeText(f.job, N.stringify({
             input: src.file.fsName, output: f.out.fsName, status: f.status.fsName,
             model: opts.model, language: opts.language, device: opts.device,
-            start: src.srcStart, end: src.srcEnd, prompt: opts.prompt || ""
+            start: src.srcStart, end: src.srcEnd, prompt: opts.prompt || "", speakers: opts.speakers ? 2 : 0
         }));
 
         var line = '"' + py.fsName + '" "' + script.fsName + '" --job "' + f.job.fsName +
