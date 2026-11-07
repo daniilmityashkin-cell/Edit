@@ -278,7 +278,12 @@ const accept = (a, mode) => { let r = a.call("generate", { mode: mode || "all" }
     const p = a.call("cut.plan", { mode: "pauses", minPause: 0.5, pad: 0.08 });
     assert.strictEqual(p.keeps, 2); near(p.before, 12); assert.ok(p.after > 2.1 && p.after < 2.3, "after " + p.after);
     const subs0 = subs(c).length; assert.ok(subs0 > 0);
+    const sfx = new mock.AVLayer(c, "whoosh.wav"); sfx.startTime = 3; sfx.inPoint = 3; sfx.outPoint = 3.5; c._l.push(sfx);
+    const music = new mock.AVLayer(c, "music.mp3"); c._l.push(music);
+    const lockedL = new mock.AVLayer(c, "logo.png"); lockedL.startTime = 5; lockedL.inPoint = 5; lockedL.outPoint = 6; lockedL.locked = true; c._l.push(lockedL);
     const r = a.call("cut.apply", { mode: "pauses", minPause: 0.5, pad: 0.08 });
+    near(sfx.startTime, 3 - (2.917 - 2.083) - 0.917, 0.05); near(music.startTime, 0, 1e-9); assert.strictEqual(lockedL.inPoint, 5); assert.strictEqual(r.moved, 1);
+    assert.ok(/сдвинуты за вырезанным: 1/.test(a.call("status")) && /Заблокированные/.test(a.call("status")));
     assert.strictEqual(r.pieces, 2); assert.ok(!c._l.includes(v), "исходный слой заменён кусками");
     const pieces = c._l.filter(l => l.comment === N.CUT_TAG).sort((x, y) => x.inPoint - y.inPoint);
     assert.strictEqual(pieces.length, 2); near(pieces[0].inPoint, 0, 1e-9); near(pieces[1].inPoint, pieces[0].outPoint, 1e-9);
@@ -378,6 +383,23 @@ const accept = (a, mode) => { let r = a.call("generate", { mode: mode || "all" }
     assert.strictEqual(typeof a.call("script.run", { code: "return typeof N + typeof st + typeof S + typeof root;" }).result, "string");
     assert.ok(!/object|function/.test(a.call("script.run", { code: "return typeof st + typeof S + typeof root + typeof memSave;" }).result), "переменные панели недоступны");
     const ctx = a.call("script.context"); assert.ok(ctx.comp.width && ctx.layers.some(l => l.name === "Героi 1" || (l.kind === "av" && l.selected)));
+  });
+  await test("автозум: на акцентах — толчок на каждом акценте и назад; на фразах — через одну; на кусках нарезки — чередование; к лицу; ключи не затираются без спроса", () => {
+    const c = mkComp({ duration: 12 }), a = freshApp();
+    const v = new mock.AVLayer(c, "clip.mp4"); v.width = 1080; v.height = 1920; v.source = { hasVideo: true }; c._l.push(v); v.selected = true;
+    v.transform["Anchor Point"].value = [540, 960, 0]; v.transform["Position"].value = [540, 960, 0];
+    assert.throws(() => a.call("zoom.apply", { on: "accents" }), /нет акцентов/);
+    const lines = a.state().text.split("\n"); a.call("text.replace", { text: [lines[0].replace("NOIR.", "*NOIR.*"), lines[1]].join("\n") });
+    let r = a.call("zoom.apply", { on: "accents", scale: 112 }); const S = v.transform["Scale"];
+    assert.strictEqual(r.pushes, 1); assert.strictEqual(S.numKeys, 4);
+    near(S.valueAtTime(1.6)[0], 112); near(S.valueAtTime(1.0)[0], 100); near(S.valueAtTime(3.0)[0], 100);
+    assert.throws(() => a.call("zoom.apply", { on: "phrases" }), /ключи масштаба/);
+    r = a.call("zoom.apply", { on: "phrases", replace: true, scale: 110 }); assert.strictEqual(r.pushes, 1);
+    near(S.valueAtTime(3.1)[0], 110); near(S.valueAtTime(1.5)[0], 100);
+    a.call("zoom.clear"); assert.strictEqual(S.numKeys, 0); near(S.value[0], 100);
+    a.call("cut.apply", { mode: "pauses" }); const pcs = c._l.filter(l => l.comment === N.CUT_TAG).sort((x, y) => x.inPoint - y.inPoint);
+    r = a.call("zoom.apply", { on: "cuts", scale: 108 }); assert.strictEqual(r.layers, 2);
+    near(pcs[0].transform["Scale"].value[0], 100); near(pcs[1].transform["Scale"].value[0], 108);
   });
   await test("превью: отдельная композиция, исходник не меняется", () => {
     const c = mkComp({ duration: 12 }), a = freshApp(); let copy;

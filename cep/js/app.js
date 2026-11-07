@@ -589,6 +589,17 @@
         var cr = U.row(ctl, "actions wrap");
         v.ctlAdd = U.button(t("ctl.add"), "", cr, function () { act("control.add", {}); }, "edit");
         v.ctlRemove = U.button(t("ctl.remove"), "ghost", cr, function () { if (window.confirm(t("ctl.removeAsk"))) act("control.remove"); }, "trash");
+        var zm = section(p, "edit-zoom", t("zoom.title"));
+        el("p", "lead", zm, t("zoom.lead"));
+        v.zoomScale = U.field(zm, { path: "zoomScale", label: t("zoom.scale"), kind: "segmented", options: [{ id: "105", label: "105%" }, { id: "110", label: "110%" }, { id: "115", label: "115%" }],
+            value: function () { return prefs.zoomScale || "110"; }, commit: function (x) { prefs.zoomScale = x; savePrefs(); if (S) U.refresh(S); } });
+        var zr = U.row(zm, "actions wrap");
+        function zoom(on) { act("zoom.apply", { on: on, scale: Number(prefs.zoomScale || 110), replace: true, mode: prefs.zoomSmooth ? "smooth" : "snap" }).then(function (r) { if (r) U.toast(NoirI18n.host((S && S.status) || ""), "ok"); }); }
+        U.button(t("zoom.accents"), "", zr, function () { zoom("accents"); }, "zoomIn");
+        U.button(t("zoom.phrases"), "ghost", zr, function () { zoom("phrases"); });
+        U.button(t("zoom.cuts"), "ghost", zr, function () { zoom("cuts"); });
+        U.button(t("zoom.clear"), "ghost", zr, function () { act("zoom.clear"); }, "trash");
+        U.field(zm, { path: "zoomSmooth", label: t("zoom.smooth"), kind: "toggle", value: function () { return !!prefs.zoomSmooth; }, commit: function (on) { prefs.zoomSmooth = on; savePrefs(); } });
         var time = section(p, "edit-time", t("edit.time"));
         var tg = el("div", "grid3", time);
         [["edit.earlier", { shift: -1 }], ["edit.inMinus", { dIn: -1 }], ["edit.outMinus", { dOut: -1 }], ["edit.later", { shift: 1 }], ["edit.inPlus", { dIn: 1 }], ["edit.outPlus", { dOut: 1 }]].forEach(function (x) {

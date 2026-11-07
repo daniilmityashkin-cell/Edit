@@ -9,6 +9,7 @@
   <DispatchInfoList><Extension Id="com.noir.captions.panel"><DispatchInfo>
     <Resources><MainPath>./index.html</MainPath><ScriptPath>./host/bridge.jsx</ScriptPath></Resources>
     <Lifecycle><AutoVisible>true</AutoVisible></Lifecycle>
-    <UI><Type>Panel</Type><Menu>NOIR Captions</Menu><Geometry><Size><Width>420</Width><Height>600</Height></Size><MinSize><Width>300</Width><Height>200</Height></MinSize></Geometry></UI>
+    <UI><Type>Panel</Type><Menu>NOIR Captions</Menu><Geometry><Size><Width>420</Width><Height>600</Height></Size><MinSize><Width>300</Width><Height>200</Height></MinSize></Geometry>
+      <Icons><Icon Type="Normal">./icons/noir-23.png</Icon><Icon Type="RollOver">./icons/noir-23-hover.png</Icon><Icon Type="DarkNormal">./icons/noir-23.png</Icon><Icon Type="DarkRollOver">./icons/noir-23-hover.png</Icon></Icons></UI>
   </DispatchInfo></Extension></DispatchInfoList>
 </ExtensionManifest>

@@ -642,7 +642,23 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             for (i = 0; i < targets.length; i++) if (targets[i].timeRemapEnabled) throw new Error("У слоя «" + targets[i].name + "» включён Time Remap — нарезка его не поддерживает.");
             var shift = plan.mode !== "phrases", starts = [], pos = plan.L0;
             for (k = 0; k < plan.keeps.length; k++) { starts.push(shift ? pos : plan.keeps[k][0]); pos += plan.keeps[k][1] - plan.keeps[k][0]; }
-            var oldKey = sourceKey(), had = canUpdate(), pieces = 0;
+            var oldKey = sourceKey(), had = canUpdate(), pieces = 0, moved = 0, locked = 0;
+            // other layers (music, sounds, graphics) follow the cut: each moves left by what was cut out before its start;
+            // nothing of them is cut (a music bed just keeps playing). Off with ripple: false.
+            var others = [], li;
+            if (a.ripple !== false && plan.mode !== "phrases") for (li = 1; li <= comp.numLayers; li++) {
+                var ol = comp.layer(li), isT = false;
+                for (var ti = 0; ti < targets.length; ti++) if (targets[ti] === ol) isT = true;
+                if (isT || N.isGenerated(ol)) continue;
+                if (ol.locked) { locked++; continue; }
+                others.push(ol);
+            }
+            function cutBefore(t) {
+                var r = 0, prev = plan.L0;
+                for (var q = 0; q < plan.keeps.length; q++) { var k0 = plan.keeps[q][0]; if (t > prev) r += Math.min(t, k0) - prev; prev = plan.keeps[q][1]; if (t <= k0) return r; }
+                var L1 = plan.L0 + plan.before; if (t > prev) r += Math.min(t, L1) - prev;
+                return r;
+            }
             var newMap = [];
             for (k = 0; k < plan.keeps.length; k++) newMap.push({ c0: starts[k], c1: starts[k] + plan.keeps[k][1] - plan.keeps[k][0], s0: compToSrc(comp, plan.keeps[k][0]), f: srcRate(comp, plan.keeps[k][0]) });
             undo("нарезка по речи", function () {
@@ -660,6 +676,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
                     L.remove();
                 }
                 if (had && shift) N.removeGenerated(comp, oldKey);
+                for (var oi = 0; oi < others.length; oi++) { var d0 = cutBefore(others[oi].inPoint); if (d0 > 1e-6) { others[oi].startTime -= d0; moved++; } }
             });
             if (!shift) { status("Видео нарезано по фразам: кусков " + plan.keeps.length + ". Время не менялось."); return { pieces: pieces }; }
             // words move to the new timeline; words inside removed parts go away
@@ -679,8 +696,77 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             st.text = lines.join("\n"); st.cleanLines = st.text.split("\n"); st.rawLines = st.text.split("\n");
             var msg = "Нарезано: убрано " + (Math.round(plan.removed * 10) / 10) + " с (" + (Math.round(plan.before * 10) / 10) + " → " + (Math.round(plan.after * 10) / 10) + " с), кусков " + plan.keeps.length + ". Отмена в AE — Ctrl+Z.";
             if (had) { var r = generate("all", false); if (r && r.pending) r = generate("all", true); msg += " Субтитры пересозданы под новое время."; }
-            status(msg + " Звуки и другие слои не сдвигаются.");
-            return { removed: plan.removed, pieces: pieces, keeps: plan.keeps.length };
+            status(msg + (a.ripple === false ? " Другие слои не сдвигались." : (moved ? " Другие слои сдвинуты за вырезанным: " + moved + "." : "")) + (locked ? " Заблокированные слои не тронуты: " + locked + "." : ""));
+            return { removed: plan.removed, pieces: pieces, keeps: plan.keeps.length, moved: moved };
+        }
+
+        // ---------- auto zoom (punch-in) ----------
+        // on: accents — the video pushes in on every accent word and comes back after it; phrases — every phrase alternates 100% / zoom
+        // (classic jump-cut look); cuts — the pieces of a speech cut alternate. snap: a cut in one frame; smooth: a short ease.
+        // The zoom goes toward the face when one was found (anchor point on the face, position compensated, no visible jump).
+        function zoomTargets(comp) {
+            var out = [], i, l;
+            for (i = 1; i <= comp.numLayers; i++) { l = comp.layer(i); if (String(l.comment || "") === N.CUT_TAG) out.push(l); }
+            if (out.length) return out.sort(function (p, q) { return p.inPoint - q.inPoint; });
+            var v = videoLayer(comp); if (!v) throw new Error("Не нашёл слой видео: выделите его.");
+            return [v];
+        }
+        function scaleOf(l) { return l.property("Transform").property("Scale"); }
+        function layerAt(list, t) { for (var i = 0; i < list.length; i++) if (t >= list[i].inPoint - 1e-6 && t < list[i].outPoint - 1e-6) return list[i]; return null; }
+        function aimAtFace(l) {
+            if (!st.face || !l.width) return false;
+            var tr = l.property("Transform"), ap = tr.property("Anchor Point"), ps = tr.property("Position");
+            if (ap.numKeys || ps.numKeys) return false;
+            var a0 = ap.value, p0 = ps.value, sc = scaleOf(l).value, nx = (st.face.x + st.face.w / 2) * l.width, ny = (st.face.y + st.face.h / 2) * l.height;
+            ap.setValue([nx, ny, a0[2] || 0]);
+            ps.setValue([p0[0] + (nx - a0[0]) * sc[0] / 100, p0[1] + (ny - a0[1]) * sc[1] / 100, p0[2] || 0]);
+            return true;
+        }
+        function zoomApply(a) {
+            var comp = activeComp(), list = zoomTargets(comp), on = a.on === "phrases" || a.on === "cuts" ? a.on : "accents";
+            var z = num(a.scale, 110, 101, 150), fd = comp.frameDuration, smooth = a.mode === "smooth", hold = num(a.hold, 0.5, 0, 5), i, k, keys = 0;
+            for (i = 0; i < list.length; i++) if (scaleOf(list[i]).numKeys && !a.replace) throw new Error("У слоя «" + list[i].name + "» уже есть ключи масштаба. Заменить их? (replace)");
+            var words = [];
+            if (st.data && on !== "cuts") { var map = resolveLink(comp), ws = N.applyEdits(st.data, st.text, []); for (i = 0; i < ws.length; i++) words.push({ s: N.sourceToComp(ws[i].start, map.startTime, map.stretch), e: N.sourceToComp(ws[i].end, map.startTime, map.stretch), accent: ws[i].accent, seg: ws[i].seg }); }
+            if (on !== "cuts" && !words.length) throw new Error("Сначала распознайте речь — зум идёт по словам.");
+            var hits = [];
+            if (on === "accents") {
+                for (i = 0; i < words.length; i++) if (words[i].accent) hits.push([words[i].s, words[i].e + hold]);
+                if (!hits.length) throw new Error("В тексте нет акцентов: отметьте слова *звёздочками* или выберите «на фразах».");
+            }
+            var faced = 0;
+            undo("автозум", function () {
+                for (i = 0; i < list.length; i++) { var sp = scaleOf(list[i]); while (sp.numKeys) sp.removeKey(1); var v0 = sp.value; sp.setValue([100, 100, v0[2] || 100]); if (aimAtFace(list[i])) faced++; }
+                if (on === "cuts") {
+                    if (list.length < 2) throw new Error("Нарезанных кусков нет — сначала «убери паузы» или выберите «на фразах».");
+                    for (i = 0; i < list.length; i++) { var vv = i % 2 ? z : 100; scaleOf(list[i]).setValue([vv, vv, 100]); if (i % 2) keys++; }
+                    return;
+                }
+                if (on === "phrases") {           // every other phrase pushed in, cut exactly at the phrase start
+                    var starts = [], seen = {};
+                    for (i = 0; i < words.length; i++) if (!seen[words[i].seg]) { seen[words[i].seg] = true; starts.push(words[i].s); }
+                    for (i = 0; i < starts.length; i++) hits.push(i % 2 ? [starts[i], i + 1 < starts.length ? starts[i + 1] : comp.duration] : null);
+                    var h2 = []; for (i = 0; i < hits.length; i++) if (hits[i]) h2.push(hits[i]); hits = h2;
+                }
+                var ramp = smooth ? Math.max(fd, 4 * fd) : fd;
+                for (i = 0; i < hits.length; i++) {
+                    var t0 = Math.round(hits[i][0] / fd) * fd, t1 = Math.round(hits[i][1] / fd) * fd;
+                    if (i + 1 < hits.length && t1 > hits[i + 1][0] - ramp - fd) t1 = Math.round((hits[i + 1][0] - ramp - fd) / fd) * fd;   // never overlap the next push
+                    var L = layerAt(list, t0) || list[0], P = scaleOf(L), out = Math.min(t1, L.outPoint - fd);
+                    if (out <= t0) continue;
+                    P.setValueAtTime(Math.max(0, t0 - ramp), [100, 100, 100]); P.setValueAtTime(t0, [z, z, 100]);
+                    P.setValueAtTime(out, [z, z, 100]); P.setValueAtTime(out + ramp, [100, 100, 100]);
+                    if (smooth && typeof KeyframeEase !== "undefined") { try { var e = [new KeyframeEase(0, 70), new KeyframeEase(0, 70), new KeyframeEase(0, 70)]; for (k = 1; k <= P.numKeys; k++) P.setTemporalEaseAtKey(k, e, e); } catch (eE) {} }
+                    keys++;
+                }
+            });
+            status("Автозум " + z + "%: " + (on === "accents" ? "акцентов " : on === "phrases" ? "фраз " : "кусков ") + keys + (faced ? ", приближение к лицу" : "") + ". Отмена — Ctrl+Z.");
+            return { pushes: keys, layers: list.length, face: faced > 0 };
+        }
+        function zoomClear() {
+            var comp = activeComp(), list = zoomTargets(comp);
+            undo("убрать автозум", function () { for (var i = 0; i < list.length; i++) { var sp = scaleOf(list[i]); while (sp.numKeys) sp.removeKey(1); sp.setValue([100, 100, 100]); } });
+            status("Автозум убран: масштаб 100%."); return true;
         }
 
         // ---------- memory: word fixes, preferences, accepted assistant answers ----------
@@ -1355,6 +1441,8 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
                 for (var i = 0; i < sel.length; i++) { if (sel[i] instanceof TextLayer) { t++; if (N.isGenerated(sel[i])) n++; } else o++; }
                 return { comp: true, text: t, noir: n, other: o, name: comp.name };
             },
+            "zoom.apply": function (a) { return zoomApply(a || {}); },
+            "zoom.clear": function () { return zoomClear(); },
             "memory.get": function () { var m = memLoad(); return { fixes: m.fixes, prefs: m.prefs, examples: m.examples, learn: !!S.memoryLearn }; },
             "memory.add": function (a) {
                 var m = memLoad(), kind = memKind(a.kind), i;

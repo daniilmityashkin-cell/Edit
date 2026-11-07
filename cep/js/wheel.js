@@ -72,7 +72,7 @@
             { label: "Стиль", icon: ICONS.style, items: presetItems(true).concat([{ t: "Применить текущий", run: run({ op: "applyStyle" }) }]) },
             { label: "Обновить", icon: ICONS.refresh, items: [{ t: "Обновить фразу", run: gen("phrase") }, { t: "Обновить все", run: gen("all") }, { t: "Превью фразы", run: gen("preview") }, { t: "Проверить", run: gen("check") }] },
             { label: "Ещё", icon: ICONS.more, items: [{ t: "Сделать акцентом", run: run({ op: "makeAccent" }) }, { t: "Сделать обычным", run: run({ op: "makeBase" }) }, { t: "Инверсия", run: act("layers.invert") },
-                { t: "Пульт в AE", run: act("control.add", {}) }, { t: "Текст ▸", run: go("text") }, { t: "Правка ▸", run: go("edit") },
+                { t: "Пульт в AE", run: act("control.add", {}) }, { t: "Автозум", run: function () { return api.act("zoom.apply", { on: "accents", scale: 110, replace: true }); } }, { t: "Текст ▸", run: go("text") }, { t: "Правка ▸", run: go("edit") },
                 { t: "Удалить", danger: true, run: function () { if (window.confirm("Удалить субтитры? Отмена — Ctrl+Z в AE.")) return run({ op: "delete", confirmed: true })(); } }] }
         ];
     }

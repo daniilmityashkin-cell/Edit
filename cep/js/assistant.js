@@ -51,6 +51,7 @@
             case "mask": out.shape = c.shape === "ellipse" ? "ellipse" : "rect"; ["x", "y", "w", "h"].forEach(function (k, i) { out[k] = clamp(c[k], i < 2 ? -50 : 1, i < 2 ? 150 : 200, i < 2 ? 10 : 80); });
                 out.feather = clamp(c.feather, 0, 100, 0); out.invert = !!c.invert; return out;
             case "roto": return out;
+            case "zoom": out.on = ["accents", "phrases", "cuts", "clear"].indexOf(c.on) >= 0 ? c.on : "accents"; if (c.scale !== undefined) out.scale = clamp(c.scale, 101, 150, 110); if (c.smooth) out.smooth = true; return out;
             case "script": if (!scriptsOn() || !c.task && !c.code) return null; out.task = String(c.task || "").slice(0, 600);
                 if (typeof c.code === "string" && c.code.length <= 8000) out.code = c.code; return out;
             case "cut": out.mode = ["pauses", "fillers", "both", "range", "phrases"].indexOf(c.mode) >= 0 ? c.mode : "pauses";
@@ -124,6 +125,7 @@
         "{\"op\":\"roto\"} — подготовить «текст за человеком»: копия видео над субтитрами, открыта для Roto Brush (обвести человека кистью пользователь делает сам — скрипты AE этого не умеют).",
         "Нарезка видео по речи (режет сам слой видео, субтитры едут следом): {\"op\":\"cut\",\"mode\":\"pauses\",\"minPause\":0.5} — убрать паузы длиннее minPause секунд; mode \"fillers\" — вырезать из видео слова-паразиты; \"both\" — паузы и паразиты; \"range\" с \"from\" и \"to\" (секунды) — оставить только этот отрезок; \"phrases\" — разрезать на куски по фразам, ничего не удаляя.",
         "Если в context есть userPreferences — это то, что пользователь просил запомнить: учитывай их в каждом ответе, если просьба не говорит иначе.",
+        "{\"op\":\"zoom\",\"on\":\"accents|phrases|cuts|clear\",\"scale\":110,\"smooth\":false} — автозум видео (punch-in) на акцентах, на фразах через одну, на кусках нарезки; clear — убрать.",
         "Правила: не придумывай команд, которых нет в списке. Не больше 6 команд. Сначала текст, потом расположение, размер, анимация.",
         "Примеры:",
         "«настрой красиво, чтобы лицо не закрывали» → {\"say\":\"Найду лицо и уберу с него субтитры.\",\"commands\":[{\"op\":\"avoidFace\"}]}",
@@ -318,6 +320,13 @@
             var cmdP = { op: "cut", mode: "pauses" }; if (mp) cmdP.minPause = mp;
             return { say: "Вырежу из видео паузы" + (mp ? " длиннее " + mp + " с" : " длиннее 0.5 с"), commands: [cmdP] };
         }
+        if (/зум|zoom|punch|приближ|наезд/.test(t0)) {
+            if (/убер|убра|удал|сним|выключ|remove/.test(t0)) return { say: "Уберу автозум", commands: [{ op: "zoom", on: "clear" }] };
+            var zc = { op: "zoom", on: /склейк|кусках|нарезк|cut/.test(t0) ? "cuts" : /фраз|phrase/.test(t0) ? "phrases" : "accents" }, zn = number(t0, 0);
+            if (zn > 100 && zn <= 150) zc.scale = zn; else if (zn > 0 && zn <= 50) zc.scale = 100 + zn;
+            if (/плавн|smooth/.test(t0)) zc.smooth = true;
+            return { say: "Сделаю автозум", commands: [zc] };
+        }
         if (/паразит|филлер|filler/.test(t0) && (vid || /выреж|вырез|нарез/.test(t0))) return { say: "Вырежу слова-паразиты из видео", commands: [{ op: "cut", mode: "fillers" }] };
         if (/паразит|филлер|эээ|\bээ\b|\bэм\b|filler|\bum\b|\buh\b/.test(t0)) return { say: "Уберу слова-паразиты", commands: [{ op: "fillers" }] };
         if (/эмодз|эмоджи|смайл|emoji/.test(t0)) return { say: "Добавлю эмодзи к ключевым словам", commands: [{ op: "emoji" }] };
@@ -394,6 +403,7 @@
             case "select": return api.call("layers.select", { target: cmd.target });
             case "mask": return api.call("mask.add", cmd);
             case "roto": return api.call("roto.prepare");
+            case "zoom": return cmd.on === "clear" ? api.call("zoom.clear") : api.call("zoom.apply", { on: cmd.on, scale: cmd.scale || 110, replace: true, mode: cmd.smooth ? "smooth" : "snap" }).then(function () { return api.call("status"); });
             case "delete": return api.call("run", { command: { op: "delete", confirmed: true } });
             default: return api.call("run", { command: cmd });
         }
@@ -449,6 +459,7 @@
             case "roto": return "Копия видео над субтитрами, открыть её для Roto Brush (обвести человека — один раз кистью)";
             case "delete": return "Удалить субтитры (Ctrl+Z вернёт)";
             case "cut": return cutName(c);
+            case "zoom": return c.on === "clear" ? "Убрать автозум" : "Автозум " + (c.scale || 110) + "% " + ({ accents: "на акцентах", phrases: "на фразах (через одну)", cuts: "на склейках" })[c.on] + (c.smooth ? ", плавно" : ", резким толчком");
             case "script": return t("as.scriptDo", { task: c.task || "…" });
         }
         return c.op;
