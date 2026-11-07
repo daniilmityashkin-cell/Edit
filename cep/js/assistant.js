@@ -24,6 +24,17 @@
     // ---------- command validation: nothing from a model is executed unless it is one of these shapes ----------
     var SET_PATHS = { "quick.intensity": ["0.5", "1", "1.5"], "quick.position": ["preset", "25", "50", "75"], "style.layout.reveal": ["word", "group", "karaoke"],
         "style.anim.animIn": ANIM_IN, "style.anim.animOut": ANIM_OUT, "style.layout.maxWords": [1, 12], "style.anim.inDur": [0.05, 1.5], "style.anim.outDur": [0.05, 1.5], "quick.size": [25, 200] };
+    // colours by name (ru/en), #hex or [r,g,b] 0..1 / 0..255
+    var COLORS = [[/красн|red/, [0.9, 0.08, 0.1]], [/бел|white/, [1, 1, 1]], [/ж[её]лт|yellow/, [1, 0.86, 0.1]], [/золот|gold/, [0.93, 0.74, 0.32]], [/оранж|orange/, [1, 0.5, 0.05]],
+        [/розов|pink/, [1, 0.35, 0.65]], [/фиолет|purple|violet/, [0.6, 0.3, 1]], [/голуб|light ?blue|cyan/, [0.35, 0.78, 1]], [/син|blue/, [0.2, 0.42, 1]], [/бирюз|teal|turquoise/, [0.1, 0.85, 0.75]],
+        [/зел[её]н|green/, [0.2, 0.85, 0.35]], [/ч[её]рн|black/, [0, 0, 0]], [/сер(ый|ым|ая|ые|ого)|gr[ae]y/, [0.6, 0.6, 0.6]]];
+    function colorOf(v) {
+        if (Array.isArray(v) && v.length >= 3) { var mx = Math.max(v[0], v[1], v[2]) > 1 ? 255 : 1; return [0, 1, 2].map(function (i) { return Math.round(clamp(v[i] / mx, 0, 1, 0) * 1000) / 1000; }); }
+        var t = String(v || "").toLowerCase(), m = /#?([0-9a-f]{6})\b/.exec(t);
+        if (m) return [0, 2, 4].map(function (i) { return Math.round(parseInt(m[1].substr(i, 2), 16) / 255 * 1000) / 1000; });
+        for (var i = 0; i < COLORS.length; i++) if (COLORS[i][0].test(t)) return COLORS[i][1].slice();
+        return null;
+    }
     function scriptsOn() { var s = api && api.state ? api.state() : null; return !!(s && s.settings && s.settings.assistantScripts); }
     function clamp(v, lo, hi, d) { v = Number(v); return isFinite(v) ? Math.max(lo, Math.min(hi, v)) : d; }
     function sanitize(c) {
@@ -51,6 +62,15 @@
             case "mask": out.shape = c.shape === "ellipse" ? "ellipse" : "rect"; ["x", "y", "w", "h"].forEach(function (k, i) { out[k] = clamp(c[k], i < 2 ? -50 : 1, i < 2 ? 150 : 200, i < 2 ? 10 : 80); });
                 out.feather = clamp(c.feather, 0, 100, 0); out.invert = !!c.invert; return out;
             case "roto": return out;
+            case "look":                       // text look: colour, outline, shadow, capitals, glow, tracking — of words (base) or accents
+                out.side = c.side === "accent" ? "accent" : "base"; var any = false;
+                if (c.color !== undefined) { out.color = colorOf(c.color); if (!out.color) return null; any = true; }
+                if (c.strokeWidth !== undefined) { out.strokeWidth = clamp(c.strokeWidth, 0, 60, 4); any = true; }
+                if (c.strokeColor !== undefined) { out.strokeColor = colorOf(c.strokeColor) || [0, 0, 0]; any = true; }
+                ["shadow", "caps", "glow"].forEach(function (k) { if (c[k] !== undefined) { out[k] = !!c[k]; any = true; } });
+                if (c.tracking !== undefined) { out.tracking = clamp(c.tracking, -200, 600, 0); any = true; }
+                return any ? out : null;
+            case "font": if (!c.name || String(c.name).length > 60) return null; out.side = c.side === "accent" ? "accent" : c.side === "both" ? "both" : "base"; out.name = String(c.name).trim(); return out;
             case "styleRef": case "batch": return out;
             case "zoom": out.on = ["accents", "phrases", "cuts", "clear"].indexOf(c.on) >= 0 ? c.on : "accents"; if (c.scale !== undefined) out.scale = clamp(c.scale, 101, 150, 110); if (c.smooth) out.smooth = true; return out;
             case "script": if (!scriptsOn() || !c.task && !c.code) return null; out.task = String(c.task || "").slice(0, 600);
@@ -101,6 +121,9 @@
             else { out.push(c); return; }
             if (s.canUpdate) out.push({ op: "updateAll" });
         });
+        // a new look applies to captions that already exist (once, after the last such command)
+        var last = -1; out.forEach(function (c, i) { if (c.op === "look" || c.op === "font") last = i; });
+        if (last >= 0 && s.canUpdate && !out.some(function (c) { return c.op === "applyStyle" || c.op === "updateAll"; })) out.splice(last + 1, 0, { op: "applyStyle" });
         return out;
     }
 
@@ -128,6 +151,8 @@
         "Если в context есть userPreferences — это то, что пользователь просил запомнить: учитывай их в каждом ответе, если просьба не говорит иначе.",
         "{\"op\":\"zoom\",\"on\":\"accents|phrases|cuts|clear\",\"scale\":110,\"smooth\":false} — автозум видео (punch-in) на акцентах, на фразах через одну, на кусках нарезки; clear — убрать.",
         "{\"op\":\"styleRef\"} — собрать стиль по видео-референсу (пользователь выберет файл). {\"op\":\"batch\"} — распознать и сделать субтитры во всех композициях, выделенных в Project.",
+        "{\"op\":\"look\",\"side\":\"base|accent\",\"color\":\"#ff2020\",\"strokeWidth\":4,\"strokeColor\":\"#000000\",\"shadow\":true,\"caps\":true,\"glow\":false,\"tracking\":0} — вид текста (любые поля из этих): цвет, обводка, тень, капс, свечение, трекинг; side base — обычные слова, accent — акценты.",
+        "{\"op\":\"font\",\"side\":\"base|accent|both\",\"name\":\"Montserrat\"} — шрифт по названию семейства (из установленных).",
         "Правила: не придумывай команд, которых нет в списке. Не больше 6 команд. Сначала текст, потом расположение, размер, анимация.",
         "Примеры:",
         "«настрой красиво, чтобы лицо не закрывали» → {\"say\":\"Найду лицо и уберу с него субтитры.\",\"commands\":[{\"op\":\"avoidFace\"}]}",
@@ -322,6 +347,21 @@
             var cmdP = { op: "cut", mode: "pauses" }; if (mp) cmdP.minPause = mp;
             return { say: "Вырежу из видео паузы" + (mp ? " длиннее " + mp + " с" : " длиннее 0.5 с"), commands: [cmdP] };
         }
+        var side = /акцент|главн|выделенн(ые|ых) слов|accent/.test(t0) ? "accent" : "base", lk;
+        if ((lk = /шрифт(?:ом)?\s+([a-zа-я0-9][a-zа-я0-9 \-]{1,40})/i.exec(t0)) || (lk = /font\s+([a-z0-9][a-z0-9 \-]{1,40})/i.exec(t0)))
+            return { say: "Поставлю шрифт", commands: [{ op: "font", side: /акцент/.test(t0) ? "accent" : /везде|все|оба/.test(t0) ? "both" : "base", name: lk[1].replace(/\s+(для|на|у)\s.*$/, "").trim() }] };
+        if (/обводк|контур|stroke|outline/.test(t0)) {
+            var sw = /без|убер|убра|remove|no /.test(t0) ? 0 : (number(t0, 0) || 4), lc = { op: "look", side: side, strokeWidth: sw };
+            var scol = colorOf(t0); if (sw && scol) lc.strokeColor = scol;
+            return { say: sw ? "Добавлю обводку" : "Уберу обводку", commands: [lc] };
+        }
+        if (/тен[ьи]|shadow/.test(t0)) return { say: "Тень", commands: [{ op: "look", side: side, shadow: !/без|убер|убра|remove|no /.test(t0) }] };
+        if (/свечени|glow|неон/.test(t0)) return { say: "Свечение", commands: [{ op: "look", side: side, glow: !/без|убер|убра|remove|no /.test(t0) }] };
+        if (/капс|заглавн|caps|uppercase/.test(t0)) return { say: "Заглавными", commands: [{ op: "look", side: side, caps: !/без|убер|убра|не /.test(t0) }] };
+        if (/строчн|маленьки(ми|е) букв|lowercase/.test(t0)) return { say: "Строчными", commands: [{ op: "look", side: side, caps: false }] };
+        var col = colorOf(t0.replace(/красив\S*/g, ""));
+        if (col && /цвет|красн|бел|ж[её]лт|золот|оранж|розов|фиолет|голуб|син|бирюз|зел[её]н|ч[её]рн|сер|#[0-9a-f]{6}|color|red|white|yellow|gold|orange|pink|purple|blue|green|black/.test(t0) && !/пауз|паразит|зум|фон|плашк|подложк|слой|маск|background|solid/.test(t0))
+            return { say: "Поменяю цвет", commands: [{ op: "look", side: side, color: col }] };
         if (/референс|reference|как в (этом |том )?(видео|ролике)|стиль из видео|скопируй стиль/.test(t0)) return { say: "Соберу стиль по референсу", commands: [{ op: "styleRef" }] };
         if (/пакет|batch|все(х)? (выделенн|композиц)|несколько композиц/.test(t0)) return { say: "Обработаю выделенные композиции", commands: [{ op: "batch" }] };
         if (/зум|zoom|punch|приближ|наезд/.test(t0)) {
@@ -407,12 +447,41 @@
             case "select": return api.call("layers.select", { target: cmd.target });
             case "mask": return api.call("mask.add", cmd);
             case "roto": return api.call("roto.prepare");
+            case "look": return applyLook(cmd);
+            case "font": return applyFont(cmd);
             case "styleRef": return api.call("style.fromVideo", {});
             case "batch": return api.call("batch.start", {}).then(function (r) { return "Пакет: композиций " + r.total; });
             case "zoom": return cmd.on === "clear" ? api.call("zoom.clear") : api.call("zoom.apply", { on: cmd.on, scale: cmd.scale || 110, replace: true, mode: cmd.smooth ? "smooth" : "snap" }).then(function () { return api.call("status"); });
             case "delete": return api.call("run", { command: { op: "delete", confirmed: true } });
             default: return api.call("run", { command: cmd });
         }
+    }
+    function applyLook(c) {
+        var P = "style." + c.side + ".", calls = [];
+        if (c.color) calls.push([P + "color", c.color]);
+        if (c.strokeWidth !== undefined) calls.push([P + "strokeWidth", c.strokeWidth]);
+        if (c.strokeColor) calls.push([P + "strokeColor", c.strokeColor]);
+        if (c.shadow !== undefined) calls.push([P + "shadow", c.shadow]);
+        if (c.caps !== undefined) calls.push([P + "caps", c.caps]);
+        if (c.tracking !== undefined) calls.push([P + "tracking", c.tracking]);
+        var chain = Promise.resolve();
+        calls.forEach(function (x) { chain = chain.then(function () { return api.call("settings.set", { path: x[0], value: x[1] }); }); });
+        if (c.glow !== undefined) chain = chain.then(function () { return api.call("font.glow", { side: c.side, on: c.glow }); });
+        return chain;
+    }
+    // a font by its name: the closest installed family, its boldest regular style for words / the same or bolder for accents
+    function applyFont(c) {
+        return api.call("fonts", { query: c.name.split(/\s+/)[0], limit: 20 }).then(function (r) {
+            var fams = (r && r.families) || [], want = c.name.toLowerCase(), fam = null;
+            fams.forEach(function (f) { if (!fam || f.name.toLowerCase() === want || (f.name.toLowerCase().indexOf(want) === 0 && fam.name.toLowerCase() !== want)) fam = f; });
+            if (!fam) throw new Error("Шрифт «" + c.name + "» не установлен. Установите его в Windows или выберите в Настройки → Шрифт.");
+            function pick(names) { for (var n = 0; n < names.length; n++) for (var i = 0; i < fam.styles.length; i++) if (fam.styles[i].style.replace(/\s+/g, "").toLowerCase() === names[n]) return fam.styles[i].ps; return null; }
+            var base = pick(["semibold", "bold", "medium", "regular"]) || fam.styles[0].ps, acc = pick(["extrabold", "black", "heavy", "bold"]) || base;
+            var sides = c.side === "both" ? [["base", base], ["accent", acc]] : [[c.side, c.side === "accent" ? acc : base]];
+            var chain = Promise.resolve();
+            sides.forEach(function (x) { chain = chain.then(function () { return api.call("font.set", { side: x[0], ps: x[1] }); }); });
+            return chain.then(function () { return "Шрифт: " + fam.name; });
+        });
     }
     function waitScan() {
         var started = Date.now();
@@ -465,6 +534,9 @@
             case "roto": return "Копия видео над субтитрами, открыть её для Roto Brush (обвести человека — один раз кистью)";
             case "delete": return "Удалить субтитры (Ctrl+Z вернёт)";
             case "cut": return cutName(c);
+            case "look": return (c.side === "accent" ? "Акценты: " : "Слова: ") + [c.color ? "цвет " + hexOf(c.color) : "", c.strokeWidth !== undefined ? (c.strokeWidth ? "обводка " + c.strokeWidth + " px" + (c.strokeColor ? " " + hexOf(c.strokeColor) : "") : "без обводки") : "",
+                c.shadow !== undefined ? (c.shadow ? "тень" : "без тени") : "", c.caps !== undefined ? (c.caps ? "КАПСОМ" : "строчными") : "", c.glow !== undefined ? (c.glow ? "свечение" : "без свечения") : "", c.tracking !== undefined ? "трекинг " + c.tracking : ""].filter(Boolean).join(", ");
+            case "font": return "Шрифт «" + c.name + "»" + (c.side === "accent" ? " для акцентов" : c.side === "both" ? " для слов и акцентов" : " для слов");
             case "styleRef": return "Выбрать видео-референс и собрать по нему стиль";
             case "batch": return "Распознать и создать субтитры во всех композициях, выделенных в Project";
             case "zoom": return c.on === "clear" ? "Убрать автозум" : "Автозум " + (c.scale || 110) + "% " + ({ accents: "на акцентах", phrases: "на фразах (через одну)", cuts: "на склейках" })[c.on] + (c.smooth ? ", плавно" : ", резким толчком");
@@ -486,11 +558,28 @@
             });
         }
         if (cmd.code) return api.call("script.check", { code: cmd.code }).then(function (r) { return { say: "", code: cmd.code, problems: r.problems || [] }; });
-        return ask().then(function (r) {
-            if (!r.problems.length) return r;
-            return ask("\n\nYour previous code was rejected: " + r.problems.join(", ") + ". Rewrite it without that.").catch(function () { return r; });
+        function fix(r, left) {
+            if (!r.problems.length || !left) return r;
+            return ask("\n\nYour previous code:\n" + r.code + "\nwas rejected: " + r.problems.join(", ") + ". Rewrite it without that.").then(function (r2) { return fix(r2, left - 1); }, function () { return r; });
+        }
+        return ask().then(function (r) { return fix(r, 2); });
+    }
+    // the code ran and failed in AE: the model gets its code and the error and writes a corrected version (checked again)
+    function repairScript(cmd, request, code, error) {
+        var c2 = { task: cmd.task, code: "" };
+        return writeScriptWith(c2, request, "\n\nThis code was run in After Effects:\n" + code + "\nIt failed with: " + error + "\nFind the cause and write a corrected version of the whole code.");
+    }
+    function writeScriptWith(cmd, request, extra) {
+        var model = settings.scriptModel && models.indexOf(settings.scriptModel) >= 0 ? settings.scriptModel : settings.model;
+        return api.call("script.context").then(function (ctx) {
+            return chat(SCRIPT_SYSTEM, JSON.stringify({ task: cmd.task, request: request, context: ctx }) + extra, 240000, model);
+        }).then(function (content) {
+            var j = extractJson(content);
+            if (!j || typeof j.code !== "string" || !j.code.trim()) throw new Error(t("as.badFormat"));
+            return api.call("script.check", { code: j.code }).then(function (r) { return { say: typeof j.say === "string" ? j.say.slice(0, 300) : "", code: j.code, problems: r.problems || [] }; });
         });
     }
+    function hexOf(c) { return "#" + c.map(function (v) { var h = Math.round(v * 255).toString(16); return h.length < 2 ? "0" + h : h; }).join(""); }
     function cutName(c) {
         return t("as.cut." + c.mode, { p: c.minPause || 0.5, a: c.from, b: c.to });
     }
@@ -592,19 +681,53 @@
             say(t("as.scriptWriting"), "ai"); var waiting = log.lastChild;
             return writeScript(cmd, request).then(function (r) {
                 if (waiting.parentNode) waiting.parentNode.removeChild(waiting);
-                cmd.code = r.code;
-                var c = card(t("as.script") + (r.say ? " · " + r.say : ""));
-                var pre = el("pre", "as-code", c); pre.textContent = r.code;
-                if (r.problems.length) { el("p", "as-note as-bad", c, t("as.scriptBlocked", { list: r.problems.join(", ") })); log.scrollTop = log.scrollHeight; return; }
-                el("p", "as-note", c, t("as.scriptNote"));
-                return confirmRow(c).then(function (ok) {
-                    if (!ok) return;
-                    return api.call("script.run", { code: r.code }).then(function (res) {
-                        if (res && res.ok) say((res.logs && res.logs.length ? res.logs.join("\n") : t("as.done")) + (res.result ? "\n→ " + res.result : "") + "\n" + t("as.scriptUndo"), "note");
-                        else { applied = false; say("⚠ " + t("as.scriptFailed", { err: res && res.error || "?" }), "ai"); }
-                    });
-                });
+                return showScript(cmd, request, r, 0);
             }, function (e) { if (waiting.parentNode) waiting.parentNode.removeChild(waiting); say("⚠ " + (window.NoirI18n ? NoirI18n.host(e && e.message || String(e)) : (e && e.message || e)), "ai"); });
+        }
+        // shows the code; «Применить» runs it; if AE reports an error, the model repairs its code (up to 2 times) and the new code is shown again
+        function showScript(cmd, request, r, round) {
+            cmd.code = r.code;
+            var c = card((round ? t("as.scriptFixed", { n: round }) : t("as.script")) + (r.say ? " · " + r.say : ""));
+            var pre = el("pre", "as-code", c); pre.textContent = r.code;
+            if (r.problems.length) { el("p", "as-note as-bad", c, t("as.scriptBlocked", { list: r.problems.join(", ") })); log.scrollTop = log.scrollHeight; return; }
+            el("p", "as-note", c, round ? t("as.scriptFixNote") : t("as.scriptNote"));
+            return confirmRow(c).then(function (ok) {
+                if (!ok) return;
+                return api.call("script.run", { code: r.code }).then(function (res) {
+                    if (res && res.ok) { say((res.logs && res.logs.length ? res.logs.join("\n") : t("as.done")) + (res.result ? "\n→ " + res.result : "") + "\n" + t("as.scriptUndo"), "note"); return; }
+                    applied = false;
+                    var err = res && res.error || "?";
+                    say("⚠ " + t("as.scriptFailed", { err: err }), "ai");
+                    if (round >= 2 || !online) return;
+                    say(t("as.scriptRepairing"), "ai"); var w2 = log.lastChild;
+                    return repairScript(cmd, request, r.code, err).then(function (r2) {
+                        if (w2.parentNode) w2.parentNode.removeChild(w2);
+                        return showScript(cmd, request, r2, round + 1);
+                    }, function (e) { if (w2.parentNode) w2.parentNode.removeChild(w2); say("⚠ " + (e && e.message || e), "ai"); });
+                });
+            });
+        }
+        // «что ты умеешь»: everything the assistant can do, by topic; every example is a button that runs it
+        var HELP = [
+            ["help.place", ["поставь внизу", "выше на 40", "не закрывай лицо", "верни на исходные места"]],
+            ["help.look", ["акценты красным", "чёрная обводка 4", "убери тень", "капсом", "шрифт Montserrat", "свечение акцентам", "крупнее на 15%"]],
+            ["help.motion", ["появление pop", "по буквам", "динамичнее", "раньше на 3 кадра", "удлини"]],
+            ["help.text", ["убери слова-паразиты", "добавь эмодзи", "исправь ошибки в тексте", "переведи на английский"]],
+            ["help.cut", ["убери паузы длиннее 0.7 секунды", "вырежи паразитов из видео", "нарежь по фразам", "автозум на акцентах"]],
+            ["help.layers", ["выдели акценты", "маска круг мягкая", "вырежи человека", "добавь пульт"]],
+            ["help.more", ["стиль как в референсе", "обработай выделенные композиции", "что ты помнишь", "запомни: субтитры всегда внизу"]],
+            ["help.script", ["скрипт: добавь чёрную плашку под всеми субтитрами", "скрипт: поставь маркеры каждые 2 секунды"]]
+        ];
+        function helpCard() {
+            var c = card(t("help.title"));
+            el("p", "as-note", c, online ? t("help.leadAi") : t("help.leadNoAi"));
+            HELP.forEach(function (g) {
+                el("b", "as-mem-h", c, t(g[0]));
+                var row = el("div", "as-chips as-help", c);
+                g[1].forEach(function (q) { var b = el("button", "", row, q); b.type = "button"; b.onclick = function () { input.value = q; if (/^скрипт:/.test(q) || /\.\.\.$/.test(q)) { input.focus(); return; } submit(q); }; });
+            });
+            el("p", "as-note", c, t("help.foot"));
+            log.scrollTop = c.offsetTop;
         }
         function memoryCommand(mi) {
             if (mi.kind === "pref") return api.call("memory.add", { kind: "prefs", text: mi.text }).then(function () { say(t("mem.savedPref", { text: mi.text }), "ai"); });
@@ -638,6 +761,7 @@
         function submit(text) {
             text = String(text || "").trim(); if (!text || busy) return;
             busy = true; say(text, "me"); input.value = "";
+            if (/^(что (ты )?(умеешь|можешь)|помощь|справка|help|команды|what can you do)\??$/i.test(text.trim())) { helpCard(); busy = false; input.focus(); return; }
             var mi = memoryIntent(text);
             if (mi) { memoryCommand(mi).catch(function (e) { say("⚠ " + (e && e.message || e), "ai"); }).then(function () { busy = false; input.focus(); }); return; }
             api.call("memory.find", { q: text }).catch(function () { return null; }).then(function (known) {
@@ -687,7 +811,7 @@
             }).catch(function (e) { say("⚠ " + (e && e.message || e), "ai"); }).then(function () { busy = false; input.focus(); });
         }
         say(t("as.hello"), "ai");
-        [t("as.chip1"), t("as.chip2"), t("as.chip3"), t("as.chip4"), t("as.chip5")].forEach(function (text) {
+        [t("as.chipHelp"), t("as.chip1"), t("as.chip2"), t("as.chip3"), t("as.chip4"), t("as.chip5")].forEach(function (text) {
             var b = el("button", "", chips, text); b.type = "button"; b.onclick = function () { submit(text); };
         });
         form.onsubmit = function (ev) { ev.preventDefault(); submit(input.value); };

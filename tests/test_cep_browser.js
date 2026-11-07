@@ -463,10 +463,12 @@ function layoutProblems() {
             if (/ExtendScript/.test(sys)) {
                 scriptCalls++;
                 if (/файл/.test(user)) out = { say: "Удалю файл.", code: "var f = new File('C:/x.txt'); f.remove();" };
+                else if (/It failed with/.test(user)) out = { say: "Переименую.", code: "for (var i = 0; i < selected.length; i++) selected[i].name = 'Слой ' + (i + 1);\nlog('Переименовано: ' + selected.length);" };
+                else if (/переименуй/.test(user)) out = { say: "Переименую.", code: "var x = null;\nx.boom();" };
                 else if (/rejected/.test(user)) out = { say: "Добавлю красный слой на всю композицию.", code: "var s = comp.layers.addSolid([1, 0, 0], 'NOIR red', comp.width, comp.height, 1, comp.duration);\nlog('Добавлен красный слой');" };
                 else out = { say: "?", code: "const s = comp.layers.addSolid([1,0,0], 'x', 10, 10, 1, 1);" };
                 out.model = body.model;
-            } else out = { say: "Напишу скрипт: красный слой.", commands: [{ op: "script", task: "add a full-size red solid named NOIR red" }] };
+            } else out = /переименуй/.test(user) ? { say: "Скрипт.", commands: [{ op: "script", task: "rename selected layers" }] } : { say: "Напишу скрипт: красный слой.", commands: [{ op: "script", task: "add a full-size red solid named NOIR red" }] };
             return route.fulfill({ status: 200, headers: Object.assign({ "Content-Type": "application/json" }, cors), body: JSON.stringify({ message: { content: JSON.stringify(out) } }) });
         });
         await page.evaluate(() => NoirAssistant.setSettings({ endpoint: "http://127.0.0.1:11434" }));
@@ -489,6 +491,12 @@ function layoutProblems() {
         await page.locator(".as-plan").last().locator(".btn.primary").click();
         await page.waitForFunction(() => /Добавлен красный слой/.test([...document.querySelectorAll(".as-msg.note")].pop().textContent)); await settle();
         assert.strictEqual(comp._l.length, n0 + 1); assert.ok(comp._l.some(l => l.name === "NOIR red"));
+        await input.fill("скрипт: переименуй выделенные слои"); await input.press("Enter");
+        await page.waitForFunction(() => document.querySelectorAll(".as-code").length >= 2 && /boom/.test([...document.querySelectorAll(".as-code")].pop().textContent));
+        await page.locator(".as-plan").last().locator(".btn.primary").click();
+        await page.waitForFunction(() => /Исправленный скрипт \(1\)/.test(([...document.querySelectorAll(".as-plan")].pop() || {}).textContent || ""));
+        await page.locator(".as-plan").last().locator(".btn.primary").click();
+        await page.waitForFunction(() => /Переименовано/.test([...document.querySelectorAll(".as-msg.note")].pop().textContent)); await settle();
         await input.fill("скрипт: удали файл с диска"); await input.press("Enter");
         await page.waitForFunction(() => /Не запускаю/.test(([...document.querySelectorAll(".as-plan")].pop() || {}).textContent || ""));
         assert.strictEqual(await page.locator(".as-plan").last().locator(".btn.primary").count(), 0, "кнопки «Применить» нет");
@@ -496,6 +504,24 @@ function layoutProblems() {
         await page.evaluate(() => NoirAssistant.setSettings({ endpoint: "http://127.0.0.1:59999" }));
         await page.unroute("http://127.0.0.1:11434/**");
         await page.evaluate(() => NoirHost.call("settings.set", { path: "assistantScripts", value: false })); await settle();
+    });
+    await step("помощник: «что ты умеешь» — примеры по темам, клик выполняет; вид текста и шрифт готовыми командами", async () => {
+        await page.evaluate(() => NoirAssistant.open());
+        await page.locator(".as-chips button").first().click();
+        await page.waitForSelector(".as-help button");
+        assert.ok(await page.locator(".as-help button").count() > 25, "много примеров");
+        await shot("assistant-help");
+        await page.locator(".as-help button", { hasText: "акценты красным" }).click();
+        await page.waitForFunction(() => /Акценты: цвет #e6141a/.test(([...document.querySelectorAll(".as-plan")].pop() || {}).textContent || ""));
+        await page.locator(".as-plan").last().locator(".btn.primary").click(); await page.waitForTimeout(300); await settle();
+        assert.deepStrictEqual((await hostState()).settings.style.accent.color, [0.9, 0.08, 0.1]);
+        const input = page.locator(".as-form input");
+        await input.fill("шрифт Montserrat и чёрная обводка 5"); await input.press("Enter");
+        await page.waitForFunction(() => /Шрифт «montserrat»/.test(([...document.querySelectorAll(".as-plan")].pop() || {}).textContent || ""));
+        await page.locator(".as-plan").last().locator(".btn.primary").click(); await page.waitForTimeout(400); await settle();
+        const b = (await hostState()).settings.style.base;
+        assert.strictEqual(b.fonts[0], "Montserrat-SemiBold"); assert.strictEqual(b.strokeWidth, 5); assert.deepStrictEqual(b.strokeColor, [0, 0, 0]);
+        await page.keyboard.press("Escape");
     });
     await step("помощник: нарезка по речи — сначала замер «было → стало», «Отмена» ничего не режет, «Применить» режет видео и пересоздаёт субтитры", async () => {
         const v = new mock.AVLayer(comp, "clip.mp4"); v.source = { hasVideo: true }; comp._l.push(v); comp._l.forEach(l => { l.selected = l === v; });

@@ -10,7 +10,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
 (function (N) {
     var SECTION = "NOIR Captions";
     var SETTINGS_KEY = "settings.v2";
-    N.VERSION = "0.42.0";
+    N.VERSION = "0.43.0";
 
     function clone(o) { return N.parseJSON(N.stringify(o)); }
 
@@ -1608,7 +1608,11 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
                 for (var i = 0; i < kinds.length; i++) m[kinds[i]] = [];
                 memSave(m); status("Память помощника очищена."); return true;
             },
-            "script.check": function (a) { return { problems: scriptProblems(a.code), enabled: !!S.assistantScripts }; },
+            "script.check": function (a) {
+                var pr = scriptProblems(a.code);
+                if (!pr.length) { try { new Function("comp", "selected", "captions", "log", String(a.code)); } catch (eC) { pr.push("ошибка синтаксиса: " + (eC.message || eC)); } }   // compiled, not run
+                return { problems: pr, enabled: !!S.assistantScripts };
+            },
             "script.run": function (a) { return runScript(String(a.code || "")); },
             // what a script needs to know: the comp and its layers (names, kinds, times), the selection
             "script.context": function () {

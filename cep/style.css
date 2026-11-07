@@ -365,6 +365,7 @@ select.input option { background: var(--surface); color: var(--text); }
 .as-plan { align-self: stretch; padding: var(--s2) 10px; border: 1px solid rgba(232, 194, 113, .5); border-radius: var(--r-m); background: rgba(214, 168, 78, .12); }
 .as-plan ol { margin: 0 0 var(--s2); padding-left: 18px; } .as-plan li { margin: 2px 0; }
 .as-plan-title { display: block; margin-bottom: var(--s2); }
+.as-help { margin: 2px 0 var(--s1); } .as-help button { color: #f1e3c2; border-color: rgba(232, 194, 113, .3); }
 .as-mem-h { display: block; margin: var(--s1) 0 2px; font-size: var(--fs-s); } .as-mem { margin: 0 0 var(--s1); padding-left: 18px; font-size: var(--fs-s); }
 .as-code { max-height: 220px; overflow: auto; margin: 0 0 var(--s1); padding: 8px; border-radius: var(--r-s); background: rgba(0, 0, 0, .35); font: 11px/1.45 Consolas, "Cascadia Mono", monospace; white-space: pre; color: #ece6da; }
 .as-bad { color: #fca5a5; } .as-check { display: flex; align-items: center; gap: 6px; }
