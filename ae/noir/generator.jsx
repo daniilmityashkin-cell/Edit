@@ -1175,6 +1175,43 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         return { warnings: [], fontCache: {}, scale: comp.width / N.REF_WIDTH, minDur: Math.max(comp.frameDuration, 0.04) };
     };
     // Non-destructive preflight. Safe-area estimate covers text at rest, not animated overshoot or effects.
+    // Formats and their safe areas (fractions of the frame; platform UI covers the rest). Approximate: platforms change their UI.
+    N.FORMATS = [
+        { id: "auto", label: "Авто (по кадру)" },
+        { id: "reels", label: "Reels 9:16", safe: { top: 0.115, bottom: 0.22, left: 0.06, right: 0.12 } },
+        { id: "tiktok", label: "TikTok 9:16", safe: { top: 0.07, bottom: 0.25, left: 0.06, right: 0.14 } },
+        { id: "shorts", label: "Shorts 9:16", safe: { top: 0.1, bottom: 0.25, left: 0.06, right: 0.14 } },
+        { id: "square", label: "Квадрат 1:1", safe: { top: 0.06, bottom: 0.06, left: 0.06, right: 0.06 } },
+        { id: "wide", label: "Горизонталь 16:9", safe: { top: 0.1, bottom: 0.1, left: 0.1, right: 0.1 } }
+    ];
+    N.SAFE_TAG = "noir-captions:safe";
+    // Format id for a comp: explicit id, or guessed from the aspect ratio.
+    N.formatFor = function (comp, id) {
+        if (id && id !== "auto") for (var i = 0; i < N.FORMATS.length; i++) if (N.FORMATS[i].id === id) return N.FORMATS[i];
+        var r = comp.width / comp.height, guess = r < 0.8 ? "reels" : (r < 1.25 ? "square" : "wide");
+        for (var j = 0; j < N.FORMATS.length; j++) if (N.FORMATS[j].id === guess) return N.FORMATS[j];
+        return null;
+    };
+    // A guide layer (not rendered) with the safe-area rectangle. remove=true only removes it.
+    N.safeGuides = function (comp, id, remove) {
+        var removed = 0, i;
+        for (i = comp.numLayers; i >= 1; i--) if (String(comp.layer(i).comment || "") === N.SAFE_TAG) { comp.layer(i).remove(); removed++; }
+        if (remove) return { removed: removed };
+        var f = N.formatFor(comp, id), s = f.safe, w = comp.width * (1 - s.left - s.right), h = comp.height * (1 - s.top - s.bottom);
+        var layer = comp.layers.addShape();
+        layer.name = "NOIR · Безопасная зона (" + f.label + ")"; layer.comment = N.SAFE_TAG; layer.guideLayer = true; layer.label = 2;
+        var grp = layer.property("ADBE Root Vectors Group").addProperty("ADBE Vector Group");
+        var shapes = grp.property("ADBE Vectors Group");
+        var rect = shapes.addProperty("ADBE Vector Shape - Rect");
+        rect.property("ADBE Vector Rect Size").setValue([w, h]);
+        rect.property("ADBE Vector Rect Position").setValue([0, 0]);
+        var stroke = shapes.addProperty("ADBE Vector Graphic - Stroke");
+        stroke.property("ADBE Vector Stroke Color").setValue([0.3, 0.6, 1]);
+        stroke.property("ADBE Vector Stroke Width").setValue(Math.max(2, comp.width / 360));
+        layer.property("Transform").property("Position").setValue([comp.width * (s.left + (1 - s.left - s.right) / 2), comp.height * (s.top + (1 - s.top - s.bottom) / 2)]);
+        return { name: f.label, removed: removed, safe: s };
+    };
+
     N.checkCaptions = function (groups, style, comp) {
         var issues = [], sides = ["base"], i, j, hasAccent = false, L = style.layout;
         for (i = 0; i < groups.length; i++) for (j = 0; j < groups[i].words.length; j++) if (groups[i].words[j].accent) hasAccent = true;
@@ -1201,10 +1238,11 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
                 blockHeight += maxSize * 1.2;
             }
             blockHeight += Math.max(0, lines.length - 1) * L.lineGap * style.base.size * scale;
+            var fmt = N.formatFor(comp, L.format), sa = fmt && fmt.safe ? fmt.safe : { top: .05, bottom: .05, left: .05, right: .05 };
             var halfWidth = width * L.safeWidth / 2, x = width * L.posX / 100, y = height * L.posY / 100;
-            if (x - halfWidth < width * .05 - 1 || x + halfWidth > width * .95 + 1 ||
-                y - blockHeight / 2 < height * .05 || y + blockHeight / 2 > height * .95)
-                issues.push({code: "safe_area", segment: g.seg, message: label + "возможен выход из безопасной области (отступ 5%). Проверьте превью."});
+            if (x - halfWidth < width * sa.left - 1 || x + halfWidth > width * (1 - sa.right) + 1 ||
+                y - blockHeight / 2 < height * sa.top || y + blockHeight / 2 > height * (1 - sa.bottom))
+                issues.push({code: "safe_area", segment: g.seg, message: label + "текст может попасть под интерфейс площадки (" + (fmt ? fmt.label : "поля 5%") + "). Проверьте положение."});
             if (g.compOut <= 0 || g.compStart >= comp.duration)
                 issues.push({code: "outside", segment: g.seg, message: label + "находится вне композиции."});
         }

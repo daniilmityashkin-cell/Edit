@@ -160,35 +160,57 @@
     // ---------- executing commands ----------
     function execOne(cmd) {
         switch (cmd.op) {
-            case "recognize": api.page(0); return api.sendAsync({ action: "click", id: api.roleId("recognize") });
-            case "create": api.page(1); return api.sendAsync({ action: "click", id: api.roleId("generate") });
-            case "update": return api.sendAsync({ action: "click", id: api.roleId("updatePhrase") });
-            case "updateAll": return api.sendAsync({ action: "click", id: api.roleId("generate") });
-            case "delete": if (!window.confirm("Удалить выбранные субтитры? Отмена — Ctrl+Z в AE.")) return Promise.resolve({ skipped: true });
-                return api.sendAsync({ action: "run", command: { op: "delete", confirmed: true } });
-            default: return api.sendAsync({ action: "run", command: cmd });
+            case "recognize": api.page("video"); return api.call("recognize");
+            case "create": case "updateAll": return api.generate("all");
+            case "update": return api.generate("phrase");
+            case "delete": return api.call("run", { command: { op: "delete", confirmed: true } });
+            default: return api.call("run", { command: cmd });
         }
     }
-    function waitScan(say) {
+    function waitScan() {
         var started = Date.now();
         function step() {
-            var w = api.workflow();
+            var w = api.state() || {};
             if (!w.scanning || Date.now() - started > 40000) return Promise.resolve();
-            return new Promise(function (r) { setTimeout(r, 600); }).then(function () { return api.sendAsync({ action: "poll" }); }).then(step);
+            return new Promise(function (r) { setTimeout(r, 600); }).then(function () { return api.call("poll"); }).then(step);
         }
         return step();
     }
-    function execAll(cmds, say) {
+    function execAll(cmds) {
         var chain = Promise.resolve(), notes = [];
         cmds.forEach(function (c) {
             chain = chain.then(function () { return execOne(c); }).then(function (resp) {
-                if (resp && resp.error) { notes.push("⚠ " + resp.error); return null; }
-                if (c.op === "avoidFace" || c.op === "faceScan") return waitScan().then(function () { return api.sendAsync({ action: "poll" }); }).then(function () { return api.sendAsync({ action: "status" }); }).then(function (r) { if (r && r.notice) notes.push(r.notice); });
-                if (resp && resp.notice) notes.push(resp.notice);
-                return new Promise(function (r) { setTimeout(r, 140); });
-            });
+                if (c.op === "avoidFace" || c.op === "faceScan") return waitScan().then(function () { return api.call("status"); }).then(function (r) { if (r) notes.push(r); });
+                if (typeof resp === "string") notes.push(resp);
+            }, function (e) { notes.push("⚠ " + (e && e.message || e)); });
         });
         return chain.then(function () { return notes; });
+    }
+    // Human description of a command for the plan preview.
+    var IN_NAMES = { none: "без анимации", fade: "fade", pop: "pop", rise: "снизу", blurRise: "снизу с размытием", letRise: "по буквам", type: "печатная машинка" };
+    function describe(c) {
+        switch (c.op) {
+            case "place": return "Поставить фразы на высоту " + c.y + "% кадра";
+            case "placeZones": return "Слова на " + c.baseY + "%, акценты на " + c.accentY + "%";
+            case "nudge": return "Сдвинуть " + (c.ky < 0 ? "вверх" : c.ky > 0 ? "вниз" : c.kx < 0 ? "влево" : "вправо") + (c.px ? " на " + c.px + " px" : "");
+            case "size": return (c.sign > 0 ? "Увеличить" : "Уменьшить") + " текст" + (c.pct ? " на " + c.pct + "%" : "");
+            case "scale": return "Размер текста ×" + c.factor;
+            case "time": return "Изменить время" + (c.shift ? (c.shift < 0 ? ": раньше" : ": позже") : c.dIn ? ": начало" : c.dOut ? (c.dOut > 0 ? ": удлинить" : ": укоротить") : "") + (c.amount ? " на " + c.amount + (c.frames ? " кадр." : " с") : "");
+            case "animIn": return "Появление: " + (IN_NAMES[c.id] || c.id);
+            case "animOut": return "Исчезание: " + (IN_NAMES[c.id] || c.id);
+            case "scope": return "Менять: " + ({ source: "субтитры этого видео", selected: "выделенные слои", all: "все субтитры NOIR" })[c.id];
+            case "preset": return "Выбрать стиль «" + c.id + "»";
+            case "applyStyle": return "Применить стиль к готовым субтитрам";
+            case "resetPos": return "Вернуть на исходные места";
+            case "behind": return "Поставить субтитры под выделенный слой";
+            case "avoidFace": return "Найти лицо и убрать с него субтитры";
+            case "faceScan": return "Найти лицо на кадре";
+            case "recognize": return "Распознать речь выбранного слоя";
+            case "create": case "updateAll": return "Создать / обновить все субтитры";
+            case "update": return "Обновить текущую фразу";
+            case "delete": return "Удалить субтитры (Ctrl+Z вернёт)";
+        }
+        return c.op;
     }
 
     // ---------- UI ----------
@@ -197,7 +219,7 @@
         close();
         box = document.createElement("section"); box.className = "noir-assistant"; box.setAttribute("role", "dialog"); box.setAttribute("aria-label", "Помощник NOIR");
         box.innerHTML = '<div class="as-head"><b>Помощник</b><span class="as-mode" aria-live="polite"></span><button type="button" class="as-close" aria-label="Закрыть">×</button></div>' +
-            '<div class="as-log" aria-live="polite"></div><form class="as-form"><input type="text" autocomplete="off" placeholder="Что сделать? Например: расположи красиво, чтобы лицо не закрывали" aria-label="Просьба помощнику"><button type="submit">Выполнить</button></form>' +
+            '<div class="as-log" aria-live="polite"></div><form class="as-form"><input type="text" autocomplete="off" placeholder="Что сделать? Например: расположи красиво, чтобы лицо не закрывали" aria-label="Просьба помощнику"><button type="submit" class="btn primary">Спросить</button></form>' +
             '<div class="as-chips"></div>' +
             '<details class="as-settings"><summary>ИИ-модель на этом компьютере</summary><div class="as-set-body"><label>Адрес Ollama <input type="text" class="as-endpoint"></label><label>Модель <select class="as-model"></select></label><button type="button" class="as-refresh">Проверить подключение</button><p class="as-note"></p></div></details>';
         document.body.appendChild(box);
@@ -220,7 +242,7 @@
             var job;
             if (wantAi) {
                 say("Думаю…", "ai"); var thinking = log.lastChild;
-                job = api.sendAsync({ action: "context" }).then(function (r) { return askModel(text, (r && r.context) || {}); }).then(function (reply) {
+                job = api.call("context").then(function (ctx) { return askModel(text, ctx || {}); }).then(function (reply) {
                     if (thinking.parentNode) thinking.parentNode.removeChild(thinking);
                     if (!reply) throw new Error("Модель ответила не в том формате.");
                     return reply;
@@ -236,8 +258,27 @@
                 say(reply.say || (reply.commands.length ? "Выполняю." : "Нечего выполнять."), "ai");
                 if (reply.dropped) say("Пропущено команд, которых я не знаю: " + reply.dropped + ".", "ai");
                 if (!reply.commands.length) return;
-                return execAll(reply.commands).then(function (notes) { if (notes.length) say(notes.join("\n"), "note"); });
+                return plan(reply.commands);
             }).catch(function (e) { say("Ошибка: " + (e && e.message || e), "ai"); }).then(function () { busy = false; input.focus(); });
+        }
+        // Plan preview: nothing changes in AE until «Применить».
+        function plan(cmds) {
+            var card = document.createElement("div"); card.className = "as-plan"; log.appendChild(card);
+            var ol = document.createElement("ol"); card.appendChild(ol);
+            cmds.forEach(function (c) { var li = document.createElement("li"); li.textContent = describe(c); ol.appendChild(li); });
+            var row = document.createElement("div"); row.className = "as-plan-actions"; card.appendChild(row);
+            var yes = document.createElement("button"); yes.type = "button"; yes.className = "btn primary small"; yes.textContent = "Применить"; row.appendChild(yes);
+            var no = document.createElement("button"); no.type = "button"; no.className = "btn ghost small"; no.textContent = "Отмена"; row.appendChild(no);
+            log.scrollTop = log.scrollHeight;
+            return new Promise(function (resolve) {
+                function finish(apply) {
+                    yes.disabled = no.disabled = true; card.classList.add(apply ? "applied" : "cancelled");
+                    if (!apply) { say("Отменено — ничего не изменено.", "note"); resolve(); return; }
+                    execAll(cmds).then(function (notes) { say(notes.length ? notes.join("\n") : "Готово.", "note"); resolve(); });
+                }
+                yes.onclick = function () { finish(true); }; no.onclick = function () { finish(false); };
+                yes.focus();
+            });
         }
         say("Привет! Скажите, что сделать с субтитрами — простыми словами.", "ai");
         ["расположи так, чтобы не закрывать лицо", "поставь внизу и сделай крупнее", "появление pop, исчезание fade", "сдвинь раньше на 0.3"].forEach(function (text) {
@@ -253,6 +294,6 @@
         input.focus();
     }
 
-    window.NoirAssistant = { init: function (options) { api = options; }, open: open, close: close, understand: understand, parseReply: parseReply, sanitize: sanitize, system: SYSTEM,
+    window.NoirAssistant = { init: function (options) { api = options; }, open: open, close: close, understand: understand, parseReply: parseReply, sanitize: sanitize, describe: describe, system: SYSTEM,
         setSettings: function (o) { for (var k in o) settings[k] = o[k]; saveSettings(settings); } };
 })();

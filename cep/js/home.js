@@ -24,7 +24,7 @@
         var groups = options.groups, orbit = el("div", "orbit", host), open = false, closeTimer = 0, m = { Rn: 120, Ro: 100, Ri: 62, T: 64, orb: 70 };
         host.classList.add("home-ready");
         var hint = el("p", "orbit-hint", host);
-        hint.textContent = "Наведите на шар — откроются разделы. Нажмите на шар — помощник.";
+        hint.textContent = options.hint || "";
         var arrows = svgEl("svg", { "class": "orbit-arrows", "aria-hidden": "true" }, orbit);
         var tiles = groups.map(function (g, i) {
             var b = el("button", "orbit-tile", orbit); b.type = "button"; b.dataset.id = g.id; b.setAttribute("aria-label", g.label);

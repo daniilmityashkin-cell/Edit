@@ -1,11 +1,9 @@
 # Interface fonts
 
-Both fonts are bundled locally for the HTML interface (no runtime download).
+Bundled locally for the HTML panel (no runtime download). License: SIL OFL 1.1 (files `OFL-*.txt`).
 
-- `Unbounded.woff2` — display font (headings, step name, main buttons). Source: Google Fonts
-  `ofl/unbounded/Unbounded[wght].ttf`, subset to Latin + Cyrillic + punctuation/arrows and repackaged
-  as WOFF2 with fontTools (variable `wght` axis kept). License: SIL OFL 1.1, `OFL-Unbounded.txt`.
-- `OpenSans.woff2` — body text and form fields. Source: `ofl/opensans/OpenSans[wdth,wght].ttf`. License: `OFL.txt`.
+- `Inter.woff2` — the interface typeface (all UI text). Source: Google Fonts Inter, instanced at opsz 14,
+  subset to Latin + Cyrillic + punctuation, WOFF2. License: `OFL-Inter.txt`.
+- `Montserrat.woff2`, `Unbounded.woff2` — used only to preview styles that use these fonts in the style gallery.
 
-Subtitle fonts in After Effects are selected separately by the user's style settings.
-To use Unbounded for all interface text, set `font-family: var(--display)` on `:root` in `style.css`.
+Subtitle fonts in After Effects are chosen separately in the style settings.

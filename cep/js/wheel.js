@@ -44,46 +44,45 @@
     function size(sign) { return function () { api.run({ op: "size", sign: sign }); }; }
     function place(y) { return function () { api.run({ op: "place", y: y }); }; }
     function anim(op, id) { return function () { api.run({ op: op, id: id }); }; }
-    function click(role, page) { return function () { if (page !== undefined) api.page(page); api.click(role); }; }
+    function op(name, args) { return function () { api.act(name, args); }; }
+    function page(id, anchor) { return function () { api.page(id, false, anchor); }; }
 
+    // Sectors follow the context: no text yet -> source actions first; text ready -> creating; captions made -> editing.
     function buildSectors() {
-        var names = [];
-        for (var k = 0; k < 4; k++) {
-            var r = api.roles()["galleryCard" + k];
-            names.push({ t: r && r.shortText ? r.shortText.slice(0, 11) : "Стиль " + (k + 1), run: click("galleryCard" + k, 2) });
-        }
+        var s = api.state() || {}, styles = (api.presets() || []).slice(0, 4).map(function (p) { return { t: p.name.slice(0, 12), run: function () { api.act("preset.choose", { id: p.id }); } }; });
         return [
-            { id: "video", label: "Видео", color: "#4ade80", icon: ICONS.video, items: [
-                { t: "Открыть ▸", run: function () { api.page(0); } }, { t: "Распознать", run: click("recognize", 0) }, { t: "Загрузить JSON", run: click("load", 0) }, { t: "Отмена", run: click("cancel") }] },
-            { id: "text", label: "Текст", color: "#a855f7", icon: ICONS.text, items: [
-                { t: "Открыть ▸", run: function () { api.page(1); } }, { t: "▷ Слушать", run: click("listen", 1) }, { t: "← Фраза", keep: true, run: click("prevPhrase", 1) }, { t: "Фраза →", keep: true, run: click("nextPhrase", 1) },
-                { t: "Отменить правку", run: click("undoEdit", 1) }, { t: "Сохранить JSON", run: click("save", 1) }, { t: "Сбросить текст", run: click("reset", 1) }] },
-            { id: "style", label: "Стиль", color: "#facc15", icon: ICONS.style, items:
-                [{ t: "Открыть ▸", run: function () { api.page(2); } }, { t: "←", keep: true, run: click("galleryPrev", 2) }].concat(names, [{ t: "→", keep: true, run: click("galleryNext", 2) }]) },
+            { id: "video", label: "Видео", color: "#60a5fa", icon: ICONS.video, items: [
+                { t: "Открыть ▸", run: page("video") }, { t: s.recognizing ? "Отмена" : "Распознать", run: op(s.recognizing ? "cancel" : "recognize") }, { t: "Открыть JSON", run: op("json.load") }, { t: "SRT / VTT", run: op("subs.import") }] },
+            { id: "text", label: "Текст", color: "#93c5fd", icon: ICONS.text, items: [
+                { t: "Открыть ▸", run: page("text") }, { t: "▷ Слушать", run: op("listen") }, { t: "← Фраза", keep: true, run: function () { if (s.phrase > 0) api.act("phrase.select", { index: (api.state().phrase || 0) - 1 }); } },
+                { t: "Фраза →", keep: true, run: function () { var c = api.state(); if (c.phrase < c.phrases.length - 1) api.act("phrase.select", { index: c.phrase + 1 }); } },
+                { t: "Отменить правку", run: op("text.undo") }, { t: "Сохранить JSON", run: op("json.save") }] },
+            { id: "style", label: "Стиль", color: "#bfdbfe", icon: ICONS.style, items: [{ t: "Открыть ▸", run: page("style") }].concat(styles) },
             { id: "place", label: "Позиция", color: "#3b82f6", icon: ICONS.place, items: [
                 { t: "Вверху", run: place(25) }, { t: "По центру", run: place(50) }, { t: "Внизу", run: place(75) }, { t: "Исходное", run: function () { api.run({ op: "resetPos" }); } }] },
-            { id: "move", label: "Сдвиг", color: "#22d3ee", icon: ICONS.move, items: [
+            { id: "move", label: "Сдвиг", color: "#2563eb", icon: ICONS.move, items: [
                 { t: "↑", keep: true, run: nudge(0, -1) }, { t: "↓", keep: true, run: nudge(0, 1) }, { t: "←", keep: true, run: nudge(-1, 0) }, { t: "→", keep: true, run: nudge(1, 0) },
                 { t: "A−", keep: true, run: size(-1) }, { t: "A+", keep: true, run: size(1) }] },
-            { id: "time", label: "Время", color: "#38bdf8", icon: ICONS.time, items: [
+            { id: "time", label: "Время", color: "#60a5fa", icon: ICONS.time, items: [
                 { t: "◀ раньше", keep: true, run: time({ shift: -1 }) }, { t: "позже ▶", keep: true, run: time({ shift: 1 }) },
                 { t: "Начало −", keep: true, run: time({ dIn: -1 }) }, { t: "Начало +", keep: true, run: time({ dIn: 1 }) },
                 { t: "Конец −", keep: true, run: time({ dOut: -1 }) }, { t: "Конец +", keep: true, run: time({ dOut: 1 }) }] },
-            { id: "in", label: "Вход", color: "#f472b6", icon: ICONS.animIn, items: [
+            { id: "in", label: "Вход", color: "#93c5fd", icon: ICONS.animIn, items: [
                 { t: "Нет", run: anim("animIn", "none") }, { t: "Fade", run: anim("animIn", "fade") }, { t: "Pop", run: anim("animIn", "pop") }, { t: "Снизу", run: anim("animIn", "rise") },
                 { t: "Blur ↑", run: anim("animIn", "blurRise") }, { t: "Whip →", run: anim("animIn", "whipL") }, { t: "По буквам", run: anim("animIn", "letRise") }] },
-            { id: "out", label: "Выход", color: "#fb923c", icon: ICONS.animOut, items: [
+            { id: "out", label: "Выход", color: "#bfdbfe", icon: ICONS.animOut, items: [
                 { t: "Нет", run: anim("animOut", "none") }, { t: "Fade", run: anim("animOut", "fade") }, { t: "Blur", run: anim("animOut", "blur") }, { t: "Вверх", run: anim("animOut", "up") },
                 { t: "Shrink", run: anim("animOut", "shrink") }, { t: "← Whip", run: anim("animOut", "whipR") }, { t: "Стереть", run: anim("animOut", "letType") }] },
-            { id: "make", label: "Создать", color: "#e879f9", icon: ICONS.create, items: [
-                { t: "Создать все", run: click("generate", 1) }, { t: "Обновить фразу", run: click("updatePhrase", 1) }, { t: "Проверить", run: click("check", 1) }] },
-            { id: "fix", label: "Правка", color: "#a3e635", icon: ICONS.fix, items: [
-                { t: "Открыть ▸", run: function () { api.page(3); } }, { t: "Этого видео", run: function () { api.run({ op: "scope", id: "source" }); } }, { t: "Выделенные", run: function () { api.run({ op: "scope", id: "selected" }); } },
+            { id: "make", label: "Создать", color: "#3b82f6", icon: ICONS.create, items: [
+                { t: s.canUpdate ? "Обновить все" : "Создать все", run: function () { api.generate("all"); } }, { t: "Обновить фразу", run: function () { api.generate("phrase"); } },
+                { t: "Превью", run: function () { api.generate("preview"); } }, { t: "Проверить", run: function () { api.generate("check"); } }] },
+            { id: "fix", label: "Правка", color: "#2563eb", icon: ICONS.fix, items: [
+                { t: "Открыть ▸", run: page("edit") }, { t: "Этого видео", run: function () { api.run({ op: "scope", id: "source" }); } }, { t: "Выделенные", run: function () { api.run({ op: "scope", id: "selected" }); } },
                 { t: "Все NOIR", run: function () { api.run({ op: "scope", id: "all" }); } }, { t: "Применить стиль", run: function () { api.run({ op: "applyStyle" }); } }, { t: "За человеком", run: function () { api.run({ op: "behind" }); } },
                 { t: "Удалить", run: function () { if (window.confirm("Удалить выбранные субтитры? Отмена — Ctrl+Z в AE.")) api.run({ op: "delete", confirmed: true }); } }] },
             { id: "more", label: "Ещё", color: "#94a3b8", icon: ICONS.more, items: [
-                { t: "Настройки", run: function () { api.settings("recognition"); } }, { t: "Шрифт", run: function () { api.settings("font"); } },
-                { t: "Раскладка", run: function () { api.settings("layoutPage"); } }, { t: "Звук", run: function () { api.settings("sfxPage"); } }, { t: "Проект", run: function () { api.settings("project"); } }] }
+                { t: "Настройки", run: page("settings") }, { t: "Шрифт", run: page("settings", "set-font") }, { t: "Раскладка", run: page("settings", "set-layout") },
+                { t: "Звук", run: page("edit", "edit-sfx") }, { t: "Помощник", run: function () { openAssistant(); } }] }
         ];
     }
 

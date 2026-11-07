@@ -43,12 +43,10 @@ powershell -ExecutionPolicy Bypass -File recognition\setup_windows.ps1
 Модели лежат в `C:\Users\<имя>\.cache\huggingface\hub`.
 
 ### 5. Установить панель в After Effects
-PowerShell **от имени администратора**, из папки проекта:
+PowerShell из папки проекта (администратор не нужен):
 ```
-powershell -ExecutionPolicy Bypass -File scripts\install_panel.ps1
+powershell -ExecutionPolicy Bypass -File scripts\install_cep_dev.ps1
 ```
-Либо вручную скопируйте `ae\NOIR Captions.jsx` в
-`C:\Program Files\Adobe\Adobe After Effects <версия>\Support Files\Scripts\ScriptUI Panels\`.
 
 ### 6. Настройки AE
 `Edit → Preferences → Scripting & Expressions`:
@@ -58,23 +56,21 @@ powershell -ExecutionPolicy Bypass -File scripts\install_panel.ps1
 Перезапустите AE.
 
 ### 7. Первый запуск
-`Window → NOIR Captions.jsx`. При первом открытии панель спросит папку проекта — впишите в поле
-«Папка» внизу окна `C:\Users\<имя>\edit` и нажмите OK (запомнится).
+**Window → Extensions (Legacy) → NOIR Captions**. Путь к проекту скрипт установки записал сам.
 
 ### 8. Проверка
 1. Откройте композицию, выделите слой со звуком.
-2. Вкладка «Речь» → язык «Русский» → «Распознать речь».
-3. Вкладка «Текст» — проверьте распознанное.
-4. Вкладка «Стиль» → пресет → «Создать субтитры» (кнопка сверху).
+2. «Видео» → язык «Русский» → «Распознать речь».
+3. «Текст» — проверьте распознанное.
+4. «Стиль» → выберите стиль → «Создать субтитры» (кнопка сверху).
 
 ## Обновление
 ```
 cd C:\Users\<имя>\edit
 git pull
+powershell -ExecutionPolicy Bypass -File scripts\install_cep_dev.ps1
 ```
-и перезапустить AE. Код панели грузится из папки проекта, поэтому копировать файлы заново обычно не нужно.
-Файл `ae\NOIR Captions.jsx` (загрузчик) менялся редко — если в CHANGELOG сказано, что он обновлён,
-запустите `scripts\install_panel.ps1` ещё раз.
+и перезапустить AE.
 
 ## Резервная копия
 - **Код**: всё на GitHub. Зафиксированные версии — ветки `backup/v…`
@@ -86,7 +82,7 @@ git pull
 - Модели можно не бэкапить — скачиваются заново.
 
 ## Удаление
-1. Удалить `NOIR Captions.jsx` из `...\Scripts\ScriptUI Panels\`.
+1. Удалить папку `%APPDATA%\Adobe\CEP\extensions\NOIRCaptions`.
 2. Удалить папку проекта `C:\Users\<имя>\edit` (вместе с `.venv`).
 3. По желанию: `%TEMP%\NOIR_Captions` (временные файлы), модели в
    `C:\Users\<имя>\.cache\huggingface\hub\models--Systran--faster-whisper-*`, свои пресеты в

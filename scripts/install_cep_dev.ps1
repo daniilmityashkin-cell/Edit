@@ -19,5 +19,11 @@ foreach ($version in 11..14) {
     New-Item -Path $key -Force | Out-Null
     New-ItemProperty -Path $key -Name PlayerDebugMode -Value '1' -PropertyType String -Force | Out-Null
 }
-Write-Host 'Copied. Restart AE. Open Window > Extensions (Legacy) > NOIR Captions - HTML.'
-Write-Host 'Close the old Window > NOIR Captions.jsx panel; that is the ScriptUI version.'
+# The old ScriptUI panel (0.20 and earlier) is gone: remove its loader if it was installed into AE.
+$old = Get-ChildItem 'C:\Program Files\Adobe' -Directory -Filter 'Adobe After Effects*' -ErrorAction SilentlyContinue |
+    ForEach-Object { Join-Path $_.FullName 'Support Files\Scripts\ScriptUI Panels\NOIR Captions.jsx' } | Where-Object { Test-Path -LiteralPath $_ }
+foreach ($f in $old) {
+    try { Remove-Item -LiteralPath $f -Force; Write-Host "Removed the old ScriptUI loader: $f" }
+    catch { Write-Host "Old ScriptUI loader is still here (run PowerShell as administrator to remove it, or delete it by hand): $f" -ForegroundColor Yellow }
+}
+Write-Host 'Copied. Restart AE. Open Window > Extensions (Legacy) > NOIR Captions.'

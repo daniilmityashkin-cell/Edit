@@ -1,212 +1,199 @@
-const fs=require('fs'),path=require('path'),os=require('os'),assert=require('assert');
-const {chromium}=require('playwright');
-const root=path.resolve(__dirname,'..'),mock=require(root+'/tests/ae_mock');
-const tmp=fs.mkdtempSync(path.join(os.tmpdir(),'noir-browser-'));
-mock.install({temp:tmp,fonts:['Inter-Bold','TimesNewRomanPSMT']});
-global.$.fileName=root+'/cep/host/bridge.jsx';
-(0,eval)(fs.readFileSync(global.$.fileName,'utf8')); NOIR_CEP.load(root);
-(async()=>{
- const browser=await chromium.launch({executablePath:'/usr/bin/chromium',headless:true,args:['--no-sandbox','--disable-dev-shm-usage']});
- const page=await browser.newPage({viewport:{width:880,height:360}});
- page.setDefaultTimeout(15000);
- const errors=[];page.on('pageerror',e=>errors.push(e.message));
- let hostCalls=0,bridgeDelay=0;const commands=[];
- await page.exposeFunction('hostEval',script=>{
-   hostCalls++;const match=/^NOIR_CEP\.request\((.*)\)$/.exec(script);
-   if(match)commands.push(JSON.parse(JSON.parse(match[1])));
-   if(bridgeDelay){const delay=bridgeDelay;return new Promise(resolve=>setTimeout(()=>resolve((0,eval)(script)),delay));}
-   return (0,eval)(script);
- });
- const server = require('http').createServer((req,res)=>{
-   const relative=decodeURIComponent(req.url.split('?')[0]).replace(/^\//,'');
-   const file=path.resolve(root,'cep',relative||'index.html');
-   if(!file.startsWith(path.join(root,'cep')+path.sep)){res.writeHead(403);res.end();return;}
-   try { const data=fs.readFileSync(file);const ext=path.extname(file);res.setHeader('Content-Type',({'.html':'text/html','.js':'application/javascript','.css':'text/css','.mp4':'video/mp4','.jpg':'image/jpeg','.svg':'image/svg+xml','.woff2':'font/woff2'})[ext]||'application/octet-stream');res.end(data); }
-   catch(e){res.writeHead(404);res.end();}
- });
- await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
- await page.addInitScript(()=>{window.__adobe_cep__={evalScript:(script,cb)=>window.hostEval(script).then(cb)};});
- await page.goto('http://127.0.0.1:'+server.address().port+'/index.html');
- await page.waitForFunction(()=>{const logo=document.querySelector('.brand-mark img');return logo && logo.complete && logo.naturalWidth>0;});
- const loadedFaces=await page.evaluate(async()=>(await document.fonts.load('12px "Open Sans"','Субтитры Open Sans')).length);
- assert.ok(loadedFaces>0,"Bundled Open Sans must load instead of a fallback font");
- assert.ok(await page.evaluate(()=>document.fonts.check('12px "Open Sans"') && getComputedStyle(document.body).fontFamily.includes('Open Sans')),'Open Sans must load locally');
- await page.waitForTimeout(400);
- await page.evaluate(()=>{window.idleMutations=0;window.idleObserver=new MutationObserver(items=>window.idleMutations+=items.length);window.idleObserver.observe(document.getElementById('app'),{subtree:true,attributes:true,childList:true,characterData:true});});
- const idleCalls=hostCalls;await page.waitForTimeout(2200);assert.strictEqual(hostCalls,idleCalls,'Idle panel must not invoke AE repeatedly');
- assert.strictEqual(await page.evaluate(()=>{window.idleObserver.disconnect();return window.idleMutations;}),0,'Idle panel must not rewrite its DOM every second');
- const navCalls=hostCalls;
- await page.getByRole('tab',{name:'Текст',exact:true}).click();
- await page.getByRole('tab',{name:'Видео',exact:true}).click();
- await page.getByRole('tab',{name:'Стиль',exact:true}).click();
- assert.strictEqual(hostCalls,navCalls,'Navigation must stay local to the browser');
- await page.getByRole('tab',{name:'Стиль',exact:true}).click();
- // Recognition is the only source of scheduled host calls; completion opens the editor.
- const nativeRecognition={getAudioSource:NOIR.getAudioSource,modelCached:NOIR.modelCached,startRecognition:NOIR.startRecognition};
- let recognitionCallbacks;
- NOIR.getAudioSource=()=>({file:'test.wav'});NOIR.modelCached=()=>true;
- NOIR.startRecognition=(src,options,callbacks)=>{recognitionCallbacks=callbacks;callbacks.onStatus({state:'recognizing',message:'Тест распознавания',progress:.25});};
- await page.getByRole('tab',{name:'Видео',exact:true}).click();
- await page.locator('.create-action').click();
- await page.waitForFunction(()=>document.querySelector('.workflow-status').dataset.state==='busy');
- const pollsBefore=commands.filter(c=>c.action==='poll').length;
- await page.waitForTimeout(2200);
- assert.ok(commands.filter(c=>c.action==='poll').length>pollsBefore,'Active recognition must receive status polls');
- recognitionCallbacks.onDone({schema:'noir-captions/1',language:'ru',segments:[{words:[{text:'Готово',start:1,end:2}]}]},{link:null});
- Object.assign(NOIR,nativeRecognition);
- await page.waitForFunction(()=>document.querySelector('.workflow-status').dataset.state==='ready' && document.querySelector('#textPage').hidden===false);
- const completedCalls=hostCalls;await page.waitForTimeout(1300);assert.strictEqual(hostCalls,completedCalls,'Polling must stop after recognition completes');
- await page.getByRole('tab',{name:'Стиль',exact:true}).click();
- const area=page.locator('.workspace');
- await page.waitForFunction(()=>document.querySelector('.scroll-body').scrollHeight>document.querySelector('.scroll-body').clientHeight);
- const initialItems=app.project.numItems;
- for(let i=0;i<3 && !(await page.locator('.style-tile.has-reference').count());i++){
-   await page.getByRole('button',{name:'Стили →',exact:true}).click();await page.waitForTimeout(100);
- }
- assert.ok(await page.locator('.style-tile.selected').count(),'Saved style must be on the initial gallery page');
- const tile=page.locator('.style-tile.has-reference').first();
- await tile.hover();
- await page.waitForFunction(()=>{const v=document.querySelector('.style-tile.has-reference video');return v && v.currentTime>0 && !v.paused;});
- assert.strictEqual(app.project.numItems,initialItems,'Hover previews must not create AE project items');
- const tabs=page.locator('.tabs'); const before=await tabs.boundingBox();
- await area.evaluate(e=>{e.scrollTop=e.scrollHeight;});
- await page.waitForFunction(()=>document.querySelector('.style-tile.has-reference video').paused);
- await area.evaluate(e=>{e.scrollTop=0;});
- await page.mouse.move(300,330);await page.mouse.wheel(0,450);await page.waitForTimeout(200);
- assert.ok(await area.evaluate(e=>e.scrollTop)>0,'wheel over contents must scroll');
- assert.strictEqual((await tabs.boundingBox()).y,before.y,'tabs must remain pinned');
- await area.evaluate(e=>{e.scrollTop=0;});
- const current=await area.evaluate(e=>e.scrollTop);
- await page.mouse.move(before.x+30,before.y+10);await page.mouse.wheel(0,300);await page.waitForTimeout(100);
- assert.ok(await area.evaluate(e=>e.scrollTop)>current,'wheel over pinned tabs must scroll content');
- await page.mouse.wheel(0,-3000);await page.waitForTimeout(100);
- assert.strictEqual(await area.evaluate(e=>e.scrollTop),0,'wheel up must reach top');
- const input=area.locator('select:visible').first(),value=await input.inputValue();
- await input.hover();await page.mouse.wheel(0,200);await page.waitForTimeout(100);
- assert.ok(await area.evaluate(e=>e.scrollTop)>0,'wheel over dropdown must scroll content');
- assert.strictEqual(await input.inputValue(),value,'wheel must not change dropdown value');
- assert.strictEqual((await tabs.boundingBox()).y,before.y);
- await page.mouse.wheel(0,100000); await page.waitForTimeout(100);
- const end=await area.evaluate(e=>({top:e.scrollTop,max:e.scrollHeight-e.clientHeight}));
- assert.ok(Math.abs(end.top-end.max)<2,'Scroll must stop at the end of visible content');
- await page.mouse.wheel(0,100000); await page.waitForTimeout(100);
- assert.strictEqual(await area.evaluate(e=>e.scrollTop),end.top,'No scrolling into empty space');
- await area.evaluate(e=>{e.scrollTop=0;});
- // Inspector stays on the right without replacing the current main page.
- await page.getByRole('button',{name:'Настройки',exact:true}).click();
- await page.getByLabel('Раздел настроек').selectOption('font');
- assert.ok(await page.getByRole('tab',{name:'Стиль',exact:true}).getAttribute('aria-selected')==='true');
- assert.ok(await page.locator('#stylePage').isVisible());
- await page.waitForTimeout(250);
- let drawer=await page.locator('.settings-drawer').boundingBox();
- assert.ok(drawer.x>400 && drawer.x+drawer.width<=881);
- await page.getByLabel('Раздел настроек').selectOption('animationPage');
- await page.waitForTimeout(850);
- assert.ok(await page.locator('[data-role="animationPage"]').isVisible(),'Legacy inspector controls survive host polling');
- await page.getByRole('button',{name:'Закрыть настройки',exact:true}).last().click();
- assert.ok(await page.getByRole('tab',{name:'Стиль',exact:true}).getAttribute('aria-selected')==='true');
- // Narrow inspector is an overlay, traps keyboard focus and closes with Escape.
- await page.setViewportSize({width:320,height:560});
- await page.getByRole('button',{name:'Настройки',exact:true}).click();
- await page.waitForTimeout(250);
- drawer=await page.locator('.settings-drawer').boundingBox();
- assert.ok(drawer.x>=0 && drawer.x+drawer.width<=321);
- await page.keyboard.press('Shift+Tab');
- assert.ok(await page.evaluate(()=>document.querySelector('.settings-drawer').contains(document.activeElement)));
- await page.keyboard.press('Escape');
- assert.ok(!(await page.locator('.settings-drawer').isVisible()));
- assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'No horizontal overflow at 320px');
- // Load actual host data and exercise contextual editing through the bridge.
- const sample={schema:'noir-captions/1',language:'ru',segments:Array.from({length:24},(_,i)=>({words:[{text:'Привет',start:1+i*3,end:2+i*3},{text:'мир',start:2+i*3,end:3+i*3}]}))};
- const json=path.join(tmp,'sample.json');fs.writeFileSync(json,JSON.stringify(sample));
- global.app.project.activeItem=new mock.CompItem({duration:100});global.File.openDialog=()=>mock.File(json);
- await page.getByRole('tab',{name:'Видео',exact:true}).click();
- await page.getByRole('button',{name:'Загрузить результат распознавания JSON',exact:true}).click();
- await page.waitForFunction(()=>document.querySelector('.create-action').textContent==='Создать субтитры');
- const editor=page.getByLabel('Текст субтитров');
- await editor.focus();
- await editor.evaluate(el=>{el.setSelectionRange(0,6);el.dispatchEvent(new Event('select'));});
- await page.locator('.word-toolbar').getByRole('button',{name:'Акцент',exact:true}).click();
- await page.waitForFunction(()=>document.querySelector('.caption-editor').value.startsWith('*Привет*'));
- assert.ok(!(await page.locator('.word-chips').count()),'No duplicate grid of word buttons');
- // A single creation action; font/geometry problems are handled inline if present.
- global.__installedFonts=[];
- await page.locator('.create-action').click();
- await page.waitForFunction(()=>!document.querySelector('.preflight').hidden);
- assert.strictEqual(app.project.activeItem.numLayers,0,'Preflight must leave the composition untouched');
- await page.locator('.preflight').getByRole('button',{name:'Выбрать шрифт',exact:true}).first().click();
- assert.strictEqual(await page.getByLabel('Раздел настроек').inputValue(),'font');
- assert.ok(await page.locator('[data-field="fontFamily"] .field-issue').count()>0);
- await page.keyboard.press('Escape');
- global.__installedFonts=['Inter-Bold','TimesNewRomanPSMT'];
- await page.locator('.create-action').click();
- await page.waitForTimeout(250);
- if(await page.locator('.preflight').isVisible())await page.getByRole('button',{name:'Продолжить с замечаниями',exact:true}).click();
- await page.waitForFunction(()=>document.querySelector('.create-action').textContent==='Обновить фразу');
- const comp=app.project.activeItem,otherLayers=comp._l.filter(l=>NOIR.groupInfo(l) && NOIR.groupInfo(l).segment!==0);
- // Editing then immediately generating must flush the debounce before the host action.
- const old=await editor.inputValue();await editor.fill(old.replace('*Привет*','Здравствуйте'));
- await editor.evaluate(el=>{el.setSelectionRange(0,0);el.dispatchEvent(new Event('select'));});
- await page.locator('.create-action').click();
- await page.waitForTimeout(250);
- if(await page.locator('.preflight').isVisible())await page.getByRole('button',{name:'Продолжить с замечаниями',exact:true}).click();
- await page.waitForFunction(()=>document.querySelector('.workflow-status').textContent.indexOf('✓')===0);
- assert.ok(comp._l.some(l=>/здравствуйте/i.test(l.name)),'Immediate update includes latest input');
- assert.ok(otherLayers.every(l=>comp._l.includes(l)),'Updating one phrase preserves other layers');
- assert.ok(!comp._l.some(l=>String(l.comment).indexOf(NOIR.SFX_TAG)===0),'SFX remains manual');
- await page.setViewportSize({width:320,height:300});
- // A slow bridge must receive the latest queued text, never intermediate stale edits.
- await page.setViewportSize({width:420,height:500});
- const stableText=await editor.inputValue(), commandStart=commands.length;
- bridgeDelay=1200;
- await editor.focus();
- await editor.evaluate((el,value)=>{el.value=value;el.setSelectionRange(0,0);el.dispatchEvent(new Event('input',{bubbles:true}));},stableText.replace('Здравствуйте','Первый'));
- await page.waitForTimeout(280);
- await editor.evaluate((el,value)=>{el.value=value;el.setSelectionRange(0,0);el.dispatchEvent(new Event('input',{bubbles:true}));},stableText.replace('Здравствуйте','Промежуточный'));
- await page.waitForTimeout(280);
- await editor.evaluate((el,value)=>{el.value=value;el.setSelectionRange(0,0);el.dispatchEvent(new Event('input',{bubbles:true}));},stableText.replace('Здравствуйте','Финальный'));
- await page.waitForTimeout(280);bridgeDelay=0;
- await page.locator('.create-action').click();
- await page.waitForFunction(()=>document.querySelector('.caption-editor').value.startsWith('Финальный'));
- await page.waitForTimeout(1600);
- if(await page.locator('.preflight').isVisible())await page.getByRole('button',{name:'Продолжить с замечаниями',exact:true}).click();
- await page.waitForFunction(()=>document.querySelector('.workflow-status').textContent.indexOf('✓')===0);
- assert.ok(comp._l.some(l=>/финальный/i.test(l.name)));
- assert.ok(!commands.slice(commandStart).some(c=>c.action==='set' && String(c.value).startsWith('Промежуточный')),'Queued intermediate input must be collapsed');
- await page.setViewportSize({width:320,height:300});
- // Native textarea gets wheel first; at its edge, the panel takes over.
- await area.evaluate(e=>{e.scrollTop=0;});await editor.evaluate(e=>{e.scrollTop=0;});
- await editor.hover();const outerBefore=await area.evaluate(e=>e.scrollTop);await page.mouse.wheel(0,80);await page.waitForTimeout(100);
- assert.ok(await editor.evaluate(e=>e.scrollTop)>0);
- assert.strictEqual(await area.evaluate(e=>e.scrollTop),outerBefore);
- await editor.evaluate(e=>{e.scrollTop=e.scrollHeight;});await area.evaluate(e=>{e.scrollTop=0;});await page.mouse.wheel(0,200);await page.waitForTimeout(100);
- assert.ok(await area.evaluate(e=>e.scrollTop)>0,'Textarea boundary transfers wheel to panel');
- await page.getByRole('button',{name:'Следующая фраза',exact:true}).click();
- await page.waitForFunction(()=>document.querySelector('.phrase-navigation select').selectedIndex===1);
- assert.strictEqual(comp.time,4,'Phrase navigation seeks the composition');
- // A text selection in another line targets that line for the primary update.
- await editor.evaluate(el=>{const offset=el.value.split('\n').slice(0,3).join('\n').length+1;el.setSelectionRange(offset,offset+6);el.dispatchEvent(new Event('select'));});
- await page.waitForFunction(()=>document.querySelector('.phrase-navigation select').selectedIndex===3);
- // Reduced-motion preference suppresses automatic video playback.
- await page.getByRole('tab',{name:'Стиль',exact:true}).click();
- await page.emulateMedia({reducedMotion:'reduce'});await page.locator('.style-tile.has-reference').first().hover();
- assert.ok(await page.locator('.style-tile.has-reference video').first().evaluate(v=>v.paused));
- await page.emulateMedia({reducedMotion:'no-preference'});
- await page.mouse.move(10,10);
- await page.setViewportSize({width:280,height:200});
- assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'Minimum CEP size must not overflow horizontally');
- const primaryBounds=await page.locator('.create-action').boundingBox();assert.ok(primaryBounds.x>=0 && primaryBounds.x+primaryBounds.width<=280);
- await page.setViewportSize({width:420,height:680});await area.evaluate(e=>{e.scrollTop=0;});
+// HTML panel in Chromium against the real host (cep/host/bridge.jsx + ae/noir/*.jsx) running on the AE mock in Node.
+//   node tests/test_cep_browser.js            (SHOTS=dir to save screenshots)
+"use strict";
+const fs = require("fs"), path = require("path"), os = require("os"), assert = require("assert");
+const { chromium } = require("playwright");
+const root = path.resolve(__dirname, ".."), mock = require("./ae_mock");
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "noir-browser-"));
+mock.install({ temp: tmp, fonts: ["Inter-Bold", "Inter-SemiBold", "TimesNewRomanPSMT", "ArialMT"] });
+global.$.fileName = root + "/cep/host/bridge.jsx";
+(0, eval)(fs.readFileSync(global.$.fileName, "utf8"));
+NOIR_CEP.load(root);
+const N = global.NOIR, SHOTS = process.env.SHOTS;
+const comp = new mock.CompItem({ duration: 12, _fonts: ["Inter-Bold", "Inter-SemiBold", "ArialMT"] }); global.app.project.activeItem = comp;
+const subs = () => comp._l.filter(l => N.isGenerated(l));
 
- await page.waitForTimeout(250);
- assert.strictEqual(await page.locator('.brand-name').count(),0,'No product name inside the panel');
- await page.evaluate(()=>document.fonts.ready);
- if(process.env.NOIR_CEP_SCREENSHOT) {
-   await page.screenshot({path:process.env.NOIR_CEP_SCREENSHOT});
-   await page.setViewportSize({width:1200,height:500});await area.evaluate(e=>{e.scrollTop=0;});await page.waitForTimeout(250);
-   await page.screenshot({path:process.env.NOIR_CEP_SCREENSHOT.replace('.png','-wide.png')});
- }
- assert.deepStrictEqual(errors,[]);
- console.log('Chromium: Open Sans, zero idle DOM/host work, local navigation, queued input coalescing, offscreen video pause, recognition-only polling, compact UI, independent inspector, narrow overlay, contextual edits, latest-input generation, phrase update/seek, nested wheel, finite scroll, hover previews and reduced motion: PASS');
- await browser.close();server.close();fs.rmSync(tmp,{recursive:true,force:true});
-})().catch(e=>{console.error(e);process.exit(1)});
+let passed = 0, failed = 0;
+async function step(name, fn) {
+    try { await fn(); passed++; console.log("  ok  " + name); }
+    catch (e) { failed++; console.log("  FAIL " + name + "\n       " + String(e.stack || e).split("\n").slice(0, 4).join("\n       ")); }
+}
+
+(async () => {
+    const launch = fs.existsSync("/usr/bin/chromium") ? { executablePath: "/usr/bin/chromium" } : {};
+    const browser = await chromium.launch(Object.assign({ headless: true, args: ["--no-sandbox", "--disable-dev-shm-usage"] }, launch));
+    const page = await browser.newPage({ viewport: { width: 460, height: 640 } });
+    page.setDefaultTimeout(8000);
+    const errors = []; page.on("pageerror", e => errors.push(e.message)); page.on("console", m => { if (m.type() === "error" && !/Failed to load resource/.test(m.text())) errors.push(m.text()); });
+    const calls = [];
+    await page.exposeFunction("hostEval", script => {
+        const m = /^NOIR_CEP\.call\((.*)\)$/.exec(script);
+        calls.push(m ? JSON.parse(JSON.parse(m[1])).op : script);
+        return (0, eval)(script);
+    });
+    const server = require("http").createServer((req, res) => {
+        const rel = decodeURIComponent(req.url.split("?")[0]).replace(/^\//, ""), file = path.resolve(root, "cep", rel || "index.html");
+        if (!file.startsWith(path.join(root, "cep") + path.sep)) { res.writeHead(403); res.end(); return; }
+        try { res.setHeader("Content-Type", ({ ".html": "text/html", ".js": "application/javascript", ".css": "text/css", ".svg": "image/svg+xml", ".woff2": "font/woff2" })[path.extname(file)] || "application/octet-stream"); res.end(fs.readFileSync(file)); }
+        catch (e) { res.writeHead(404); res.end(); }
+    });
+    await new Promise(r => server.listen(0, "127.0.0.1", r));
+    await page.addInitScript(() => {
+        window.__adobe_cep__ = { evalScript: (s, cb) => window.hostEval(s).then(cb),
+            getHostEnvironment: () => JSON.stringify({ appSkinInfo: { panelBackgroundColor: { color: { red: 35, green: 35, blue: 35 } } } }), addEventListener: () => {} };
+        window.confirm = () => true;
+    });
+    await page.goto("http://127.0.0.1:" + server.address().port + "/index.html");
+    const shot = async (name) => { if (SHOTS) await page.screenshot({ path: path.join(SHOTS, name + ".png") }); };
+    const settle = () => page.evaluate(() => NoirHost.idle()).then(() => page.waitForTimeout(60));
+    const tab = (name) => page.locator('.tab[data-page="' + name + '"]').click();
+
+    console.log("HTML panel");
+    await step("загрузка: оболочка, шрифт Inter, тема AE, главная с кольцом", async () => {
+        await page.waitForSelector(".topbar");
+        assert.ok(await page.evaluate(() => document.fonts.load('12px "Inter"').then(f => f.length > 0)), "Inter loads");
+        assert.strictEqual(await page.getAttribute("html", "data-theme"), "dark");
+        assert.ok(await page.locator(".orbit-orb").isVisible());
+        assert.ok(calls.includes("NOIR_CEP.open()"));
+        await shot("home");
+    });
+    await step("без дела панель не обращается к AE; переходы по вкладкам локальные", async () => {
+        await settle(); const n = calls.length;
+        for (const p of ["video", "text", "style", "edit", "settings", "home"]) await tab(p);
+        await page.waitForTimeout(1200);
+        assert.strictEqual(calls.length, n, calls.slice(n).join(","));
+    });
+    await step("наведение на шар раскрывает разделы, клик по разделу открывает страницу", async () => {
+        const orb = await page.locator(".orbit-orb").boundingBox();
+        await page.mouse.move(orb.x + orb.width / 2, orb.y + orb.height / 2);
+        await page.waitForSelector(".orbit.open");
+        await page.waitForTimeout(700); await shot("home-open");
+        await page.locator('.orbit-tile[data-id="style"]').click();
+        assert.ok(await page.locator("#page-style").isVisible());
+    });
+    await step("распознавание: состояние «занят», опрос идёт только пока работает, по готовности — редактор", async () => {
+        let cb; const keep = { a: N.getAudioSource, m: N.modelCached, s: N.startRecognition };
+        N.getAudioSource = () => ({ file: "x.wav", link: null }); N.modelCached = () => true;
+        N.startRecognition = (src, o, c) => { cb = c; c.onStatus({ state: "recognizing", message: "Распознаю", progress: 0.4 }); };
+        try {
+            await tab("video"); await page.locator(".page-video .btn.primary").click();
+            await page.waitForFunction(() => document.querySelector(".pill").dataset.state === "busy");
+            assert.ok(await page.locator(".progress").isVisible());
+            await shot("recognizing");
+            const polls = calls.filter(c => c === "poll").length; await page.waitForTimeout(1900);
+            assert.ok(calls.filter(c => c === "poll").length > polls, "polls while busy");
+            cb.onDone({ schema: "noir-captions/1", language: "ru", source: { file: path.join(tmp, "clip.mp4") }, segments: [
+                { words: [{ text: "Привет,", start: 1, end: 1.3 }, { text: "это", start: 1.35, end: 1.5 }, { text: "NOIR.", start: 1.5, end: 2 }] },
+                { words: [{ text: "Субтитры", start: 3, end: 3.6, conf: 0.4 }, { text: "сами", start: 3.6, end: 3.9 }] }] }, { link: null });
+            await page.waitForFunction(() => !document.querySelector("#page-text").hidden && document.querySelector(".editor").value.indexOf("Привет") === 0);
+            const n = calls.length; await page.waitForTimeout(1300); assert.strictEqual(calls.length, n, "polling stops");
+            assert.ok(await page.locator(".word.low").count() === 0, "phrase 1 has no low words");
+        } finally { Object.assign(N, { getAudioSource: keep.a, modelCached: keep.m, startRecognition: keep.s }); }
+    });
+    await step("текст: правка уходит в AE с задержкой; выделенное слово — акцент; фраза по курсору", async () => {
+        const ed = page.locator(".editor");
+        await page.evaluate(() => { const e = document.querySelector(".editor"); const i = e.value.indexOf("сами"); e.focus(); e.setSelectionRange(i, i + 4); });
+        await page.keyboard.type("сама");
+        await page.waitForTimeout(500); await settle();
+        assert.ok(/сама/.test(await page.evaluate(() => NoirHost.state().text)));
+        await page.evaluate(() => { const e = document.querySelector(".editor"); const i = e.value.indexOf("это"); e.focus(); e.setSelectionRange(i, i + 3); });
+        await page.locator(".word-tools .chip").first().click(); await settle();
+        assert.ok(/\*это\*/.test(await ed.inputValue()), await ed.inputValue());
+        await page.evaluate(() => { const e = document.querySelector(".editor"); const i = e.value.indexOf("Субтитры"); e.focus(); e.setSelectionRange(i, i); });
+        await page.keyboard.press("ArrowRight"); await page.waitForTimeout(300); await settle();
+        assert.strictEqual(await page.evaluate(() => NoirHost.state().phrase), 1);
+        assert.ok(await page.locator(".word.low").count() === 1, "low-confidence word marked");
+        await shot("text");
+    });
+    await step("слово исправляется в чипе с сохранением тайминга", async () => {
+        await page.locator(".word.low").click(); const input = page.locator(".word-input");
+        await input.fill("Субтитры!"); await input.press("Enter"); await settle();
+        assert.ok(/Субтитры!/.test(await page.evaluate(() => NoirHost.state().text)));
+    });
+    await step("создание: проверка замечаний, «создать с замечаниями», затем «Обновить все»", async () => {
+        await page.locator(".sticky-actions .btn.primary").click(); await settle();
+        if (await page.locator(".issues").isVisible()) { await shot("issues"); await page.locator(".issues .btn.primary").click(); await settle(); }
+        assert.ok(subs().length > 0, "layers made");
+        await page.waitForFunction(() => document.querySelector(".topbar .btn.primary").textContent.indexOf("Обновить") >= 0);
+    });
+    await step("стиль: выбор карточки и избранное; размер — ползунок", async () => {
+        await tab("style");
+        const card = page.locator(".style-card").nth(2), id = await card.locator(".style-pick").getAttribute("aria-label");
+        await card.locator(".style-pick").click(); await settle();
+        assert.ok(await card.evaluate(e => e.classList.contains("on")), "selected " + id);
+        await card.locator(".star").click(); await settle();
+        assert.strictEqual(await page.evaluate(() => NoirHost.state().settings.favoriteStyles.length), 1);
+        await page.locator('.field[data-path="quick.size"] input').evaluate(e => { e.value = 120; e.dispatchEvent(new Event("change")); }); await settle();
+        assert.strictEqual(await page.evaluate(() => NoirHost.state().settings.quick.size), 120);
+        await shot("style");
+    });
+    await step("правка: «Внизу» двигает субтитры; ошибка без выделения — понятный тост", async () => {
+        await tab("edit");
+        await page.getByRole("button", { name: "Внизу", exact: true }).click(); await settle();
+        assert.ok(/Фраз перемещено/.test(await page.evaluate(() => NoirHost.state().status)));
+        await page.locator('.field[data-path="scope"] .seg[data-value="selected"]').click(); await settle();
+        await page.getByRole("button", { name: "Применить текущий стиль" }).click(); await settle();
+        await page.waitForSelector(".toast.show.error"); assert.ok(/Выделите/.test(await page.locator(".toast").textContent()));
+        await page.locator('.field[data-path="scope"] .seg[data-value="source"]').click(); await settle();
+        await shot("edit");
+    });
+    await step("настройки: расширенный режим открывает параметры; число сохраняется в AE", async () => {
+        await tab("settings");
+        assert.strictEqual(await page.locator('.field[data-path="style.layout.lineGap"]').isVisible(), false);
+        await page.locator('.field[data-path="advanced"] .switch').click();
+        assert.ok(await page.locator('.field[data-path="style.layout.lineGap"]').isVisible());
+        const f = page.locator('.field[data-path="style.layout.maxWords"] input'); await f.fill("3"); await f.press("Tab"); await settle();
+        assert.strictEqual(await page.evaluate(() => NoirHost.state().settings.style.layout.maxWords), 3);
+        await shot("settings");
+    });
+    await step("светлая тема AE и английский интерфейс", async () => {
+        await page.evaluate(() => NoirTheme.apply([214, 214, 214]));
+        assert.strictEqual(await page.getAttribute("html", "data-theme"), "light");
+        await shot("settings-light");
+        await page.locator('.field[data-path="lang"] .seg[data-value="en"]').click(); await settle();
+        await page.waitForFunction(() => document.querySelector('.tab[data-page="video"]').textContent === "Video");
+        await page.locator('.field[data-path="lang"] .seg[data-value="ru"]').click(); await settle();
+        await page.evaluate(() => NoirTheme.apply([35, 35, 35]));
+        const text = await page.evaluate(() => NoirHost.state().text);
+        await tab("text"); await page.locator(".editor").focus(); await page.locator(".editor").blur(); await page.waitForTimeout(450); await settle();
+        assert.strictEqual(await page.evaluate(() => NoirHost.state().text), text, "rebuilt editor must not overwrite AE text");
+        assert.strictEqual(await page.locator(".editor").inputValue(), text);
+    });
+    await step("радиальное меню: правая кнопка открывает, Esc закрывает; пункт выполняет команду", async () => {
+        await tab("text");
+        const lead = await page.locator("#page-text .lead").boundingBox();
+        await page.mouse.click(lead.x + 20, lead.y + 6, { button: "right" });
+        await page.waitForSelector(".noir-wheel"); await shot("wheel");
+        await page.keyboard.press("Escape"); assert.strictEqual(await page.locator(".noir-wheel").count(), 0);
+    });
+    await step("помощник: план показывается до выполнения; «Отмена» ничего не меняет, «Применить» выполняет", async () => {
+        await page.evaluate(() => NoirAssistant.setSettings({ endpoint: "http://127.0.0.1:59999" }));
+        await page.evaluate(() => NoirAssistant.open());
+        const input = page.locator(".as-form input");
+        await input.fill("поставь вверху"); await input.press("Enter");
+        await page.waitForSelector(".as-plan"); await shot("assistant");
+        const before = calls.filter(c => c === "run").length;
+        await page.locator(".as-plan .btn.ghost").click(); await settle();
+        assert.strictEqual(calls.filter(c => c === "run").length, before, "cancel runs nothing");
+        await input.fill("поставь вверху"); await input.press("Enter");
+        await page.locator(".as-plan").last().locator(".btn.primary").click();
+        await page.waitForFunction(() => document.querySelectorAll(".as-msg.note").length >= 2); await settle();
+        assert.ok(calls.filter(c => c === "run").length > before);
+        await page.keyboard.press("Escape");
+    });
+    await step("узкая панель 300 px: без горизонтальной прокрутки, вкладки помещаются", async () => {
+        await page.setViewportSize({ width: 300, height: 520 });
+        for (const p of ["home", "video", "text", "style", "edit", "settings"]) {
+            await tab(p); await page.waitForTimeout(80);
+            assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), p);
+            const over = await page.evaluate(() => { const pg = document.querySelector(".page:not([hidden])"); return pg.scrollWidth - pg.clientWidth; });
+            assert.ok(over <= 1, p + " overflows by " + over);
+        }
+        await tab("text"); await page.waitForTimeout(300); await shot("narrow-text");
+    });
+    await step("нет ошибок в консоли", async () => { assert.deepStrictEqual(errors, [], errors.join("\n")); });
+
+    await browser.close(); server.close();
+    console.log("\n" + passed + " passed, " + failed + " failed");
+    process.exit(failed ? 1 : 0);
+})().catch(e => { console.error(e); process.exit(1); });

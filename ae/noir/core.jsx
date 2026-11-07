@@ -234,6 +234,51 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         for (var i = 0; i < items.length; i++) if (items[i] === value) return true;
         return false;
     };
+    // ---------- SRT / VTT ----------
+    function pad(n, w) { var s = String(n); while (s.length < w) s = "0" + s; return s; }
+    function stamp(t, sep) {
+        var ms = Math.max(0, Math.round(t * 1000)), h = Math.floor(ms / 3600000), m = Math.floor(ms / 60000) % 60, s = Math.floor(ms / 1000) % 60;
+        return pad(h, 2) + ":" + pad(m, 2) + ":" + pad(s, 2) + sep + pad(ms % 1000, 3);
+    }
+    // cues: [{start, end, text}] in seconds.
+    N.toSrt = function (cues) {
+        var out = [];
+        for (var i = 0; i < cues.length; i++) out.push(String(i + 1) + "\n" + stamp(cues[i].start, ",") + " --> " + stamp(Math.max(cues[i].end, cues[i].start + 0.04), ",") + "\n" + cues[i].text + "\n");
+        return out.join("\n");
+    };
+    N.toVtt = function (cues) {
+        var out = ["WEBVTT", ""];
+        for (var i = 0; i < cues.length; i++) out.push(stamp(cues[i].start, ".") + " --> " + stamp(Math.max(cues[i].end, cues[i].start + 0.04), ".") + "\n" + cues[i].text + "\n");
+        return out.join("\n");
+    };
+    function seconds(txt) {
+        var m = /(?:(\d+):)?(\d{1,2}):(\d{2})[,.](\d{1,3})/.exec(txt);
+        if (!m) return null;
+        return (m[1] ? Number(m[1]) * 3600 : 0) + Number(m[2]) * 60 + Number(m[3]) + Number((m[4] + "00").substr(0, 3)) / 1000;
+    }
+    // SRT or VTT text -> noir-captions/1 data. Word timings are spread over each cue by word length.
+    N.fromSubtitles = function (text) {
+        var blocks = String(text).replace(/^\uFEFF/, "").replace(/\r\n?/g, "\n").split(/\n\s*\n/), segments = [];
+        for (var b = 0; b < blocks.length; b++) {
+            var lines = blocks[b].split("\n"), timeLine = -1, i;
+            for (i = 0; i < lines.length; i++) if (lines[i].indexOf("-->") >= 0) { timeLine = i; break; }
+            if (timeLine < 0) continue;
+            var parts = lines[timeLine].split("-->"), start = seconds(parts[0]), end = seconds(parts[1] || "");
+            if (start === null || end === null || end <= start) continue;
+            var body = lines.slice(timeLine + 1).join(" ").replace(/<[^>]*>/g, "").replace(/\{[^}]*\}/g, "").replace(/\s+/g, " ").replace(/^\s+|\s+$/g, "");
+            if (!body) continue;
+            var raw = body.split(" "), total = 0, words = [], t = start;
+            for (i = 0; i < raw.length; i++) total += raw[i].length + 1;
+            for (i = 0; i < raw.length; i++) {
+                var d = (end - start) * (raw[i].length + 1) / total;
+                words.push({ text: raw[i], start: Math.round(t * 1000) / 1000, end: Math.round((t + d) * 1000) / 1000 });
+                t += d;
+            }
+            segments.push({ start: start, end: end, words: words });
+        }
+        return { schema: "noir-captions/1", language: "auto", engine: { model: "subtitles", device: "file" }, warnings: [], segments: segments };
+    };
+
     N.sourceKey = function (data, link) {
         if (data.noirSourceKey && /^s[0-9a-f]+$/.test(data.noirSourceKey)) return data.noirSourceKey;
         var text = data.source && data.source.file ? data.source.file : N.stringify(data.segments);
