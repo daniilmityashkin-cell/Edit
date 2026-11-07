@@ -176,6 +176,10 @@ function layoutProblems() {
         await page.locator('.tl-word[data-index="1"]').focus(); const st0 = (await hostState()).words[1].start;
         await page.keyboard.press("Alt+ArrowRight"); await settle();
         assert.ok(Math.abs((await hostState()).words[1].start - st0 - 0.02) < 1e-6, "Alt+→ двигает начало");
+        const n0 = (await hostState()).words.length, keepEnd = (await hostState()).words[2].end;
+        await page.locator('.tl-word[data-index="1"]').focus(); await page.keyboard.press("Delete"); await settle();
+        const sd = await hostState(); assert.strictEqual(sd.words.length, n0 - 1, "Delete удаляет слово"); assert.ok(Math.abs(sd.words[1].end - keepEnd) < 1e-9, "тайминг соседа на месте");
+        await page.evaluate(() => NoirHost.call("text.undo")); await settle(); assert.strictEqual((await hostState()).words.length, n0);
         await shot("timeline");
     });
     await step("создание: замечания, «создать с замечаниями», затем «Обновить все»", async () => {

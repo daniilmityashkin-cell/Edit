@@ -262,6 +262,15 @@ const accept = (a, mode) => { let r = a.call("generate", { mode: mode || "all" }
     a.call("layers.select", { target: "none" }); a.call("run", { command: { op: "behind" } });
     assert.ok(subs(c).every(l => l.index > person.index), "«за человеком» без выделения берёт копию для Roto Brush");
   });
+  await test("удаление слова из фразы: остальные слова сохраняют тайминг; фраза помечается к обновлению; последнее слово убирает фразу; одна отмена", () => {
+    const a = freshApp(), text0 = a.state().text; const w0 = a.state().words;
+    assert.strictEqual(a.call("word.delete", { index: 1 }), 2);
+    const w = a.state().words; assert.strictEqual(w.length, 2); near(w[0].start, w0[0].start); near(w[1].start, w0[2].start); near(w[1].end, w0[2].end);
+    assert.strictEqual(a.state().phraseDirty, true);
+    a.call("text.undo"); assert.strictEqual(a.state().text, text0); assert.strictEqual(a.state().words.length, 3);
+    a.call("phrase.select", { index: 1 }); a.call("word.delete", { index: 0 }); a.call("word.delete", { index: 0 });
+    assert.strictEqual(a.state().text.split("\n")[1], ""); assert.throws(() => a.call("word.delete", { index: 0 }), /Нет такого слова/);
+  });
   await test("превью: отдельная композиция, исходник не меняется", () => {
     const c = mkComp({ duration: 12 }), a = freshApp(); let copy;
     c.duplicate = () => { copy = new mock.CompItem({ duration: 12 }); copy.openInViewer = () => { copy.opened = true; }; return copy; };

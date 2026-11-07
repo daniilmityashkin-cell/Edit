@@ -229,11 +229,11 @@ select.input option { background: var(--surface); color: var(--text); }
 .rw { position: absolute; width: 0; height: 0; transform-origin: 0 0; }
 .rw-ring { position: absolute; border-radius: 50%; border: 1px solid rgba(255, 255, 255, .14); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .06), 0 0 60px rgba(37, 99, 235, .25); -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); background: rgba(255, 255, 255, .03); animation: ringIn 220ms var(--ease); }
 @keyframes ringIn { from { opacity: 0; transform: scale(.6); } to { opacity: 1; transform: none; } }
-.rw-tile { position: absolute; width: 44px; height: 44px; padding: 0; display: flex; align-items: center; justify-content: center; border: 0; border-radius: 50%; color: #fff; cursor: pointer;
+.rw-tile { position: absolute; width: 50px; height: 50px; padding: 0; display: flex; align-items: center; justify-content: center; border: 0; border-radius: 50%; color: #fff; cursor: pointer;
     background: linear-gradient(160deg, rgba(147, 197, 253, .9), rgba(59, 130, 246, .9) 52%, rgba(29, 78, 216, .95)); box-shadow: inset 0 2px 6px rgba(255, 255, 255, .4), inset 0 -5px 10px rgba(30, 58, 138, .45), 0 8px 18px rgba(37, 99, 235, .35);
     animation: tileIn 300ms var(--spring) both; animation-delay: calc(var(--i) * 22ms); transition: transform var(--dur) var(--ease), box-shadow var(--dur) var(--ease); }
 @keyframes tileIn { from { opacity: 0; transform: scale(.3); } to { opacity: 1; transform: none; } }
-.rw-tile svg { width: 19px; height: 19px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.rw-tile svg { width: 21px; height: 21px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .rw-tile.active { transform: scale(1.14); box-shadow: 0 0 0 2px #fff, 0 0 0 5px rgba(59, 130, 246, .7), 0 10px 26px rgba(96, 165, 250, .6); }
 .rw-num { position: absolute; right: -3px; top: -3px; min-width: 15px; height: 15px; padding: 0 3px; border-radius: 8px; background: #0b1020; color: #bfdbfe; font-size: 9px; font-weight: 600; line-height: 15px; text-align: center; box-shadow: 0 0 0 1px rgba(255, 255, 255, .2); }
 .rw-orb { position: absolute; padding: 6px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; border: 0; border-radius: 50%; cursor: pointer; overflow: hidden; color: #fff;

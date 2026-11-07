@@ -10,7 +10,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
 (function (N) {
     var SECTION = "NOIR Captions";
     var SETTINGS_KEY = "settings.v2";
-    N.VERSION = "0.35.0";
+    N.VERSION = "0.36.0";
 
     function clone(o) { return N.parseJSON(N.stringify(o)); }
 
@@ -846,6 +846,24 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
                 var r = fillers(a.words, !!a.dry);
                 if (!a.dry) status(r.removed ? "Убрано слов-паразитов: " + r.removed + ". Тайминги остальных слов не изменились." : "Слов-паразитов не найдено.");
                 return r;
+            },
+            // Delete a word of the selected phrase: the other words keep their exact timing; one undo step.
+            "word.delete": function (a) {
+                if (!st.data) throw new Error("Нет текста.");
+                var si = st.phrase, ls = lines(), pw = N.parseLine(ls[si] || ""), i = Number(a.index);
+                if (!pw[i]) throw new Error("Нет такого слова.");
+                var snapshot = { text: st.text, data: clone(st.data), timingAll: clone(st.timing) }, gone = pw[i].text.replace(/[*~|]/g, "");
+                if (pw.length > 1) {
+                    var ws = commitPhrase(si);
+                    var removed = pw.splice(i, 1)[0]; ws.splice(i, 1);
+                    if (pw[i] && removed.lineBefore) pw[i].lineBefore = true;
+                    if (pw[i] && removed.breakBefore && i > 0) pw[i].breakBefore = true;
+                    ls[si] = N.editorWords(pw);
+                } else ls[si] = "";                    // the last word: the phrase goes away
+                st.history.push(snapshot); if (st.history.length > 30) st.history.shift();
+                st.text = ls.join("\n"); st.timing[si] = true; st.issues = []; st.pending = null;
+                status("Слово «" + gone + "» удалено; тайминги остальных слов сохранены. Обновите фразу, чтобы применить.");
+                return pw.length;
             },
             "word.seek": function (a) { seek(st.phrase, Number(a.index) || 0); return true; },
             // Word timing of the selected phrase, in seconds of the source (as state().words show it). Neighbours give way so that

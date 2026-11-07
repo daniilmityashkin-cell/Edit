@@ -312,6 +312,7 @@
             b.addEventListener("pointerdown", function (e) { startDrag(e, b, i); });
             b.addEventListener("dblclick", function () { editWordText(b, i, w.text.replace(/[*~|]/g, "")); });
             b.addEventListener("keydown", function (e) { nudgeWord(e, i); });
+            b.addEventListener("contextmenu", function (e) { e.preventDefault(); e.stopPropagation(); b.focus(); });
         });
     }
     function placeWord(b, i) {
@@ -347,6 +348,14 @@
         b.addEventListener("pointermove", move); b.addEventListener("pointerup", up); b.addEventListener("pointercancel", up);
     }
     function nudgeWord(e, i) {
+        if (e.key === "Delete" || e.key === "Backspace") {
+            e.preventDefault(); e.stopPropagation(); view.text.tlSig = null;
+            act("word.delete", { index: i }).then(function (left) {
+                if (left === null) return;
+                var next = view.text.track.querySelector('[data-index="' + Math.min(i, Math.max(0, (left || 1) - 1)) + '"]'); if (next) next.focus();
+            });
+            return;
+        }
         if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
         e.preventDefault();
         var w = view.text.tl.words[i], d = (e.key === "ArrowLeft" ? -1 : 1) * 0.02;

@@ -78,7 +78,7 @@
     }
 
     // ---------- geometry ----------
-    var R1 = 76, TILE = 44, ORB = 76, GAP = 6, ROW = 36;
+    var R1 = 86, TILE = 50, ORB = 86, GAP = 6, ROW = 36;
     function pos(r, deg) { var a = deg * Math.PI / 180; return [r * Math.sin(a), -r * Math.cos(a)]; }
     function overlaps(a, b, pad) { return Math.abs(a.x - b.x) * 2 < a.w + b.w + pad && Math.abs(a.y - b.y) * 2 < a.h + b.h + pad; }
     // Places pills (sizes known) on arcs around angle A, outside ring 1. Grows the radius (and the number of arcs) until no pill
@@ -159,7 +159,7 @@
         rw.removeChild(probe);
         var vw = window.innerWidth, vh = window.innerHeight, pad = 8;
         // bigger in a bigger panel (up to 1.7×), never larger than the panel allows
-        var grow = Math.max(1, Math.min(1.7, Math.min(vw, vh) / 430));
+        var grow = Math.max(1.1, Math.min(2.2, Math.min(vw, vh) / 360));
         var k = Math.min(grow, (vw - 2 * pad) / (maxX - minX), (vh - 2 * pad) / (maxY - minY)); st.k = k;
         var cx = Math.min(vw - pad - maxX * k, Math.max(pad - minX * k, x)), cy = Math.min(vh - pad - maxY * k, Math.max(pad - minY * k, y));
         st.cx = cx; st.cy = cy; rw.style.left = cx + "px"; rw.style.top = cy + "px"; rw.style.transform = "scale(" + k + ")";
