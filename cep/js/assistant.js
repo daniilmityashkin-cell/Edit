@@ -14,7 +14,7 @@
     var LANG_NAMES = { en: "английский", ru: "русский", es: "испанский", de: "немецкий", fr: "французский", it: "итальянский", pt: "португальский", uk: "украинский", kk: "казахский", tr: "турецкий", zh: "китайский", ja: "японский", ko: "корейский", ar: "арабский" };
 
     function loadSettings() {
-        var d = { endpoint: "http://127.0.0.1:11434", model: "", mode: "auto" };
+        var d = { endpoint: "http://127.0.0.1:11434", model: "", mode: "auto", scriptModel: "" };
         try { var s = JSON.parse(localStorage.getItem(STORE) || "{}"); for (var k in s) if (d.hasOwnProperty(k)) d[k] = s[k]; } catch (e) {}
         return d;
     }
@@ -24,6 +24,7 @@
     // ---------- command validation: nothing from a model is executed unless it is one of these shapes ----------
     var SET_PATHS = { "quick.intensity": ["0.5", "1", "1.5"], "quick.position": ["preset", "25", "50", "75"], "style.layout.reveal": ["word", "group", "karaoke"],
         "style.anim.animIn": ANIM_IN, "style.anim.animOut": ANIM_OUT, "style.layout.maxWords": [1, 12], "style.anim.inDur": [0.05, 1.5], "style.anim.outDur": [0.05, 1.5], "quick.size": [25, 200] };
+    function scriptsOn() { var s = api && api.state ? api.state() : null; return !!(s && s.settings && s.settings.assistantScripts); }
     function clamp(v, lo, hi, d) { v = Number(v); return isFinite(v) ? Math.max(lo, Math.min(hi, v)) : d; }
     function sanitize(c) {
         if (!c || typeof c !== "object") return null;
@@ -50,6 +51,8 @@
             case "mask": out.shape = c.shape === "ellipse" ? "ellipse" : "rect"; ["x", "y", "w", "h"].forEach(function (k, i) { out[k] = clamp(c[k], i < 2 ? -50 : 1, i < 2 ? 150 : 200, i < 2 ? 10 : 80); });
                 out.feather = clamp(c.feather, 0, 100, 0); out.invert = !!c.invert; return out;
             case "roto": return out;
+            case "script": if (!scriptsOn() || !c.task && !c.code) return null; out.task = String(c.task || "").slice(0, 600);
+                if (typeof c.code === "string" && c.code.length <= 8000) out.code = c.code; return out;
             case "cut": out.mode = ["pauses", "fillers", "both", "range", "phrases"].indexOf(c.mode) >= 0 ? c.mode : "pauses";
                 if (c.minPause !== undefined) out.minPause = clamp(c.minPause, 0.1, 10, 0.5);
                 if (out.mode === "range") { out.from = clamp(c.from, 0, 36000, 0); out.to = clamp(c.to, 0, 36000, 0); if (!(out.to > out.from)) return null; }
@@ -128,6 +131,21 @@
         "«убери эээ и ну» → {\"say\":\"Уберу слова-паразиты.\",\"commands\":[{\"op\":\"fillers\"}]}",
         "«вырежи паузы длиннее секунды из видео» → {\"say\":\"Вырежу паузы длиннее 1 с.\",\"commands\":[{\"op\":\"cut\",\"mode\":\"pauses\",\"minPause\":1}]}"
     ].join("\n");
+    var SCRIPT_LINE = "Если ни одна команда не подходит, а просьба выполнима в After Effects (слои, эффекты, ключи, твердотельные слои, текст, порядок, цвета, время) — " +
+        "{\"op\":\"script\",\"task\":\"точное описание задачи для программиста, со всеми числами\"}: по нему будет написан скрипт, пользователь увидит код до запуска. Не используй script, если подходит обычная команда.";
+    var SCRIPT_SYSTEM = [
+        "You write Adobe After Effects ExtendScript code (ECMAScript 3!) that runs as the body of a function. Variables you get:",
+        "comp — the active CompItem or null; selected — Array of the selected layers; captions — Array of the NOIR caption text layers of this video; log(...) — report to the user.",
+        "ES3 ONLY: var, function () {}, for loops, string concatenation. NO let/const, arrow functions, template strings, forEach/map/filter, Object.keys, JSON, classes.",
+        "FORBIDDEN (the code is rejected): File, Folder, system, eval, Function, this, $ (except $.writeln), NOIR, app.open/quit/newProject, save, close, renderQueue, importFile, alert/confirm/prompt, Window, infinite loops.",
+        "Use match names: layer.property(\"ADBE Transform Group\").property(\"ADBE Position\" | \"ADBE Scale\" | \"ADBE Opacity\" | \"ADBE Rotate Z\" | \"ADBE Anchor Point\");",
+        "prop.setValue(v), prop.setValueAtTime(t, v) (t in seconds, comp time); effects: layer.property(\"ADBE Effect Parade\").addProperty(\"ADBE Gaussian Blur 2\") etc.;",
+        "comp.layers.addSolid([r,g,b] 0-1, name, comp.width, comp.height, comp.pixelAspect, comp.duration); comp.layers.addText(\"text\"); comp.layers.addNull(); comp.layers.addShape();",
+        "layer.startTime / inPoint / outPoint, layer.moveToBeginning(), layer.enabled, layer.label (0-16), layer.parent. Colors are [r,g,b] in 0..1.",
+        "If the task needs a comp and comp is null: throw new Error(\"Откройте композицию\"). If it needs selected layers and there are none: throw new Error(\"Выделите слои\").",
+        "Finish with log(\"short result in the user's language\").",
+        "Answer ONLY JSON: {\"say\":\"one short sentence in the user's language: what the script will do\",\"code\":\"...\"}."
+    ].join("\n");
     var TEXT_SYSTEM = {
         translate: "You translate video subtitles. Input: JSON {\"lines\":[{\"i\":0,\"text\":\"...\"}], \"to\":\"<language>\"}. Translate every line into the target language, natural and short, as spoken subtitles. " +
             "Keep markup: words wrapped in *asterisks* are accents — wrap their translation in *asterisks* too; keep ~tildes~ the same way; keep | and ↵ where they belong. Never merge or split lines. " +
@@ -156,14 +174,14 @@
             return online;
         }, function () { online = false; models = []; return false; });
     }
-    function chat(system, user, timeout) {
-        var body = { model: settings.model, stream: false, format: "json", options: { temperature: 0.2 }, messages: [{ role: "system", content: system }, { role: "user", content: user }] };
+    function chat(system, user, timeout, model) {
+        var body = { model: model || settings.model, stream: false, format: "json", options: { temperature: 0.2 }, messages: [{ role: "system", content: system }, { role: "user", content: user }] };
         return fetchJson(base() + "/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }, timeout || 120000)
             .then(function (j) { return j && j.message && j.message.content; });
     }
     function askModel(text, context, examples) {
         var shots = (examples || []).slice(-6).map(function (e) { return "«" + e.q + "» → " + JSON.stringify({ say: e.say, commands: e.commands }); });
-        return chat(SYSTEM + (shots.length ? "\nОтветы, которые пользователь уже принимал (так ему нравится):\n" + shots.join("\n") : ""),
+        return chat(SYSTEM + (scriptsOn() ? "\n" + SCRIPT_LINE : "") + (shots.length ? "\nОтветы, которые пользователь уже принимал (так ему нравится):\n" + shots.join("\n") : ""),
             "Состояние (context):\n" + JSON.stringify(context) + "\n\nПросьба: " + text).then(parseReply);
     }
     // «запомни …», «забудь …», «что ты помнишь» → {kind, …} or null
@@ -431,10 +449,29 @@
             case "roto": return "Копия видео над субтитрами, открыть её для Roto Brush (обвести человека — один раз кистью)";
             case "delete": return "Удалить субтитры (Ctrl+Z вернёт)";
             case "cut": return cutName(c);
+            case "script": return t("as.scriptDo", { task: c.task || "…" });
         }
         return c.op;
     }
 
+    // → Promise of {say, code, problems}; one retry if the host's check rejects the first code
+    function writeScript(cmd, request) {
+        var model = settings.scriptModel && models.indexOf(settings.scriptModel) >= 0 ? settings.scriptModel : settings.model;
+        function ask(extra) {
+            return api.call("script.context").then(function (ctx) {
+                return chat(SCRIPT_SYSTEM, JSON.stringify({ task: cmd.task, request: request, context: ctx }) + (extra || ""), 240000, model);
+            }).then(function (content) {
+                var j = extractJson(content);
+                if (!j || typeof j.code !== "string" || !j.code.trim()) throw new Error(t("as.badFormat"));
+                return api.call("script.check", { code: j.code }).then(function (r) { return { say: typeof j.say === "string" ? j.say.slice(0, 300) : "", code: j.code, problems: r.problems || [] }; });
+            });
+        }
+        if (cmd.code) return api.call("script.check", { code: cmd.code }).then(function (r) { return { say: "", code: cmd.code, problems: r.problems || [] }; });
+        return ask().then(function (r) {
+            if (!r.problems.length) return r;
+            return ask("\n\nYour previous code was rejected: " + r.problems.join(", ") + ". Rewrite it without that.").catch(function () { return r; });
+        });
+    }
     function cutName(c) {
         return t("as.cut." + c.mode, { p: c.minPause || 0.5, a: c.from, b: c.to });
     }
@@ -459,6 +496,9 @@
         var l1 = el("label", "", body, t("as.endpoint")), endpoint = el("input", "as-endpoint", l1); endpoint.type = "text";
         var l2 = el("label", "", body, t("as.modelName")), modelSel = el("select", "as-model", l2);
         var refreshBtn = el("button", "as-refresh", body, t("as.check")); refreshBtn.type = "button";
+        var scrLabel = el("label", "as-check", body), scrBox = el("input", "", scrLabel); scrBox.type = "checkbox"; el("span", "", scrLabel, t("as.scriptToggle"));
+        var l3 = el("label", "", body, t("as.scriptModel")), scrModel = el("select", "as-model", l3);
+        el("p", "as-note", body, t("as.scriptHint"));
         var note = el("p", "as-note", body);
         document.body.appendChild(box);
         var busy = false, applied = false;
@@ -468,6 +508,9 @@
             modeEl.className = "as-mode " + (online ? "on" : "off");
             modelSel.textContent = ""; models.forEach(function (m) { var o = el("option", "", modelSel, m); o.value = m; if (m === settings.model) o.selected = true; });
             endpoint.value = settings.endpoint;
+            scrBox.checked = scriptsOn();
+            scrModel.textContent = ""; var same = el("option", "", scrModel, t("as.scriptSame")); same.value = "";
+            models.forEach(function (m) { var o = el("option", "", scrModel, m); o.value = m; if (m === settings.scriptModel) o.selected = true; });
             note.textContent = online ? t("as.connected", { model: settings.model }) : t("as.howTo");
         }
         function refresh() { note.textContent = "…"; return detect().then(paintMode); }
@@ -523,6 +566,27 @@
                 });
             }, function (e) { say("⚠ " + (window.NoirI18n ? NoirI18n.host(e && e.message || String(e)) : (e && e.message || e)), "ai"); });
         }
+        // Experimental: the model writes ExtendScript; the code is shown, checked by AE and runs only after «Применить», in one undo step.
+        function scriptCard(cmd, request) {
+            if (!scriptsOn()) { say(t("as.scriptOff"), "ai"); return Promise.resolve(); }
+            if (!online && !cmd.code) { say(t("as.needAi"), "ai"); return Promise.resolve(); }
+            say(t("as.scriptWriting"), "ai"); var waiting = log.lastChild;
+            return writeScript(cmd, request).then(function (r) {
+                if (waiting.parentNode) waiting.parentNode.removeChild(waiting);
+                cmd.code = r.code;
+                var c = card(t("as.script") + (r.say ? " · " + r.say : ""));
+                var pre = el("pre", "as-code", c); pre.textContent = r.code;
+                if (r.problems.length) { el("p", "as-note as-bad", c, t("as.scriptBlocked", { list: r.problems.join(", ") })); log.scrollTop = log.scrollHeight; return; }
+                el("p", "as-note", c, t("as.scriptNote"));
+                return confirmRow(c).then(function (ok) {
+                    if (!ok) return;
+                    return api.call("script.run", { code: r.code }).then(function (res) {
+                        if (res && res.ok) say((res.logs && res.logs.length ? res.logs.join("\n") : t("as.done")) + (res.result ? "\n→ " + res.result : "") + "\n" + t("as.scriptUndo"), "note");
+                        else { applied = false; say("⚠ " + t("as.scriptFailed", { err: res && res.error || "?" }), "ai"); }
+                    });
+                });
+            }, function (e) { if (waiting.parentNode) waiting.parentNode.removeChild(waiting); say("⚠ " + (window.NoirI18n ? NoirI18n.host(e && e.message || String(e)) : (e && e.message || e)), "ai"); });
+        }
         function memoryCommand(mi) {
             if (mi.kind === "pref") return api.call("memory.add", { kind: "prefs", text: mi.text }).then(function () { say(t("mem.savedPref", { text: mi.text }), "ai"); });
             if (mi.kind === "fix") return api.call("memory.add", { kind: "fixes", from: mi.from, to: mi.to }).then(function () { say(t("mem.savedFix", { from: mi.from, to: mi.to }), "ai"); });
@@ -541,14 +605,15 @@
                 log.scrollTop = log.scrollHeight;
             });
         }
-        function run(reply) {
-            var cmds = mergeCuts(expand(reply.commands)), cuts = cmds.filter(function (c) { return c.op === "cut"; });
-            cmds = cmds.filter(function (c) { return c.op !== "cut"; });
+        function run(reply, request) {
+            var cmds = mergeCuts(expand(reply.commands)), cuts = cmds.filter(function (c) { return c.op === "cut"; }), scripts = cmds.filter(function (c) { return c.op === "script"; });
+            cmds = cmds.filter(function (c) { return c.op !== "cut" && c.op !== "script"; });
             var textOps = cmds.filter(function (c) { return TEXT_OPS[c.op]; }), rest = cmds.filter(function (c) { return !TEXT_OPS[c.op]; });
             var chain = Promise.resolve();
             cuts.forEach(function (c) { chain = chain.then(function () { return cutPlanCard(c); }); });
             textOps.forEach(function (c) { chain = chain.then(function () { return textPlan(c); }); });
             if (rest.length) chain = chain.then(function () { return plan(rest); });
+            scripts.forEach(function (c) { chain = chain.then(function () { return scriptCard(c, request); }); });
             return chain;
         }
         function submit(text) {
@@ -565,6 +630,12 @@
             }).then(function (fromMem) { proceed(text, fromMem); });
         }
         function proceed(text, fromMem) {
+            var forced = /^(?:скрипт(?:ом)?|script)\s*[:,—-]\s*(.+)$/i.exec(text);
+            if (forced && !fromMem) {
+                if (!scriptsOn()) { say(t("as.scriptOff"), "ai"); busy = false; return; }
+                if (!online) { say(t("as.needAi"), "ai"); busy = false; return; }
+                fromMem = { say: t("as.scriptForced"), commands: [{ op: "script", task: forced[1] }], fromAi: true };
+            }
             var local = understand(text), wantAi = online && settings.mode !== "local" && !(local.known && local.commands.length && !/лиц|красив|правильн|настро|подбер|сам/.test(text.toLowerCase()));
             var job;
             if (fromMem) job = Promise.resolve(fromMem);
@@ -590,7 +661,7 @@
                 if (reply.dropped) say(t("as.dropped", { n: reply.dropped }), "ai");
                 if (!reply.commands.length) return;
                 applied = false;
-                return run(reply).then(function () {
+                return run(reply, text).then(function () {
                     // an AI answer the user applied is kept: the same request next time works at once, even without the model
                     if (reply.fromAi && applied) return api.call("memory.add", { kind: "examples", q: text, say: reply.say, commands: reply.commands }).catch(function () {});
                 });
@@ -603,6 +674,8 @@
         form.onsubmit = function (ev) { ev.preventDefault(); submit(input.value); };
         x.onclick = close;
         refreshBtn.onclick = refresh;
+        scrBox.onchange = function () { api.call("settings.set", { path: "assistantScripts", value: scrBox.checked }).then(function () { say(scrBox.checked ? t("as.scriptOn") : t("as.scriptOffNow"), "note"); }); };
+        scrModel.onchange = function () { settings.scriptModel = scrModel.value; saveSettings(settings); };
         modelSel.onchange = function () { settings.model = modelSel.value; saveSettings(settings); paintMode(); };
         endpoint.onchange = function () { settings.endpoint = endpoint.value.trim() || "http://127.0.0.1:11434"; saveSettings(settings); refresh(); };
         box.addEventListener("keydown", function (ev) { if (ev.key === "Escape") { ev.preventDefault(); close(); } });
@@ -611,5 +684,5 @@
     }
 
     window.NoirAssistant = { init: function (options) { api = options; }, open: open, close: close, understand: understand, memoryIntent: memoryIntent, mergeCuts: mergeCuts, parseReply: parseReply, sanitize: sanitize, describe: describe, system: SYSTEM,
-        localEmoji: localEmoji, expand: expand, setSettings: function (o) { for (var k in o) settings[k] = o[k]; saveSettings(settings); } };
+        localEmoji: localEmoji, expand: expand, scriptSystem: SCRIPT_SYSTEM, setSettings: function (o) { for (var k in o) settings[k] = o[k]; saveSettings(settings); } };
 })();

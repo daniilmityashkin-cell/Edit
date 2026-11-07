@@ -350,6 +350,35 @@ const accept = (a, mode) => { let r = a.call("generate", { mode: mode || "all" }
     a.call("memory.clear"); const m = a.call("memory.get"); assert.strictEqual(m.examples.length + m.prefs.length + m.fixes.length, 0);
     assert.throws(() => a.call("memory.add", { kind: "fixes", from: "", to: "x" }), /одно слово/);
   });
+  await test("скрипты помощника (эксперимент): выключены по умолчанию; опасное и не-ES3 не запускается; код меняет проект в одной отмене; ошибки понятны", () => {
+    const c = mkComp(), a = freshApp(); accept(a);
+    const v = new mock.AVLayer(c, "clip.mp4"); c._l.push(v); v.selected = true;
+    const code = "for (var i = 0; i < selected.length; i++) selected[i].name = 'Герой ' + (i + 1);\nlog('переименовано', selected.length, 'подписей', captions.length);\nreturn comp.name;";
+    assert.throws(() => a.call("script.run", { code }), /выключен/);
+    a.call("settings.set", { path: "assistantScripts", value: true });
+    const bad = (x) => a.call("script.check", { code: x }).problems.join(", ");
+    assert.strictEqual(bad(code), ""); assert.strictEqual(bad("comp.layers.addSolid([1, 0, 0], 'NOIR red', 10, 10, 1, 1);"), "", "имя со словом NOIR можно");
+    assert.ok(/файлы/.test(bad("var f = new File('C:/x.txt'); f.remove();")));
+    assert.ok(/системн/.test(bad("system.callSystem('del *')")));
+    assert.ok(/бесконечн/.test(bad("while (true) {}")));
+    assert.ok(/ES3/.test(bad("const x = 1; selected.forEach(l => l.name = 'x');")));
+    assert.ok(/служебные/.test(bad("var g = (function () { return this; })(); g.NOIR.writeText();")));
+    assert.ok(/сохранение/.test(bad("app.project.save();")));
+    assert.ok(/окна/.test(bad("alert('hi')")));
+    assert.throws(() => a.call("script.run", { code: "app.quit();" }), /не запущен: управление/);
+    let undoGroups = 0; const keepBegin = global.app.beginUndoGroup; global.app.beginUndoGroup = function (n) { if (/скрипт/.test(n)) undoGroups++; return keepBegin && keepBegin.apply(this, arguments); };
+    const r = a.call("script.run", { code });
+    global.app.beginUndoGroup = keepBegin;
+    assert.ok(r.ok); assert.strictEqual(v.name, "Герой 1"); assert.strictEqual(undoGroups, 1, "одна отмена");
+    assert.ok(/переименовано 1 подписей [1-9]/.test(r.logs[0]), r.logs[0]); assert.strictEqual(r.result, c.name);
+    assert.ok(/Скрипт выполнен/.test(a.call("status")));
+    const e = a.call("script.run", { code: "selected[0].name = 'X';\nnull.boom();" });
+    assert.strictEqual(e.ok, false); assert.ok(/Ошибка в скрипте/.test(a.call("status")) && /Ctrl\+Z/.test(a.call("status")));
+    assert.throws(() => a.call("script.run", { code: "if ( {" }), /синтаксиса/);
+    assert.strictEqual(typeof a.call("script.run", { code: "return typeof N + typeof st + typeof S + typeof root;" }).result, "string");
+    assert.ok(!/object|function/.test(a.call("script.run", { code: "return typeof st + typeof S + typeof root + typeof memSave;" }).result), "переменные панели недоступны");
+    const ctx = a.call("script.context"); assert.ok(ctx.comp.width && ctx.layers.some(l => l.name === "Героi 1" || (l.kind === "av" && l.selected)));
+  });
   await test("превью: отдельная композиция, исходник не меняется", () => {
     const c = mkComp({ duration: 12 }), a = freshApp(); let copy;
     c.duplicate = () => { copy = new mock.CompItem({ duration: 12 }); copy.openInViewer = () => { copy.opened = true; }; return copy; };

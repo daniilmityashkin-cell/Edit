@@ -10,7 +10,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
 (function (N) {
     var SECTION = "NOIR Captions";
     var SETTINGS_KEY = "settings.v2";
-    N.VERSION = "0.39.0";
+    N.VERSION = "0.40.0";
 
     function clone(o) { return N.parseJSON(N.stringify(o)); }
 
@@ -31,7 +31,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         recentFonts: [], favoriteStyles: [], onboarded: false,
         quick: { size: 100, position: "preset", intensity: "1" },
         replace: true, python: "", presetId: "", style: FALLBACK_STYLE, reflow: true, scope: "source", nudgeStep: 20, sizeStep: 10, timeStep: 0.1,
-        format: "auto", memoryLearn: true,
+        format: "auto", memoryLearn: true, assistantScripts: false,
         tools: {
             counter: { from: 0, to: 100, duration: 2, hold: 1, step: 0, interval: 0, decimals: 0, pad: 0, thousands: "none", ease: "out",
                 prefix: "", suffix: "", side: "accent", size: 0, posX: 50, posY: 50, sound: false },
@@ -111,7 +111,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         shadow: "bool-shadow", glow: [0, 500], blend: "blend", opacity: [0, 100] };
     var PATHS = {
         "language": "lang", "model": "model", "device": "device", "prompt": "text", "lang": "uilang", "replace": "bool", "reflow": "bool", "scope": "scope",
-        "nudgeStep": [1, 2000], "sizeStep": [1, 100], "timeStep": [0.01, 30], "format": "format", "python": "text", "onboarded": "bool", "memoryLearn": "bool",
+        "nudgeStep": [1, 2000], "sizeStep": [1, 100], "timeStep": [0.01, 30], "format": "format", "python": "text", "onboarded": "bool", "memoryLearn": "bool", "assistantScripts": "bool",
         "quick.size": [25, 200], "quick.position": "qpos", "quick.intensity": "qint",
         "style.layout.reveal": "reveal", "style.layout.layerMode": "layerMode", "style.layout.maxWords": [1, 30], "style.layout.maxChars": [1, 300],
         "style.layout.lineChars": [0, 300], "style.layout.accentOwnLine": "bool", "style.layout.autoAccent": "bool", "style.layout.posX": [-50, 150],
@@ -778,6 +778,63 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         function memKind(k) { if (k !== "fixes" && k !== "prefs" && k !== "examples") throw new Error("Нет такого раздела памяти."); return k; }
         function memNorm(q) { return String(q || "").toLowerCase().replace(/ё/g, "е").replace(/[^a-zа-я0-9 ]+/g, " ").replace(/\s+/g, " ").replace(/^\s+|\s+$/g, ""); }
 
+        // ---------- experimental: scripts written by the assistant ----------
+        // A guard, not a sandbox: the user sees the code before it runs; files, the system, other projects, saving, rendering, dialogs,
+        // eval and endless loops are refused; the code runs in one undo group with comp / selected / captions / log.
+        var SCRIPT_BLOCK = [
+            [/\b(File|Folder|Socket|ExternalObject|BridgeTalk)\b/, "файлы и сеть"], [/\bsystem\b|callSystem/, "системные команды"],
+            [/\beval\b|\bFunction\b|evalFile|\$\.global|\bthis\b|__proto__|\bconstructor\b|\bprototype\b|\bNOIR\w*\s*[.\[]|\bN\s*[.\[]/, "выполнение чужого кода и служебные объекты панели"],
+            [/\$\.(?!writeln\b)/, "служебные функции $"], [/\b(execute|executeCommand|scheduleTask|cancelTask|setTimeout)\b/, "запуск команд и задач"],
+            [/\bapp\s*\.\s*(open|quit|newProject|exitAfterLaunchAndEval|preferences|settings|purge|beginSuppressDialogs|watchFolder)\b/, "управление программой и проектом"],
+            [/\.\s*(save\w*|close)\s*\(|renderQueue|importFile|\bImportOptions\b/, "сохранение, рендер, импорт"],
+            [/\b(Window|ScriptUI|alert|confirm|prompt)\b/, "окна и диалоги"], [/\b(import|require)\b/, "подключение модулей"],
+            [/\bwhile\s*\(\s*(true|1)\s*\)|\bfor\s*\(\s*;\s*;\s*\)|\bdo\s*\{/, "бесконечный цикл"],
+            [new RegExp("\\x3D>|\\x60|\\b(let|const|class|async|await)\\b"), "синтаксис новее ES3 (AE его не поймёт)"]
+        ];
+        function scriptProblems(code) {
+            var out = [], c = String(code || "");
+            if (!/\S/.test(c)) out.push("пустой код");
+            if (c.length > 8000) out.push("слишком длинный код");
+            for (var i = 0; i < SCRIPT_BLOCK.length; i++) if (SCRIPT_BLOCK[i][0].test(c)) out.push(SCRIPT_BLOCK[i][1]);
+            return out;
+        }
+        function layerKind(l) {
+            if (l instanceof TextLayer) return N.isGenerated(l) ? "noir-caption" : "text";
+            try { if (l instanceof ShapeLayer) return "shape"; } catch (e) {}
+            if (l.nullLayer) return "null";
+            try { if (l instanceof CameraLayer) return "camera"; if (l instanceof LightLayer) return "light"; } catch (e2) {}
+            return l.source && l.source.hasVideo === false ? "audio" : "av";
+        }
+        function captionLayers(comp) {
+            var out = [], key = sourceKey();
+            for (var i = 1; i <= comp.numLayers; i++) { var l = comp.layer(i); if (l instanceof TextLayer && N.isGenerated(l) && (!key || N.layerSource(l) === key)) out.push(l); }
+            return out;
+        }
+        function runScript(code) {
+            if (!S.assistantScripts) throw new Error("Режим скриптов выключен (Помощник → ИИ-модель → «Любые просьбы — скриптом»).");
+            var bad = scriptProblems(code);
+            if (bad.length) throw new Error("Скрипт не запущен: " + bad.join(", ") + ".");
+            var comp = null; try { comp = app.project.activeItem; } catch (e0) {}
+            if (!(comp instanceof CompItem)) comp = null;
+            var selected = [], i, logs = [], ret;
+            if (comp) for (i = 0; i < comp.selectedLayers.length; i++) selected.push(comp.selectedLayers[i]);
+            var caps = comp ? captionLayers(comp) : [];
+            function say() { var a = []; for (var k = 0; k < arguments.length; k++) a.push(String(arguments[k])); if (logs.length < 50) logs.push(a.join(" ").substr(0, 300)); }
+            var fn;
+            try { fn = new Function("comp", "selected", "captions", "log", code); }          // global scope: the panel's own variables are not reachable
+            catch (eS) { throw new Error("В коде ошибка синтаксиса: " + (eS.message || eS) + ". Ничего не изменено."); }
+            log("info", "script: " + String(code).substr(0, 500));
+            try { ret = undo("скрипт помощника", function () { return fn.call({}, comp, selected, caps, say); }); }
+            catch (eR) {
+                var line = eR.line ? " (строка " + eR.line + ")" : "";
+                status("Ошибка в скрипте: " + (eR.message || eR) + line + ". Часть изменений могла примениться — Ctrl+Z в AE отменит.");
+                log("error", "script: " + (eR.message || eR));
+                return { ok: false, error: String(eR.message || eR) + line, logs: logs };
+            }
+            status("Скрипт выполнен. Отменить — Ctrl+Z в AE." + (logs.length ? " " + logs[logs.length - 1] : ""));
+            return { ok: true, logs: logs, result: ret === undefined || ret === null ? "" : String(ret).substr(0, 500) };
+        }
+
         // ---------- filler words ----------
         var FILLERS = ["э", "ээ", "эээ", "эм", "эмм", "мм", "ммм", "хм", "ну", "типа", "короче", "как бы", "это самое", "так сказать", "в общем-то",
             "uh", "um", "uhm", "umm", "erm", "er", "hmm", "you know", "i mean"];
@@ -1332,6 +1389,19 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
                 var m = memLoad(), kinds = a && a.kind ? [memKind(a.kind)] : ["fixes", "prefs", "examples"];
                 for (var i = 0; i < kinds.length; i++) m[kinds[i]] = [];
                 memSave(m); status("Память помощника очищена."); return true;
+            },
+            "script.check": function (a) { return { problems: scriptProblems(a.code), enabled: !!S.assistantScripts }; },
+            "script.run": function (a) { return runScript(String(a.code || "")); },
+            // what a script needs to know: the comp and its layers (names, kinds, times), the selection
+            "script.context": function () {
+                var comp = null; try { comp = app.project.activeItem; } catch (e0) {}
+                if (!(comp instanceof CompItem)) return { comp: null };
+                var out = { comp: { name: comp.name, width: comp.width, height: comp.height, duration: Math.round(comp.duration * 100) / 100, fps: Math.round(1 / comp.frameDuration * 100) / 100, time: Math.round(comp.time * 100) / 100, numLayers: comp.numLayers }, layers: [] };
+                for (var i = 1; i <= comp.numLayers && out.layers.length < 40; i++) {
+                    var l = comp.layer(i);
+                    out.layers.push({ index: i, name: l.name, kind: layerKind(l), selected: !!l.selected, inPoint: Math.round(l.inPoint * 100) / 100, outPoint: Math.round(l.outPoint * 100) / 100 });
+                }
+                return out;
             },
             context: function () {
                 var comp = null, out = { hasData: !!st.data };

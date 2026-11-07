@@ -451,6 +451,52 @@ function layoutProblems() {
         await page.waitForFunction((n) => document.querySelectorAll("#set-memory .mem-item").length === n - 1, items.length);
         await page.locator("#set-memory summary").click(); await tab("text");
     });
+    await step("скрипты помощника (эксперимент): выключены — подсказка; включены — ИИ пишет код, AE проверяет (запрещённое — повтор, потом блок), код виден до запуска, «Применить» выполняет", async () => {
+        const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "Content-Type", "Access-Control-Allow-Methods": "GET, POST, OPTIONS" };
+        let scriptCalls = 0;
+        await page.route("http://127.0.0.1:11434/**", async (route) => {
+            const req = route.request();
+            if (req.method() === "OPTIONS") return route.fulfill({ status: 204, headers: cors });
+            if (req.url().endsWith("/api/tags")) return route.fulfill({ status: 200, headers: Object.assign({ "Content-Type": "application/json" }, cors), body: JSON.stringify({ models: [{ name: "qwen2.5:7b" }, { name: "qwen2.5-coder:7b" }] }) });
+            const body = JSON.parse(req.postData()), sys = body.messages[0].content, user = body.messages[1].content;
+            let out;
+            if (/ExtendScript/.test(sys)) {
+                scriptCalls++;
+                if (/файл/.test(user)) out = { say: "Удалю файл.", code: "var f = new File('C:/x.txt'); f.remove();" };
+                else if (/rejected/.test(user)) out = { say: "Добавлю красный слой на всю композицию.", code: "var s = comp.layers.addSolid([1, 0, 0], 'NOIR red', comp.width, comp.height, 1, comp.duration);\nlog('Добавлен красный слой');" };
+                else out = { say: "?", code: "const s = comp.layers.addSolid([1,0,0], 'x', 10, 10, 1, 1);" };
+                out.model = body.model;
+            } else out = { say: "Напишу скрипт: красный слой.", commands: [{ op: "script", task: "add a full-size red solid named NOIR red" }] };
+            return route.fulfill({ status: 200, headers: Object.assign({ "Content-Type": "application/json" }, cors), body: JSON.stringify({ message: { content: JSON.stringify(out) } }) });
+        });
+        await page.evaluate(() => NoirAssistant.setSettings({ endpoint: "http://127.0.0.1:11434" }));
+        await page.evaluate(() => NoirAssistant.open());
+        await page.waitForFunction(() => /qwen/.test(document.querySelector(".as-mode").textContent));
+        const input = page.locator(".as-form input");
+        await input.fill("скрипт: добавь красный слой"); await input.press("Enter");
+        await page.waitForFunction(() => /Включите/.test([...document.querySelectorAll(".as-msg")].pop().textContent));
+        await page.locator(".as-settings summary").click();
+        await page.locator(".as-check input").check(); await settle();
+        assert.strictEqual((await hostState()).settings.assistantScripts, true);
+        await page.locator(".as-settings select.as-model").nth(1).selectOption("qwen2.5-coder:7b");
+        await page.locator(".as-settings summary").click();
+        await input.fill("сделай красный фон под всем, как плашку"); await input.press("Enter");
+        await page.waitForSelector(".as-code");
+        assert.strictEqual(scriptCalls, 2, "первый код не ES3 — ИИ переписал");
+        assert.ok(/addSolid/.test(await page.locator(".as-code").last().textContent()));
+        await shot("assistant-script");
+        const n0 = comp._l.length;
+        await page.locator(".as-plan").last().locator(".btn.primary").click();
+        await page.waitForFunction(() => /Добавлен красный слой/.test([...document.querySelectorAll(".as-msg.note")].pop().textContent)); await settle();
+        assert.strictEqual(comp._l.length, n0 + 1); assert.ok(comp._l.some(l => l.name === "NOIR red"));
+        await input.fill("скрипт: удали файл с диска"); await input.press("Enter");
+        await page.waitForFunction(() => /Не запускаю/.test(([...document.querySelectorAll(".as-plan")].pop() || {}).textContent || ""));
+        assert.strictEqual(await page.locator(".as-plan").last().locator(".btn.primary").count(), 0, "кнопки «Применить» нет");
+        await page.keyboard.press("Escape");
+        await page.evaluate(() => NoirAssistant.setSettings({ endpoint: "http://127.0.0.1:59999" }));
+        await page.unroute("http://127.0.0.1:11434/**");
+        await page.evaluate(() => NoirHost.call("settings.set", { path: "assistantScripts", value: false })); await settle();
+    });
     await step("помощник: нарезка по речи — сначала замер «было → стало», «Отмена» ничего не режет, «Применить» режет видео и пересоздаёт субтитры", async () => {
         const v = new mock.AVLayer(comp, "clip.mp4"); v.source = { hasVideo: true }; comp._l.push(v); comp._l.forEach(l => { l.selected = l === v; });
         await page.evaluate(() => NoirAssistant.open());

@@ -305,6 +305,8 @@ select.input option { background: var(--surface); color: var(--text); }
 .as-plan ol { margin: 0 0 var(--s2); padding-left: 18px; } .as-plan li { margin: 2px 0; }
 .as-plan-title { display: block; margin-bottom: var(--s2); }
 .as-mem-h { display: block; margin: var(--s1) 0 2px; font-size: var(--fs-s); } .as-mem { margin: 0 0 var(--s1); padding-left: 18px; font-size: var(--fs-s); }
+.as-code { max-height: 220px; overflow: auto; margin: 0 0 var(--s1); padding: 8px; border-radius: var(--r-s); background: rgba(0, 0, 0, .35); font: 11px/1.45 Consolas, "Cascadia Mono", monospace; white-space: pre; color: #e2e8f0; }
+.as-bad { color: #fca5a5; } .as-check { display: flex; align-items: center; gap: 6px; }
 .as-cut { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; margin-bottom: var(--s1); } .as-cut-big { font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .as-diff { display: flex; flex-direction: column; gap: 6px; margin-bottom: var(--s2); }
 .as-diff-row { display: flex; gap: var(--s2); align-items: baseline; }

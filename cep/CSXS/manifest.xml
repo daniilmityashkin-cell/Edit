@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<ExtensionManifest Version="7.0" ExtensionBundleId="com.noir.captions" ExtensionBundleVersion="0.39.0" ExtensionBundleName="NOIR Captions">
-  <ExtensionList><Extension Id="com.noir.captions.panel" Version="0.39.0"/></ExtensionList>
+<ExtensionManifest Version="7.0" ExtensionBundleId="com.noir.captions" ExtensionBundleVersion="0.40.0" ExtensionBundleName="NOIR Captions">
+  <ExtensionList><Extension Id="com.noir.captions.panel" Version="0.40.0"/></ExtensionList>
   <ExecutionEnvironment>
     <HostList><Host Name="AEFT" Version="[24.0,99.9]"/></HostList>
     <LocaleList><Locale Code="All"/></LocaleList>
