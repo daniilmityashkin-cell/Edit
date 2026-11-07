@@ -278,7 +278,7 @@ function layoutProblems() {
     });
     await step("радиальное меню v2: до 8 секторов, клавиши 1–8, пункты второго кольца не налезают друг на друга и не выходят за панель", async () => {
         const bad = [];
-        for (const [w, h] of [[300, 520], [460, 640], [820, 700]]) {
+        for (const [w, h] of [[300, 520], [460, 640], [520, 500], [820, 700]]) {
             await page.setViewportSize({ width: w, height: h });
             for (const [x, y] of [[w / 2, h / 2], [20, 20], [w - 10, h - 10]]) {
                 await page.evaluate(([x, y]) => NoirWheel.open(x, y, "sticky"), [x, y]);
@@ -304,7 +304,17 @@ function layoutProblems() {
                 await page.keyboard.press("Escape"); await page.keyboard.press("Escape");
             }
         }
-        await page.setViewportSize({ width: 400, height: 720 });
+        // the sheet goes away when the pointer leaves the ring and the sheet; in a 520×500 panel it is not drawn over the ring
+        await page.setViewportSize({ width: 520, height: 500 });
+        await page.evaluate(() => NoirWheel.open(260, 250, "sticky")); await page.waitForTimeout(400);
+        const t2 = await page.locator(".rw-tile").nth(1).boundingBox();
+        await page.mouse.move(t2.x + t2.width / 2, t2.y + t2.height / 2); await page.waitForTimeout(250);
+        assert.ok(await page.locator(".rw-sheet").isVisible(), "панель раздела показана");
+        assert.strictEqual(await page.locator(".rw-sheet.over").count(), 0, "в окне 520×500 панель не поверх кольца");
+        await page.mouse.move(2, 2); await page.waitForTimeout(600);
+        assert.strictEqual(await page.locator(".rw-sheet").isVisible(), false, "курсор ушёл — панель спряталась");
+        await page.keyboard.press("Escape");
+                await page.setViewportSize({ width: 400, height: 720 });
         await page.evaluate(() => NoirWheel.open(200, 360, "sticky")); await page.waitForTimeout(600);
         const tileW = await page.locator(".rw-tile").first().evaluate(e => e.getBoundingClientRect().width);
         assert.ok(tileW >= 50, "узкая панель: кружки не мельчают (" + tileW + " px)");

@@ -114,26 +114,27 @@
         ov.removeChild(probe);
         colW = Math.max(132, Math.min(230, colW + 52));
         var vw = window.innerWidth, vh = window.innerHeight, pad = 10;
-        var cols = 2 * colW + CGAP + 2 * SHEET_PAD <= vw - 2 * pad ? 2 : 1;
-        if (cols === 1) colW = Math.min(colW, vw - 2 * pad - 2 * SHEET_PAD);
+        var half = (vw - 2 * pad - 2 * SHEET_PAD - CGAP) / 2, cols = half >= 118 ? 2 : 1;      // two columns whenever a column can be ≥118 px
+        colW = cols === 2 ? Math.min(colW, half) : Math.min(colW, vw - 2 * pad - 2 * SHEET_PAD);
         list.forEach(function (sec) { if (sec.items) rowsMax = Math.max(rowsMax, Math.ceil(sec.items.length / cols)); });
         var sw = cols * colW + (cols - 1) * CGAP + 2 * SHEET_PAD, sh = HEAD + rowsMax * ROWH + (rowsMax - 1) * RGAP + SHEET_PAD;
 
-        // ring size: ~60% of the smaller side, never below the base size unless the panel is smaller than the ring
-        var ext0 = R1 + TILE / 2 + 6, k = Math.max(1, Math.min(2.2, Math.min(vw, vh) * 0.6 / (2 * ext0)));
-        k = Math.min(k, (vw - 2 * pad) / (2 * ext0), (vh - 2 * pad) / (2 * ext0));
+        // Ring size and where the sheet goes. The ring wants ~60% of the smaller side (not below the base size); in a small panel it
+        // shrinks (down to ~0.62×) so that the sheet fits beside or under it. Only a really tiny panel puts the sheet over the ring.
+        var ext0 = R1 + TILE / 2 + 6, want = Math.max(1, Math.min(2.2, Math.min(vw, vh) * 0.6 / (2 * ext0)));
+        var kSide = Math.min(want, (vw - 2 * pad - sw - 16) / (2 * ext0), (vh - 2 * pad) / (2 * ext0));
+        var kBelow = Math.min(want, (vh - 2 * pad - sh - 16) / (2 * ext0), (vw - 2 * pad) / (2 * ext0));
+        var side = kSide >= kBelow ? "right" : "below", k = Math.max(kSide, kBelow);
+        if (k < 0.62) { side = "over"; k = Math.min(want, (vw - 2 * pad) / (2 * ext0), (vh - 2 * pad) / (2 * ext0)); }
         var g = { r1: R1 * k, tile: TILE * k, orb: ORB * k, ext: ext0 * k, k: k }; st.g = g;
         function clampC(v, lo, hi) { return hi < lo ? (lo + hi) / 2 : Math.max(lo, Math.min(hi, v)); }
-        var cx = clampC(x, pad + g.ext, vw - pad - g.ext), cy = clampC(y, pad + g.ext, vh - pad - g.ext), side;
-        // where the sheet goes: right, left, below (moving the ring up if needed), or over the ring in a tiny panel
-        if (vw - pad - (cx + g.ext) >= sw + 16) side = "right";
-        else if (cx - g.ext - pad >= sw + 16) side = "left";
-        else if (vw - 2 * pad >= 2 * g.ext + sw + 16) { side = "right"; cx = (vw - (2 * g.ext + 16 + sw)) / 2 + g.ext; }     // ring + sheet centred together
-        else {
-            side = "below";
-            if (vh - pad - (cy + g.ext) < sh + 16) cy = Math.max(pad + g.ext, vh - pad - sh - 16 - g.ext);
-            if (vh - pad - (cy + g.ext) < sh + 16) side = "over";
-        }
+        var cx = clampC(x, pad + g.ext, vw - pad - g.ext), cy = clampC(y, pad + g.ext, vh - pad - g.ext);
+        if (side === "right") {
+            if (vw - pad - (cx + g.ext) < sw + 16) {
+                if (cx - g.ext - pad >= sw + 16) side = "left";
+                else cx = (vw - (2 * g.ext + 16 + sw)) / 2 + g.ext;          // ring + sheet centred together
+            }
+        } else if (side === "below") cy = clampC(cy, pad + g.ext, vh - pad - sh - 16 - g.ext);
         var sx, sy;
         if (side === "right") { sx = cx + g.ext + 16; sy = clampC(cy - sh / 2, pad, vh - pad - sh); }
         else if (side === "left") { sx = cx - g.ext - 16 - sw; sy = clampC(cy - sh / 2, pad, vh - pad - sh); }
@@ -165,6 +166,11 @@
         ov.addEventListener("contextmenu", function (e) { e.preventDefault(); });
         if (keyboard) { st.mode = "sticky"; ov.classList.add("sticky"); setSector(0); } else paint();
     }
+    function hideSheet() {
+        if (!st || st.sheet.hidden) { if (st) setSector(-1); return; }
+        st.sheet.classList.add("leaving");
+        setTimeout(function () { if (st && st.sheet.classList.contains("leaving")) { st.sheet.classList.remove("leaving"); setSector(-1); } }, 160);
+    }
     function setSector(i) {
         if (!st || i === st.sector) return;
         clearTimeout(st.intent);
@@ -172,7 +178,7 @@
         var sheet = st.sheet, sec = i >= 0 ? st.list[i] : null;
         sheet.textContent = "";
         if (!sec || !sec.items) { sheet.hidden = true; paint(); return; }
-        var wasHidden = sheet.hidden; sheet.hidden = false;
+        var wasHidden = sheet.hidden; sheet.hidden = false; sheet.classList.remove("leaving");
         sheet.classList.remove("swap"); void sheet.offsetWidth; sheet.classList.add(wasHidden ? "enter" : "swap");
         var head = el("div", "rw-sheet-head", sheet), ic = el("span", "rw-sheet-icon", head); ic.appendChild(svgIcon(sec.icon || ICONS.more));
         el("span", "rw-sheet-title", head, sec.label); el("span", "rw-sheet-num", head, String(i + 1));
@@ -209,6 +215,9 @@
     }
     function track(e, immediate) {
         var h = hit(e);
+        // pointer away from the ring and the sheet: the sheet fades away shortly (keyboard choice keeps it)
+        if (!h && st.sector >= 0 && st.keyLevel !== 1) { if (!st.leave) st.leave = setTimeout(function () { if (st) { st.leave = 0; hideSheet(); } }, 280); }
+        else if (h) { clearTimeout(st.leave); st.leave = 0; }
         st.hoverOrb = !!h && h.type === "orb";
         if (h && h.type === "sector" && h.index !== st.sector) {
             // hover intent: a short pause before switching, so travelling past other tiles towards the sheet keeps the section
@@ -277,7 +286,7 @@
     }
     function close() {
         if (!st) return;
-        clearTimeout(st.intent);
+        clearTimeout(st.intent); clearTimeout(st.leave);
         document.removeEventListener("pointermove", onMove, true); document.removeEventListener("pointerup", onUp, true);
         document.removeEventListener("keydown", onKey, true); window.removeEventListener("blur", close);
         if (st.ov && st.ov.parentNode) st.ov.parentNode.removeChild(st.ov);
