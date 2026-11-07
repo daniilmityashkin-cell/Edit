@@ -401,6 +401,25 @@ const accept = (a, mode) => { let r = a.call("generate", { mode: mode || "all" }
     r = a.call("zoom.apply", { on: "cuts", scale: 108 }); assert.strictEqual(r.layers, 2);
     near(pcs[0].transform["Scale"].value[0], 100); near(pcs[1].transform["Scale"].value[0], 108);
   });
+  await test("пакет: выделенные в Project композиции распознаются по очереди, в каждой — субтитры; ошибка одной не останавливает остальные; отмена", () => {
+    const a = freshApp(false), mk = (name, withAudio) => { const c = new mock.CompItem({ id: Math.floor(Math.random() * 1e9), name, duration: 12 }); if (withAudio) { const f = path.join(TMP, name + ".mp4"); fs.writeFileSync(f, ""); const L = new mock.AVLayer(c, name + ".mp4"); L.hasAudio = true; L.source = new mock.FootageItem(new File(f)); c._l.push(L); } return c; };
+    const c1 = mk("Reel 1", true), c2 = mk("Пустая", false), c3 = mk("Reel 3", true);
+    global.app.project.selection = [c1, c2, c3];
+    assert.deepStrictEqual(a.call("batch.list").map(x => [x.name, !!x.layer]), [["Reel 1", true], ["Пустая", false], ["Reel 3", true]]);
+    const keep = [N.modelCached, N.startRecognition]; const started = [];
+    N.modelCached = () => true; N.startRecognition = (src, o, cb) => { started.push(src.comp.name); cb.onStatus({ state: "recognizing", message: "Распознаю", progress: 0.5 }); cb.onDone(sample(), { link: src.link }); };
+    try { assert.strictEqual(a.call("batch.start").total, 3); } finally { N.modelCached = keep[0]; N.startRecognition = keep[1]; }
+    assert.deepStrictEqual(started, ["Reel 1", "Reel 3"]);
+    assert.ok(subs(c1).length > 0 && subs(c3).length > 0, "субтитры в обеих");
+    assert.strictEqual(a.state().recognizing, false); assert.strictEqual(a.state().batch, null);
+    assert.ok(/Пакет готов: субтитры в 2 из 3/.test(a.call("status")) && /Пустая — нет слоя со звуком/.test(a.call("status")), a.call("status"));
+    global.app.project.selection = [];
+    assert.throws(() => { N.modelCached = () => true; try { a.call("batch.start"); } finally { N.modelCached = keep[0]; } }, /Выделите композиции/);
+    global.app.project.selection = [c1, c3]; let cbs = [];
+    N.modelCached = () => true; N.startRecognition = (src, o, cb) => { cbs.push(cb); };
+    try { a.call("batch.start"); assert.strictEqual(a.state().batch.left, 1); a.call("cancel"); assert.strictEqual(a.state().batch, null); cbs[0].onDone(sample(), { link: null }); assert.ok(/Пакет остановлен/.test(a.call("status"))); }
+    finally { N.modelCached = keep[0]; N.startRecognition = keep[1]; global.app.project.selection = []; }
+  });
   await test("превью: отдельная композиция, исходник не меняется", () => {
     const c = mkComp({ duration: 12 }), a = freshApp(); let copy;
     c.duplicate = () => { copy = new mock.CompItem({ duration: 12 }); copy.openInViewer = () => { copy.opened = true; }; return copy; };

@@ -89,6 +89,17 @@
         return { label: t("act.create"), run: function () { generate("all"); } };
     }
     function primary() { var a = primaryAction(); if (a) a.run(); }
+    // Batch: comps selected in the Project panel → recognition and captions in each, one after another.
+    function batch() {
+        if (ready && !ready.ready) { U.toast(t("ready.notYet"), "error"); checkReadiness(); return; }
+        H.call("batch.list").then(function (list) {
+            if (!list.length) { U.toast(t("batch.none"), "error", 6000); return; }
+            var ok = list.filter(function (c) { return c.layer; });
+            var msg = t("batch.ask", { n: list.length }) + "\n\n" + list.map(function (c) { return (c.layer ? "• " : "✕ ") + c.name + (c.layer ? " — " + c.layer : " — " + t("batch.noAudio")); }).join("\n");
+            if (!ok.length) { U.toast(t("batch.noneAudio"), "error", 6000); return; }
+            if (window.confirm(msg)) act("batch.start");
+        }).catch(function (e) { U.toast(NoirI18n.host(e && e.message || String(e)), "error"); });
+    }
     function recognize() {
         if (ready && !ready.ready) { U.toast(t("ready.notYet"), "error"); checkReadiness(); return; }
         act("recognize");
@@ -167,6 +178,7 @@
         el("span", "muted small", other, t("video.other"));
         U.button(t("act.openJson"), "ghost small", other, function () { act("json.load"); }, "file");
         U.button(t("act.importSubs"), "ghost small", other, function () { act("subs.import"); }, "fileIn");
+        U.button(t("batch.btn"), "ghost small", other, batch, "layers");
         // with text
         v.body = el("div", "text-body", p);
         var src = U.card(v.body, null, null, "source-card");
@@ -218,6 +230,7 @@
         U.button(t("act.rerecognize"), "ghost", fr2, function () { recognize(); }, "mic");
         U.button(t("act.openJson"), "ghost", fr2, function () { act("json.load"); }, "file");
         U.button(t("act.importSubs"), "ghost", fr2, function () { act("subs.import"); }, "fileIn");
+        U.button(t("batch.btn"), "ghost", fr2, batch, "layers");
         U.button(t("act.reset"), "ghost", fr2, function () { if (window.confirm(t("confirm.reset"))) act("text.reset"); }, "undo");
     }
     function prevent(e) { e.preventDefault(); }

@@ -184,6 +184,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         function dirty() { return !!st.data && (lines().join("\n") !== st.cleanLines.join("\n") || timingDirty()); }
         function presetById(id) { for (var i = 0; i < presets.length; i++) if (presets[i].id === id) return presets[i]; return null; }
         function activeComp() {
+            if (st.forceComp) return st.forceComp;          // batch: the comp being processed
             var comp = app.project.activeItem;
             if (!(comp instanceof CompItem)) throw new Error("Откройте композицию.");
             return comp;
@@ -700,6 +701,50 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             return { removed: plan.removed, pieces: pieces, keeps: plan.keeps.length, moved: moved };
         }
 
+        // ---------- batch: recognize and caption several comps one after another ----------
+        // Comps selected in the Project panel (or given by id). In each: the longest audio layer from a file is recognized, word fixes
+        // from memory are applied and captions are created in the current style (remarks accepted). One comp failing does not stop the rest.
+        function projectComps(ids) {
+            var out = [], i, it;
+            if (ids && ids.length) { for (i = 1; i <= app.project.numItems; i++) { it = app.project.item(i); if (it instanceof CompItem) for (var k = 0; k < ids.length; k++) if (it.id === ids[k]) out.push(it); } return out; }
+            var sel = []; try { sel = app.project.selection || []; } catch (e) {}
+            for (i = 0; i < sel.length; i++) if (sel[i] instanceof CompItem) out.push(sel[i]);
+            return out;
+        }
+        function batchNext() {
+            var b = st.batch; if (!b) return;
+            if (!b.queue.length) {
+                st.batch = null; st.recognizing = false;
+                status("Пакет готов: субтитры в " + b.ok + " из " + b.total + " композиций." + (b.errors.length ? " Не вышло: " + b.errors.join("; ") : ""), 1);
+                log("info", "batch: " + b.ok + "/" + b.total + (b.errors.length ? " · " + b.errors.join("; ") : ""));
+                return;
+            }
+            var comp = b.queue.shift(), n = b.total - b.queue.length, tag = "Пакет " + n + "/" + b.total + " · " + comp.name + ": ";
+            b.current = comp.name;
+            function fail(msg) { b.errors.push(comp.name + " — " + msg); batchNext(); }
+            var layer = N.autoAudioLayer(comp);
+            if (!layer) { fail("нет слоя со звуком из файла"); return; }
+            var src;
+            try { src = N.audioSourceOf(comp, layer); } catch (eS) { fail(eS.message || String(eS)); return; }
+            status(tag + "запуск…", 0);
+            try {
+                N.startRecognition(src, { root: root, python: S.python, model: S.model, language: S.language, device: S.device, prompt: memPrompt() }, {
+                    onStatus: function (s) { status(tag + (s.message || s.state), s.progress); },
+                    onDone: function (data, s) {
+                        if (!st.batch) return;
+                        setData(data, s.link); st.recognizing = true;
+                        try { applyFixes(); } catch (eF) {}
+                        st.forceComp = comp;
+                        try { var r = generate("all", false); if (r && r.pending) generate("all", true); b.ok++; }
+                        catch (eG) { b.errors.push(comp.name + " — " + (eG.message || eG)); }
+                        st.forceComp = null;
+                        batchNext();
+                    },
+                    onError: function (msg) { if (st.batch) fail(String(msg).split("\n")[0]); }
+                });
+            } catch (eR) { fail(eR.message || String(eR)); }
+        }
+
         // ---------- auto zoom (punch-in) ----------
         // on: accents — the video pushes in on every accent word and comes back after it; phrases — every phrase alternates 100% / zoom
         // (classic jump-cut look); cuts — the pieces of a speech cut alternate. snap: a cut in one frame; smooth: a short ease.
@@ -1135,7 +1180,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
                 if (!py.exists) throw new Error("Сначала установите движок распознавания.");
                 return runConsole("model", "Скачивание модели " + id + " (один раз)", '"' + py.fsName + '" "' + script.fsName + '" ' + id);
             },
-            cancel: function () { N.cancelRecognition(); st.recognizing = false; status("Распознавание отменено.", 0); return true; },
+            cancel: function () { var wasBatch = !!st.batch; st.batch = null; st.forceComp = null; N.cancelRecognition(); st.recognizing = false; status(wasBatch ? "Пакет остановлен." : "Распознавание отменено.", 0); return true; },
             "json.load": function (a) {
                 var f = a.path ? File(a.path) : File.openDialog("Открыть результат NOIR (JSON)", "*.json");
                 if (!f) return null;
@@ -1441,6 +1486,21 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
                 for (var i = 0; i < sel.length; i++) { if (sel[i] instanceof TextLayer) { t++; if (N.isGenerated(sel[i])) n++; } else o++; }
                 return { comp: true, text: t, noir: n, other: o, name: comp.name };
             },
+            "batch.list": function (a) {
+                var list = projectComps(a && a.ids), out = [];
+                for (var i = 0; i < list.length; i++) { var l = N.autoAudioLayer(list[i]); out.push({ id: list[i].id, name: list[i].name, layer: l ? l.name : null }); }
+                return out;
+            },
+            "batch.start": function (a) {
+                if (st.recognizing) throw new Error("Распознавание уже идёт.");
+                if (!N.modelCached(S.model)) throw new Error("Модель " + S.model + " ещё не скачана. Нажмите «Скачать модель» на вкладке «Текст».");
+                var list = projectComps(a && a.ids);
+                if (!list.length) throw new Error("Выделите композиции в панели Project (Ctrl+клик), затем запустите пакет.");
+                st.batch = { queue: list.slice(), total: list.length, ok: 0, errors: [], current: "" }; st.recognizing = true;
+                log("info", "batch start: " + list.length);
+                batchNext();
+                return { total: list.length };
+            },
             "zoom.apply": function (a) { return zoomApply(a || {}); },
             "zoom.clear": function () { return zoomClear(); },
             "memory.get": function () { var m = memLoad(); return { fixes: m.fixes, prefs: m.prefs, examples: m.examples, learn: !!S.memoryLearn }; },
@@ -1542,7 +1602,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             if (st.data) for (i = 0; i < st.data.segments.length; i++) phrases.push(String(i + 1) + " · " + (ls[i] || "").substr(0, 48));
             try { var pw = phraseWords(); for (i = 0; i < pw.length; i++) words.push({ text: pw[i].text, accent: !!pw[i].accent, low: pw[i].conf !== undefined && pw[i].conf < 0.65,
                 start: Math.round(pw[i].start * 1000) / 1000, end: Math.round(pw[i].end * 1000) / 1000 }); } catch (e) {}
-            return { version: N.VERSION, status: st.status, progress: st.progress, recognizing: st.recognizing, scanning: st.scanning,
+            return { version: N.VERSION, status: st.status, progress: st.progress, recognizing: st.recognizing, scanning: st.scanning, batch: st.batch ? { total: st.batch.total, left: st.batch.queue.length, current: st.batch.current } : null,
                 hasData: !!st.data, dataRevision: st.dataRevision, text: st.text, dirty: dirty(), phraseDirty: !!st.data && (ls[st.phrase] !== st.cleanLines[st.phrase] || !!st.timing[st.phrase]),
                 phrase: st.phrase, phrases: phrases, words: words, canUpdate: canUpdate(), completed: st.completed, issues: st.issues, pending: !!st.pending,
                 settings: S, face: st.face, historyLength: st.history.length, control: hasControl(), source: sourceName() };

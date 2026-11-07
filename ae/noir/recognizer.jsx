@@ -126,7 +126,22 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         if (!(comp instanceof CompItem)) throw new Error("Откройте композицию и выделите слой со звуком.");
         var sel = comp.selectedLayers;
         if (sel.length !== 1) throw new Error("Выделите ровно один слой со звуком (аудио или видео).");
-        var layer = sel[0];
+        return N.audioSourceOf(comp, sel[0]);
+    };
+    // Для пакетной обработки: слой со звуком из файла, который виден дольше всех (при равенстве — нижний).
+    N.autoAudioLayer = function (comp) {
+        var best = null, bestLen = -1;
+        for (var i = comp.numLayers; i >= 1; i--) {
+            var l = comp.layer(i);
+            if (!(l instanceof AVLayer) || !l.hasAudio || l.audioEnabled === false || N.isGenerated(l)) continue;
+            var s = l.source;
+            if (!(s instanceof FootageItem) || !s.mainSource || !s.mainSource.file) continue;
+            var len = Math.min(l.outPoint, comp.duration) - Math.max(l.inPoint, 0);
+            if (len > bestLen + 1e-6) { best = l; bestLen = len; }
+        }
+        return best;
+    };
+    N.audioSourceOf = function (comp, layer) {
         if (!(layer instanceof AVLayer) || !layer.hasAudio)
             throw new Error("У слоя «" + layer.name + "» нет звука.");
         var src = layer.source;
