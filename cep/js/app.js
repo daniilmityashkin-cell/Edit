@@ -46,7 +46,7 @@
         var shell = el("div", "shell", root);
         var top = el("header", "topbar", shell);
         var orb = el("button", "orb-btn", top); orb.type = "button"; orb.setAttribute("aria-label", t("menu.open")); orb.title = t("menu.open");
-        el("span", "orb-core", orb); U.icon("sparkles", orb);
+        if (window.NoirBrand) orb.appendChild(NoirBrand.logo()); else { el("span", "orb-core", orb); U.icon("sparkles", orb); }
         orb.onclick = function () { if (window.NoirWheel) NoirWheel.open(window.innerWidth / 2, window.innerHeight / 2, "sticky"); };
         view.title = el("h1", "title", top, "NOIR Captions");
         view.pill = el("span", "pill", top); view.pill.setAttribute("role", "status"); view.pill.setAttribute("aria-live", "polite");

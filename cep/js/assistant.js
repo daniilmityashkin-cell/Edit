@@ -485,7 +485,7 @@
     function open() {
         close();
         box = el("section", "noir-assistant"); box.setAttribute("role", "dialog"); box.setAttribute("aria-label", t("as.title"));
-        var head = el("div", "as-head", box); el("b", "", head, t("as.title")); var modeEl = el("span", "as-mode", head); modeEl.setAttribute("aria-live", "polite");
+        var head = el("div", "as-head", box); if (window.NoirBrand) head.appendChild(NoirBrand.orb()); el("b", "", head, t("as.title")); var modeEl = el("span", "as-mode", head); modeEl.setAttribute("aria-live", "polite");
         var x = el("button", "as-close", head, "×"); x.type = "button"; x.setAttribute("aria-label", t("as.close"));
         var log = el("div", "as-log", box); log.setAttribute("aria-live", "polite");
         var form = el("form", "as-form", box), input = el("input", "", form); input.type = "text"; input.autocomplete = "off"; input.placeholder = t("as.placeholder"); input.setAttribute("aria-label", t("as.placeholder"));

@@ -143,7 +143,7 @@
         st.cx = cx; st.cy = cy; st.k = 1;
 
         var rw = el("div", "rw", ov); st.rw = rw; rw.style.left = cx + "px"; rw.style.top = cy + "px";
-        var ring = el("div", "rw-ring", rw); ring.style.cssText = "width:" + 2 * g.r1 + "px;height:" + 2 * g.r1 + "px;left:" + -g.r1 + "px;top:" + -g.r1 + "px";
+        drawRing(rw, g, list);
         st.tiles = [];
         list.forEach(function (sec, i) {
             var p = pos(g.r1, i * 360 / n), b = el("button", "rw-tile" + (sec.items ? "" : " direct"), rw); b.type = "button"; b.setAttribute("role", "menuitem"); b.setAttribute("aria-label", (i + 1) + ". " + sec.label);
@@ -154,7 +154,9 @@
         });
         var orb = el("button", "rw-orb", rw); orb.type = "button"; orb.setAttribute("aria-label", "Помощник");
         orb.style.cssText = "width:" + g.orb + "px;height:" + g.orb + "px;left:" + -g.orb / 2 + "px;top:" + -g.orb / 2 + "px;--fs:" + Math.round(11 * Math.min(1.35, k) * 10) / 10 + "px";
-        st.label = el("span", "rw-label", orb, ""); st.status = el("span", "rw-status", orb, ""); st.orb = orb;
+        if (window.NoirBrand) { st.orbArt = NoirBrand.orb(); orb.appendChild(st.orbArt); }
+        var ot = el("span", "rw-orb-text", orb);
+        st.label = el("span", "rw-label", ot, ""); st.status = el("span", "rw-status", ot, ""); st.orb = orb;
 
         var sheet = el("div", "rw-card rw-sheet side-" + side + (side === "over" ? " over" : ""), ov); sheet.hidden = true;
         sheet.style.cssText = "left:" + sx + "px;top:" + sy + "px;width:" + sw + "px;--cols:" + cols + ";--colw:" + colW + "px";
@@ -165,6 +167,50 @@
         }
         ov.addEventListener("contextmenu", function (e) { e.preventDefault(); });
         if (keyboard) { st.mode = "sticky"; ov.classList.add("sticky"); setSector(0); } else paint();
+    }
+    // The ring: a dark track with one gold segment per section (the gold runs champagne → gold → bronze around the ring),
+    // a bright cap over the chosen segment, section numbers 01–08 inside, a thin outer circle with four nodes and the chosen
+    // section's name written along it; an amber glow behind turns toward the chosen section.
+    function arc(r, a0, a1) {
+        var p0 = pos(r, a0), p1 = pos(r, a1), large = a1 - a0 > 180 ? 1 : 0;
+        return "M" + p0[0].toFixed(2) + " " + p0[1].toFixed(2) + " A" + r.toFixed(2) + " " + r.toFixed(2) + " 0 " + large + " 1 " + p1[0].toFixed(2) + " " + p1[1].toFixed(2);
+    }
+    function drawRing(rw, g, list) {
+        var n = list.length, step = 360 / n, bw = g.tile * 0.74, gapDeg = Math.max(2.2, 360 * 5 / (2 * Math.PI * g.r1)), R = g.ext + 9, half = R + 30;
+        var glow = el("div", "rw-glow", rw), gs = g.r1 * 2.3; glow.style.cssText = "width:" + gs + "px;height:" + gs + "px;left:" + -gs / 2 + "px;top:" + -gs / 2 + "px"; st.glow = glow;
+        var svg = document.createElementNS(NS, "svg"), u = "rw" + Date.now();
+        svg.setAttribute("class", "rw-svg"); svg.setAttribute("width", 2 * half); svg.setAttribute("height", 2 * half);
+        svg.setAttribute("viewBox", -half + " " + -half + " " + 2 * half + " " + 2 * half); svg.style.cssText = "left:" + -half + "px;top:" + -half + "px";
+        var h = "<defs><linearGradient id='" + u + "' x1='" + -g.r1 + "' y1='" + -g.r1 + "' x2='" + g.r1 + "' y2='" + g.r1 + "' gradientUnits='userSpaceOnUse'>" +
+            "<stop offset='0' stop-color='#fff2cf'/><stop offset='.3' stop-color='#e9bd62'/><stop offset='.58' stop-color='#b07a2a'/><stop offset='.8' stop-color='#e2b45a'/><stop offset='1' stop-color='#8d5f1d'/></linearGradient></defs>";
+        h += "<circle class='rw-track' r='" + g.r1.toFixed(2) + "' stroke-width='" + bw.toFixed(2) + "'/>";
+        for (var i = 0; i < n; i++) h += "<path class='rw-seg' data-i='" + i + "' d='" + arc(g.r1, i * step - step / 2 + gapDeg / 2, i * step + step / 2 - gapDeg / 2) + "' stroke='url(#" + u + ")' stroke-width='" + bw.toFixed(2) + "'/>";
+        for (i = 0; i < n; i++) {
+            var a0 = i * step - step / 2 + gapDeg / 2, a1 = i * step + step / 2 - gapDeg / 2;
+            h += "<path class='rw-edge' d='" + arc(g.r1 + bw / 2 - 0.5, a0, a1) + "' stroke='url(#" + u + ")'/><path class='rw-edge in' d='" + arc(g.r1 - bw / 2 + 0.5, a0, a1) + "' stroke='url(#" + u + ")'/>";
+        }
+        for (i = 0; i < n; i++) h += "<path class='rw-cap' data-i='" + i + "' d='" + arc(g.r1 + bw / 2 + 4, i * step - step / 2 + gapDeg / 2, i * step + step / 2 - gapDeg / 2) + "' stroke-width='" + Math.max(3, 4 * g.k).toFixed(1) + "'/>";
+        h += "<circle class='rw-outer' r='" + R.toFixed(2) + "'/>";
+        [45, 135, 225, 315].forEach(function (d) { var p = pos(R, d); h += "<circle class='rw-node' cx='" + p[0].toFixed(2) + "' cy='" + p[1].toFixed(2) + "' r='" + Math.max(3, 4 * g.k).toFixed(1) + "'/>"; });
+        var rn = g.r1 - bw / 2 - Math.max(9, 10 * g.k), fs = Math.max(8.5, Math.min(11, 9 * g.k));
+        for (i = 0; i < n; i++) { var p = pos(rn, i * step); h += "<text class='rw-n' data-i='" + i + "' x='" + p[0].toFixed(2) + "' y='" + p[1].toFixed(2) + "' style='font-size:" + fs.toFixed(1) + "px'>" + (i < 9 ? "0" : "") + (i + 1) + "</text>"; }
+        h += "<path id='" + u + "p' d='' fill='none'/><text class='rw-curve' style='font-size:" + Math.max(9, Math.min(12, 10 * g.k)).toFixed(1) + "px'><textPath href='#" + u + "p' startOffset='50%' text-anchor='middle'></textPath></text>";
+        svg.innerHTML = h; rw.appendChild(svg);
+        st.ring = { svg: svg, R: R, step: step, pathEl: svg.querySelector("[id='" + u + "p']"), tp: svg.querySelector("textPath") };
+        st.ring.tp.setAttributeNS("http://www.w3.org/1999/xlink", "xlink:href", "#" + u + "p");
+    }
+    function paintRing() {
+        var r = st.ring; if (!r) return;
+        var i = st.sector, segs = r.svg.querySelectorAll(".rw-seg, .rw-cap, .rw-n"), k;
+        for (k = 0; k < segs.length; k++) segs[k].classList.toggle("on", Number(segs[k].getAttribute("data-i")) === i);
+        var sec = i >= 0 ? st.list[i] : null;
+        if (st.glow) { st.glow.classList.toggle("on", !!sec); var gp = sec ? pos(st.g.r1 * 0.55, i * r.step) : [0, 0]; st.glow.style.transform = "translate(" + gp[0].toFixed(1) + "px," + gp[1].toFixed(1) + "px)"; }
+        if (r.shown === i) return; r.shown = i;
+        if (!sec) { r.tp.textContent = ""; return; }
+        // text along the outer circle, centred on the section; upright on both halves (clockwise on top, counter-clockwise below)
+        var a = i * r.step, top = Math.cos(a * Math.PI / 180) >= -0.01, span = 80, R = r.R;
+        r.pathEl.setAttribute("d", top ? arc(R, a - span, a + span) : (function () { var p0 = pos(R, a + span), p1 = pos(R, a - span); return "M" + p0[0].toFixed(2) + " " + p0[1].toFixed(2) + " A" + R + " " + R + " 0 0 0 " + p1[0].toFixed(2) + " " + p1[1].toFixed(2); })());
+        r.tp.textContent = sec.label;
     }
     function hideSheet() {
         if (!st || st.sheet.hidden) { if (st) setSector(-1); return; }
@@ -193,11 +239,13 @@
     function paint() {
         if (!st) return;
         st.tiles.forEach(function (t, i) { t.el.classList.toggle("active", i === st.sector); });
+        paintRing();
         Array.prototype.forEach.call(st.sheet.querySelectorAll(".rw-item"), function (b, j) { b.classList.toggle("hover", j === st.item); });
         var sec = st.sector >= 0 ? st.list[st.sector] : null, it = sec && sec.items && st.item >= 0 ? sec.items[st.item] : null;
         st.label.textContent = it ? it.t : sec ? sec.label : st.hoverOrb ? (window.NoirI18n ? NoirI18n.ui("Помощник") : "Помощник") : "NOIR";
         var ps = api.status ? api.status() : ["", ""], sel = st.sel && st.sel.noir ? (window.NoirI18n ? NoirI18n.ui("Выделено слоёв: ") : "Выделено слоёв: ") + st.sel.noir : "";
         st.status.textContent = sel || ps[1] || ""; st.orb.setAttribute("data-state", ps[0] || "");
+        if (st.orbArt) st.orbArt.classList.toggle("busy", ps[0] === "busy");
     }
 
     // ---------- input ----------

@@ -314,7 +314,7 @@ function layoutProblems() {
         // moving straight onto another tile switches the section at once, even while the pointer keeps moving
         const t4 = await page.locator(".rw-tile").nth(3).boundingBox();
         await page.mouse.move(t4.x + t4.width / 2 - 3, t4.y + t4.height / 2, { steps: 6 }); await page.mouse.move(t4.x + t4.width / 2 + 3, t4.y + t4.height / 2, { steps: 3 });
-        assert.ok(await page.locator(".rw-tile").nth(3).evaluate(e => e.classList.contains("active")), "раздел переключается сразу");
+        assert.ok(await page.locator(".rw-tile").nth(3).evaluate(e => e.classList.contains("active")), "раздел переключается сразу"); await shot("wheel-active");
                 await page.mouse.move(2, 2); await page.waitForTimeout(600);
         assert.strictEqual(await page.locator(".rw-sheet").isVisible(), false, "курсор ушёл — панель спряталась");
         await page.keyboard.press("Escape");
