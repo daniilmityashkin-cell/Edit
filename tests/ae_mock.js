@@ -156,6 +156,7 @@ class CompItem {
     this.layers = {
       addText(t) { const l = new TextLayer(self, t, self._fonts || []); self._l.unshift(l); return l; },
       addShape() { const l = new AVLayer(self, "Shape Layer"); self._l.unshift(l); return l; },
+      addNull() { const l = new AVLayer(self, "Null 1"); l.nullLayer = true; self._l.unshift(l); return l; },
       addSolid(color, name, w, h, pa, dur) { const l = new AVLayer(self, name); l.solidColor = color; l.solidSize = [w, h]; self._l.unshift(l); return l; },
       add(item) { const l = new AVLayer(self, item.name); l.source = item; l.hasAudio = true; self._l.unshift(l); return l; },
     };

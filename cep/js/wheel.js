@@ -72,7 +72,7 @@
             { label: "Стиль", icon: ICONS.style, items: presetItems(true).concat([{ t: "Применить текущий", run: run({ op: "applyStyle" }) }]) },
             { label: "Обновить", icon: ICONS.refresh, items: [{ t: "Обновить фразу", run: gen("phrase") }, { t: "Обновить все", run: gen("all") }, { t: "Превью фразы", run: gen("preview") }, { t: "Проверить", run: gen("check") }] },
             { label: "Ещё", icon: ICONS.more, items: [{ t: "Сделать акцентом", run: run({ op: "makeAccent" }) }, { t: "Сделать обычным", run: run({ op: "makeBase" }) }, { t: "Инверсия", run: act("layers.invert") },
-                { t: "Текст ▸", run: go("text") }, { t: "Правка ▸", run: go("edit") },
+                { t: "Пульт в AE", run: act("control.add", {}) }, { t: "Текст ▸", run: go("text") }, { t: "Правка ▸", run: go("edit") },
                 { t: "Удалить", danger: true, run: function () { if (window.confirm("Удалить субтитры? Отмена — Ctrl+Z в AE.")) return run({ op: "delete", confirmed: true })(); } }] }
         ];
     }
@@ -130,7 +130,9 @@
     function build(x, y, keyboard) {
         if (st.ov && st.ov.parentNode) st.ov.parentNode.removeChild(st.ov);
         st.cx0 = x; st.cy0 = y; st.sector = -1; st.item = -1;
+        var L = window.NoirI18n && NoirI18n.ui ? NoirI18n.ui : function (x) { return x; };
         var list = sectors(st.kind).slice(0, 8), n = list.length; st.list = list;
+        list.forEach(function (sec) { sec.label = L(sec.label); (sec.items || []).forEach(function (it) { it.t = L(it.t); }); });
         var ov = el("div", "noir-wheel" + (st.mode === "sticky" ? " sticky" : ""), document.body); ov.setAttribute("role", "menu"); ov.setAttribute("aria-label", "Радиальное меню NOIR"); st.ov = ov;
         var rw = el("div", "rw", ov); st.rw = rw;
         var ring = el("div", "rw-ring", rw); ring.style.cssText = "width:" + 2 * R1 + "px;height:" + 2 * R1 + "px;left:" + -R1 + "px;top:" + -R1 + "px";
@@ -184,8 +186,8 @@
         st.tiles.forEach(function (t, i) { t.el.classList.toggle("active", i === st.sector); });
         Array.prototype.forEach.call(st.items.children, function (b, j) { b.classList.toggle("hover", j === st.item); });
         var sec = st.sector >= 0 ? st.list[st.sector] : null, it = sec && sec.items && st.item >= 0 ? sec.items[st.item] : null;
-        st.label.textContent = it ? it.t : sec ? sec.label : st.hoverOrb ? "Помощник" : "NOIR";
-        var ps = api.status ? api.status() : ["", ""], sel = st.sel && st.sel.noir ? "Выделено слоёв: " + st.sel.noir : "";
+        st.label.textContent = it ? it.t : sec ? sec.label : st.hoverOrb ? (window.NoirI18n ? NoirI18n.ui("Помощник") : "Помощник") : "NOIR";
+        var ps = api.status ? api.status() : ["", ""], sel = st.sel && st.sel.noir ? (window.NoirI18n ? NoirI18n.ui("Выделено слоёв: ") : "Выделено слоёв: ") + st.sel.noir : "";
         st.status.textContent = sel || ps[1] || ""; st.orb.setAttribute("data-state", ps[0] || "");
     }
 

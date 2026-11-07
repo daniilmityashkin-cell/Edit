@@ -176,6 +176,58 @@ const accept = (a, mode) => { let r = a.call("generate", { mode: mode || "all" }
     accept(a, "phrase"); assert.strictEqual(a.state().phraseDirty, false); assert.strictEqual(a.state().dirty, false);
     assert.throws(() => a.call("word.time", { index: 9, start: 1 }), /Нет такого слова/);
   });
+  await test("пульт NOIR Control: слой со слайдерами; размер масштабирует фразу вокруг её центра, X/Y сдвигают; новые субтитры подключаются сами; убрать — отвязывает", () => {
+    const c = mkComp(), a = freshApp(); a.call("settings.set", { path: "style.layout.reveal", value: "karaoke" }); accept(a);
+    assert.strictEqual(a.state().control, false);
+    const n = a.call("control.add"); assert.ok(n > 0); assert.strictEqual(a.state().control, true);
+    const ctl = N.findControl(c); assert.ok(ctl && ctl.nullLayer && ctl.name === "NOIR Control");
+    assert.deepStrictEqual(ctl.effects.map(e => e.name), ["Размер", "Сдвиг X", "Сдвиг Y", "Цвет подсветки"]);
+    const animOf = (l) => l.textProps.property("ADBE Text Animators").kids.find(x => x.name === "NOIR Control");
+    const exprs = (l) => { const p = animOf(l).property("ADBE Text Animator Properties").kids; return { pos: p.find(k => k.matchName === "ADBE Text Position 3D").expression, sc: p.find(k => k.matchName === "ADBE Text Scale 3D").expression }; };
+    const run = (expr, v) => new Function("thisComp", "return eval(" + JSON.stringify(expr) + ")")({ layer: () => ({ effect: (nm) => () => v[nm] }) });
+    const ls = subs(c); assert.ok(ls.every(l => animOf(l)), "все субтитры подключены");
+    const v0 = { "Размер": 100, "Сдвиг X": 0, "Сдвиг Y": 0 }, v2 = { "Размер": 200, "Сдвиг X": 30, "Сдвиг Y": -40 };
+    ls.forEach(l => { assert.deepStrictEqual(run(exprs(l).pos, v0), [0, 0, 0]); assert.deepStrictEqual(run(exprs(l).sc, v2), [200, 200, 100]); });
+    // size 200%: each layer's visual centre goes to phraseCentre + 2·(base − phraseCentre), plus the X/Y shift
+    const gid = N.groupInfo(ls[0]).gid, block = ls.filter(l => N.groupInfo(l).gid === gid);
+    const box = block.map(l => { const b = N.baseOf(l), r = l.sourceRectAtTime(0); return { b, r }; });
+    const pc = [(Math.min(...box.map(x => x.b[0] - x.r.width / 2)) + Math.max(...box.map(x => x.b[0] + x.r.width / 2))) / 2, (Math.min(...box.map(x => x.b[1] - x.r.height / 2)) + Math.max(...box.map(x => x.b[1] + x.r.height / 2))) / 2];
+    block.forEach((l, i) => {
+      const { b, r } = box[i], cx = r.left + r.width / 2, cy = r.top + r.height / 2, off = run(exprs(l).pos, v2);
+      near(b[0] + cx + off[0] - cx + (2 - 1) * cx, pc[0] + 2 * (b[0] - pc[0]) + 30, 0.02); near(b[1] + off[1] + cy, pc[1] + 2 * (b[1] - pc[1]) - 40, 0.02);
+    });
+    const fills = ls.map(l => l.textProps.property("ADBE Text Animators").kids.find(x => x.name === "NOIR Karaoke")).filter(Boolean);
+    assert.ok(fills.length && fills.every(k => /Цвет подсветки/.test(k.property("ADBE Text Animator Properties").kids.find(p => p.matchName === "ADBE Text Fill Color").expression)), "караоке — цвет с пульта");
+    a.call("generate", { mode: "all", accept: true }); a.call("generate", { mode: "all", accept: true });
+    assert.ok(subs(c).length && subs(c).every(l => animOf(l)), "пересозданные субтитры тоже подключены");
+    a.call("control.remove"); assert.strictEqual(N.findControl(c), null);
+    assert.ok(subs(c).every(l => !animOf(l)), "аниматоры пульта убраны"); assert.strictEqual(a.state().control, false);
+    assert.throws(() => a.call("control.remove"), /нет пульта/);
+  });
+  await test("слова-паразиты: убираются, у остальных слов точный тайминг; фраза из одних паразитов не трогается; превью без изменений; отмена", () => {
+    const W = (t, a, b) => ({ text: t, start: a, end: b });
+    const a = freshApp({ schema: "noir-captions/1", language: "ru", segments: [
+      { words: [W("Ну,", 1, 1.2), W("это", 1.25, 1.4), W("эээ", 1.45, 1.6), W("важно.", 1.65, 2.1)] }, { words: [W("эм", 3, 3.2)] },
+      { words: [W("you", 4, 4.2), W("know", 4.2, 4.4), W("it", 4.5, 4.7), W("works", 4.7, 5)] }] });
+    const text0 = a.state().text, dry = a.call("text.fillers", { dry: true });
+    assert.strictEqual(dry.removed, 4); assert.strictEqual(dry.changes.length, 2); assert.strictEqual(a.state().text, text0, "превью ничего не меняет");
+    assert.deepStrictEqual(dry.changes.map(x => x.after), ["это важно.", "it works"]);
+    a.call("text.fillers", {});
+    assert.deepStrictEqual(a.state().text.split("\n"), ["это важно.", "эм", "it works"]);
+    let w = a.state().words; near(w[0].start, 1.25); near(w[0].end, 1.4); near(w[1].start, 1.65); near(w[1].end, 2.1);
+    a.call("phrase.select", { index: 2 }); w = a.state().words; near(w[0].start, 4.5); near(w[1].end, 5);
+    a.call("text.undo"); assert.strictEqual(a.state().text, text0); a.call("phrase.select", { index: 0 }); assert.strictEqual(a.state().words.length, 4);
+    assert.strictEqual(a.call("text.fillers", { words: ["важно"] }).removed, 1);
+  });
+  await test("текст от помощника (перевод, правка, эмодзи): одна отмена; то же число слов — точные тайминги; иначе — по длине слов с предупреждением; строки не теряются", () => {
+    const a = freshApp(), text0 = a.state().text, lines0 = text0.split("\n");
+    let r = a.call("text.replace", { text: ["Hello, this NOIR.🔥", lines0[1]].join("\n"), why: "перевод" });
+    assert.strictEqual(r.warnings.length, 0); let w = a.state().words; near(w[2].start, 1.5); near(w[2].end, 2.0); assert.ok(/🔥/.test(w[2].text));
+    r = a.call("text.replace", { text: ["Hi NOIR.", lines0[1]].join("\n") }); assert.strictEqual(r.warnings.length, 1);
+    w = a.state().words; near(w[0].start, 1); near(w[w.length - 1].end, 2);
+    a.call("text.undo"); a.call("text.undo"); assert.strictEqual(a.state().text, text0);
+    assert.throws(() => a.call("text.replace", { text: "одна строка" }), /Число строк/);
+  });
   await test("превью: отдельная композиция, исходник не меняется", () => {
     const c = mkComp({ duration: 12 }), a = freshApp(); let copy;
     c.duplicate = () => { copy = new mock.CompItem({ duration: 12 }); copy.openInViewer = () => { copy.opened = true; }; return copy; };

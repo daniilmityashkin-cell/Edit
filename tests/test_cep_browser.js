@@ -31,8 +31,17 @@ function layoutProblems() {
         if (cs.textOverflow === "ellipsis" || cs.overflow === "hidden" && e.classList.contains("btn-label")) return;
         if (e.scrollWidth > e.clientWidth + 1 && cs.overflowX !== "auto" && cs.overflowX !== "scroll") out.push("вылезает " + name(e) + " " + e.scrollWidth + ">" + e.clientWidth);
     });
+    // what is actually visible of an element: its box cut by every scrolling / clipping ancestor
+    const clipped = (e) => {
+        let r = e.getBoundingClientRect(), box = { left: r.left, top: r.top, right: r.right, bottom: r.bottom };
+        for (let p = e.parentElement; p && p !== document.body; p = p.parentElement) {
+            const cs = getComputedStyle(p); if (!/(auto|scroll|hidden)/.test(cs.overflow + cs.overflowX + cs.overflowY)) continue;
+            const q = p.getBoundingClientRect(); box = { left: Math.max(box.left, q.left), top: Math.max(box.top, q.top), right: Math.min(box.right, q.right), bottom: Math.min(box.bottom, q.bottom) };
+        }
+        return box;
+    };
     const leaves = [...scope.querySelectorAll(".btn-label, .icon, .field-label, input, select, textarea, .seg, .style-name, .range-value, .pill, .title, .orb-btn, .lead, .hint, .tl-word, .ready-title, .ready-hint, .pv-word")].filter(vis);
-    const rects = leaves.map(e => e.getBoundingClientRect());
+    const rects = leaves.map(clipped);
     for (let i = 0; i < leaves.length; i++) for (let j = i + 1; j < leaves.length; j++) {
         const a = leaves[i], b = leaves[j]; if (a.contains(b) || b.contains(a)) continue;
         if (!!a.closest(".sticky-actions") !== !!b.closest(".sticky-actions")) continue;   // the sticky action bar floats over the page by design
@@ -203,12 +212,26 @@ function layoutProblems() {
         await page.locator('.field[data-path="scope"] .seg[data-value="source"]').click(); await settle();
         await shot("edit");
     });
-    await step("настройки: готовность и распознавание здесь же; расширенный режим открывает параметры; число сохраняется в AE", async () => {
+    await step("пульт в AE: «Добавить пульт» создаёт слой со слайдерами и подключает субтитры; «Убрать пульт» отвязывает", async () => {
+        await tab("edit");
+        await page.getByRole("button", { name: "Добавить пульт" }).click(); await settle();
+        assert.ok(N.findControl(comp), "слой NOIR Control"); assert.strictEqual((await hostState()).control, true);
+        const linked = subs().filter(l => l.textProps.property("ADBE Text Animators").kids.some(x => x.name === "NOIR Control"));
+        assert.strictEqual(linked.length, subs().length);
+        assert.ok(await page.getByRole("button", { name: "Обновить привязку" }).isVisible());
+        await page.getByRole("button", { name: "Убрать пульт" }).click(); await settle();
+        assert.strictEqual(N.findControl(comp), null); assert.ok(await page.getByRole("button", { name: "Добавить пульт" }).isVisible());
+    });
+    await step("настройки: готовность и распознавание здесь же; вид панели — компактный / обычный / подробный; число сохраняется в AE", async () => {
         await tab("settings");
         assert.ok(await page.locator("#set-recognition .ready-row.ok").isVisible());
         assert.strictEqual(await page.locator('.field[data-path="style.layout.lineGap"]').isVisible(), false);
-        await page.locator('.field[data-path="advanced"] .switch').click();
+        await page.locator('.field[data-path="mode"] .seg[data-value="compact"]').click();
+        assert.ok(await page.evaluate(() => document.body.classList.contains("mode-compact")));
+        assert.strictEqual(await page.locator('#page-settings .hint').first().isVisible(), false, "в компактном виде пояснений нет");
+        await page.locator('.field[data-path="mode"] .seg[data-value="detailed"]').click();
         assert.ok(await page.locator('.field[data-path="style.layout.lineGap"]').isVisible());
+        assert.ok(!(await page.evaluate(() => document.body.classList.contains("mode-compact"))));
         const f = page.locator('.field[data-path="style.layout.maxWords"] input'); await f.fill("3"); await f.press("Tab"); await settle();
         assert.strictEqual((await hostState()).settings.style.layout.maxWords, 3);
         await shot("settings");
@@ -219,6 +242,12 @@ function layoutProblems() {
         await shot("settings-light");
         await page.locator('.field[data-path="lang"] .seg[data-value="en"]').click(); await settle();
         await page.waitForFunction(() => document.querySelector('.tab[data-page="text"]').textContent === "Text");
+        assert.strictEqual(await page.locator('.field[data-path="style.layout.maxWords"] .field-label').textContent(), "Words per phrase, max");
+        assert.strictEqual(await page.locator('.field[data-path="mode"] .seg[data-value="detailed"]').textContent(), "Detailed");
+        await page.evaluate(() => NoirHost.call("layers.invert").catch(() => {})); await settle();
+        await page.waitForSelector(".toast.show.error");
+        assert.strictEqual(await page.locator(".toast").textContent(), "Select text layers, SVG, images or shapes.", "сообщение AE по-английски");
+        await shot("english");
         await page.locator('.field[data-path="lang"] .seg[data-value="ru"]').click(); await settle();
         await page.evaluate(() => NoirTheme.apply([35, 35, 35]));
         const text = (await hostState()).text;
@@ -283,6 +312,67 @@ function layoutProblems() {
         assert.ok(calls.filter(c => c === "run").length > before);
         await page.keyboard.press("Escape");
     });
+    await step("помощник без ИИ: слова-паразиты и эмодзи — «было → стало», после «Применить» тайминги прочих слов на месте; «динамичнее» — план настроек", async () => {
+        const lines = (await hostState()).text.split("\n");
+        await page.evaluate((t) => NoirHost.call("text.replace", { text: t }), ["Ну, " + lines[0].split(" ").slice(1).join(" "), "Субтитры деньги"].join("\n")); await settle();
+        await page.evaluate(() => NoirHost.call("phrase.select", { index: 0 })); await settle();
+        const before = (await hostState()).words;
+        await page.evaluate(() => NoirAssistant.open());
+        const input = page.locator(".as-form input");
+        await input.fill("убери слова-паразиты"); await input.press("Enter");
+        await page.waitForSelector(".as-diff-row");
+        assert.ok(/^Ну,/.test(await page.locator(".as-diff-row del").first().textContent()));
+        await page.locator(".as-plan").last().locator(".btn.primary").click();
+        await page.waitForFunction(() => /Готово/.test([...document.querySelectorAll(".as-msg.note")].pop().textContent)); await settle();
+        const after = (await hostState()).words;
+        assert.strictEqual(after.length, before.length - 1); assert.ok(Math.abs(after[0].start - before[1].start) < 1e-9 && Math.abs(after[0].end - before[1].end) < 1e-9, "тайминг сохранён");
+        await input.fill("добавь эмодзи"); await input.press("Enter");
+        await page.waitForFunction(() => /💰/.test([...document.querySelectorAll(".as-diff-row ins")].map(e => e.textContent).join(" ")));
+        await page.locator(".as-plan").last().locator(".btn.primary").click(); await page.waitForTimeout(300); await settle();
+        assert.ok(/деньги💰/.test((await hostState()).text));
+        await input.fill("сделай динамичнее"); await input.press("Enter");
+        await page.waitForFunction(() => /Сила анимации/.test(document.querySelector(".as-plan:last-of-type") ? [...document.querySelectorAll(".as-plan")].pop().textContent : ""));
+        await page.locator(".as-plan").last().locator(".btn.primary").click(); await page.waitForTimeout(400); await settle();
+        const st = (await hostState()).settings; assert.strictEqual(st.quick.intensity, "1.5"); assert.strictEqual(st.style.anim.animIn, "pop");
+        await input.fill("переведи на английский"); await input.press("Enter");
+        await page.waitForFunction(() => /ИИ-модель/.test([...document.querySelectorAll(".as-msg")].pop().textContent));
+        await shot("assistant-text");
+        await page.keyboard.press("Escape");
+    });
+    await step("помощник с ИИ (заглушка Ollama): перевод — с сохранением строк; исправление ошибок — только строки с тем же числом слов", async () => {
+        const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "Content-Type", "Access-Control-Allow-Methods": "GET, POST, OPTIONS" };
+        await page.route("http://127.0.0.1:11434/**", async (route) => {
+            const req = route.request();
+            if (req.method() === "OPTIONS") return route.fulfill({ status: 204, headers: cors });
+            if (req.url().endsWith("/api/tags")) return route.fulfill({ status: 200, headers: Object.assign({ "Content-Type": "application/json" }, cors), body: JSON.stringify({ models: [{ name: "qwen2.5:7b" }] }) });
+            const body = JSON.parse(req.postData()), sys = body.messages[0].content, user = JSON.parse(body.messages[1].content);
+            let out;
+            if (/translate video subtitles/.test(sys)) out = { lines: user.lines.map(l => ({ i: l.i, text: "EN " + l.text })) };
+            else if (/fix speech-recognition/.test(sys)) out = { lines: user.lines.map(l => ({ i: l.i, text: l.i === 0 ? l.text.replace("НУАР.", "NOIR.") : l.text + " лишнее" })) };
+            else out = { say: "?", commands: [] };
+            return route.fulfill({ status: 200, headers: Object.assign({ "Content-Type": "application/json" }, cors), body: JSON.stringify({ message: { content: JSON.stringify(out) } }) });
+        });
+        await page.evaluate(() => NoirAssistant.setSettings({ endpoint: "http://127.0.0.1:11434" }));
+        await page.evaluate(() => NoirAssistant.open());
+        await page.waitForFunction(() => /qwen/.test(document.querySelector(".as-mode").textContent));
+        const input = page.locator(".as-form input"), text0 = (await hostState()).text;
+        await input.fill("исправь ошибки в тексте"); await input.press("Enter");
+        await page.waitForSelector(".as-diff-row");
+        assert.strictEqual(await page.locator(".as-diff-row").count(), 1, "строка с другим числом слов пропущена");
+        assert.ok(/пропущено: 1/.test(await page.locator(".as-plan").last().textContent()));
+        await page.locator(".as-plan").last().locator(".btn.primary").click(); await page.waitForTimeout(300); await settle();
+        assert.ok(/NOIR\./.test((await hostState()).text) && !/лишнее/.test((await hostState()).text));
+        await input.fill("переведи на английский"); await input.press("Enter");
+        await page.waitForFunction(() => document.querySelectorAll(".as-plan").length && /английский/.test([...document.querySelectorAll(".as-plan")].pop().textContent));
+        await page.locator(".as-plan").last().locator(".btn.primary").click(); await page.waitForTimeout(300); await settle();
+        const tr = (await hostState()).text.split("\n");
+        assert.strictEqual(tr.length, text0.split("\n").length, "строк столько же"); assert.ok(tr.every(l => /^EN /.test(l)), tr.join(" | "));
+        await page.evaluate(() => NoirHost.call("text.undo")); await settle();
+        assert.ok(!/^EN /.test((await hostState()).text), "перевод отменяется одной отменой");
+        await page.keyboard.press("Escape");
+        await page.evaluate(() => NoirAssistant.setSettings({ endpoint: "http://127.0.0.1:59999" }));
+        await page.unroute("http://127.0.0.1:11434/**");
+    });
     await step("узкая панель 300 px: без горизонтальной прокрутки, вкладки помещаются", async () => {
         await page.setViewportSize({ width: 300, height: 520 });
         for (const p of ["text", "style", "edit", "settings"]) {
@@ -295,12 +385,16 @@ function layoutProblems() {
     });
     await step("ничего не налезает: тексты, иконки, поля и слова таймлайна не пересекаются и не вылезают (все страницы, 4 ширины)", async () => {
         const problems = [];
-        for (const [w, h] of [[300, 560], [380, 640], [460, 700], [820, 760]]) {
-            await page.setViewportSize({ width: w, height: h });
-            for (const p of ["text", "style", "edit", "settings"]) {
-                await tab(p); await page.waitForTimeout(220);
-                (await page.evaluate(layoutProblems)).forEach(f => problems.push(w + "px " + p + ": " + f));
+        for (const mode of ["detailed", "compact"]) {
+            await page.evaluate((m) => { const b = document.querySelector('.field[data-path="mode"] .seg[data-value="' + m + '"]'); if (b) b.click(); }, mode);
+            for (const [w, h] of [[300, 560], [380, 640], [460, 700], [820, 760]]) {
+                await page.setViewportSize({ width: w, height: h });
+                for (const p of ["text", "style", "edit", "settings"]) {
+                    await tab(p); await page.waitForTimeout(220);
+                    (await page.evaluate(layoutProblems)).forEach(f => problems.push(mode + " " + w + "px " + p + ": " + f));
+                }
             }
+            await tab("settings");
         }
         await page.setViewportSize({ width: 460, height: 640 });
         const uniq = [...new Set(problems)]; if (uniq.length) console.log(uniq.map(x => "       · " + x).join("\n")); assert.strictEqual(uniq.length, 0, uniq.length + " problems");

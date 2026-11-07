@@ -10,7 +10,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
 (function (N) {
     var SECTION = "NOIR Captions";
     var SETTINGS_KEY = "settings.v2";
-    N.VERSION = "0.32.0";
+    N.VERSION = "0.33.0";
 
     function clone(o) { return N.parseJSON(N.stringify(o)); }
 
@@ -376,6 +376,10 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
                 var res = N.generate(comp, groups, outputStyle, outputStyle.anim, mode === "preview" ? true : (mode === "phrase" ? false : (S.replace ? key : false)));
                 N.applyPhraseOffsets(res.made, keepOffsets);
                 for (var ri = 0; ri < oldPhrase.length; ri++) oldPhrase[ri].remove();
+                if (mode !== "preview" && N.findControl(comp) && res.made.length) {        // new captions follow the control sliders too
+                    var madeLayers = []; for (var mi = 0; mi < res.made.length; mi++) madeLayers.push(res.made[mi].layer);
+                    N.linkControl(comp, madeLayers);
+                }
                 if (mode === "preview") { comp.openInViewer(); status("Превью создано отдельной композицией. Пробел — воспроизведение, Ctrl+Z — убрать."); return { preview: true }; }
                 var ls = lines();
                 if (mode === "phrase") { st.cleanLines[st.phrase] = ls[st.phrase]; delete st.timing[st.phrase]; } else { st.cleanLines = ls; st.timing = {}; }
@@ -490,6 +494,44 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
                 ls[i] = N.editorWords(ws);
             }
             st.text = ls.join("\n"); status("Выделено слов: " + changed + ". Обновите субтитры, чтобы применить."); return st.status;
+        }
+
+        // ---------- filler words ----------
+        var FILLERS = ["э", "ээ", "эээ", "эм", "эмм", "мм", "ммм", "хм", "ну", "типа", "короче", "как бы", "это самое", "так сказать", "в общем-то",
+            "uh", "um", "uhm", "umm", "erm", "er", "hmm", "you know", "i mean"];
+        function bare(w) { return String(w).toLowerCase().replace(/ё/g, "е").replace(/[^a-zа-я0-9\- ]/g, ""); }
+        function fillers(list, dry) {
+            var set = {}, i, si, removed = 0, changes = [], ls = lines(), snapshot = { text: st.text, data: clone(st.data), timingAll: clone(st.timing) };
+            list = list && list.length ? list : FILLERS;
+            for (i = 0; i < list.length; i++) set[bare(list[i])] = true;
+            for (si = 0; si < st.data.segments.length && si < ls.length; si++) {
+                var pw = N.parseLine(ls[si]);
+                if (!pw.length) continue;
+                var drop = [], k;
+                for (k = 0; k < pw.length; k++) {
+                    if (drop[k]) continue;
+                    if (k + 1 < pw.length && set[bare(pw[k].text) + " " + bare(pw[k + 1].text)]) { drop[k] = drop[k + 1] = true; continue; }
+                    if (set[bare(pw[k].text)]) drop[k] = true;
+                }
+                var keep = [], n = 0;
+                for (k = 0; k < pw.length; k++) if (!drop[k]) keep.push(k); else n++;
+                if (!n || !keep.length) continue;                                 // nothing to drop, or the phrase is only fillers: leave it
+                var before = ls[si], kept = [], carry = { lineBefore: false, breakBefore: false };
+                for (k = 0; k < pw.length; k++) {
+                    if (drop[k]) { carry.lineBefore = carry.lineBefore || pw[k].lineBefore; carry.breakBefore = carry.breakBefore || pw[k].breakBefore; continue; }
+                    var w = pw[k]; if (carry.lineBefore) w.lineBefore = true; if (carry.breakBefore && kept.length) w.breakBefore = true;
+                    carry = { lineBefore: false, breakBefore: false }; kept.push(w);
+                }
+                ls[si] = N.editorWords(kept); removed += n;
+                changes.push({ phrase: si, before: before, after: ls[si] });
+                if (!dry) {
+                    var ws = commitPhrase(si), nw = [];
+                    for (k = 0; k < keep.length; k++) nw.push(ws[keep[k]]);
+                    st.data.segments[si].words = nw;
+                }
+            }
+            if (!dry && removed) { st.history.push(snapshot); if (st.history.length > 30) st.history.shift(); st.text = ls.join("\n"); st.issues = []; st.pending = null; }
+            return { removed: removed, changes: changes };
         }
 
         // ---------- readiness: what recognition needs on this computer ----------
@@ -714,6 +756,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
                 if (!st.history.length) throw new Error("Нет правок кнопками для отмены. В поле текста используйте Ctrl+Z.");
                 var h = st.history.pop();
                 if (typeof h === "string") st.text = h;
+                else if (h.data) { st.text = h.text; st.data = h.data; st.timing = h.timingAll; }
                 else { st.text = h.text; st.data.segments[h.si].words = h.words; if (h.timing) st.timing[h.si] = true; else delete st.timing[h.si]; }
                 status("Правка отменена."); return true;
             },
@@ -723,6 +766,23 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
                 st.phrase = i; if (a.seek) seek(i); return i;
             },
             "phrase.seek": function () { seek(st.phrase); return true; },
+            // Whole text from the assistant (translation, corrections, emoji): one undo step. Lines must stay one per phrase.
+            "text.replace": function (a) {
+                if (!st.data) throw new Error("Нет текста.");
+                var t = String(a.text || "").replace(/\r\n?/g, "\n"), warnings = [];
+                N.applyEdits(st.data, t, warnings);                 // throws if the number of lines changed
+                if (t === st.text) { status("Текст не изменился."); return { changed: 0, warnings: [] }; }
+                remember(); st.text = t; st.issues = []; st.pending = null;
+                status("Текст изменён" + (a.why ? ": " + String(a.why).substr(0, 80) : "") + ". Отмена — «Отменить правку»." + (warnings.length ? " Число слов изменилось в " + warnings.length + " " + (warnings.length === 1 ? "фразе" : "фразах") + ": тайминги там распределены по длине слов." : ""));
+                return { changed: 1, warnings: warnings };
+            },
+            // Filler words out, every other word keeps its exact timing. dry: only report what would change.
+            "text.fillers": function (a) {
+                if (!st.data) throw new Error("Нет текста.");
+                var r = fillers(a.words, !!a.dry);
+                if (!a.dry) status(r.removed ? "Убрано слов-паразитов: " + r.removed + ". Тайминги остальных слов не изменились." : "Слов-паразитов не найдено.");
+                return r;
+            },
             "word.seek": function (a) { seek(st.phrase, Number(a.index) || 0); return true; },
             // Word timing of the selected phrase, in seconds of the source (as state().words show it). Neighbours give way so that
             // words stay in order and at least 40 ms long. One undo step per edit (text.undo).
@@ -835,6 +895,19 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
                 return undo("маска по тексту", function () { var o = clone(S.tools.mask); o.color = S.style.base.color; var r = N.maskTextLayers(comp, texts, source, o); status("Масок создано: " + r.made.length); return r.made.length; });
             },
             "tool.maskRemove": function () { var comp = activeComp(); return undo("убрать маски", function () { var n = N.removeMasks(comp); status("Убрано масок: " + n); return n; }); },
+            "control.add": function (a) {
+                var sel = scopeLayers(a.scope);
+                return undo("пульт NOIR Control", function () {
+                    var c = N.addControl(sel.comp, S.style.anim.highlightColor || S.style.accent.color), r = N.linkControl(sel.comp, sel.layers);
+                    status((c.made ? "Пульт «NOIR Control» добавлен" : "Пульт «NOIR Control» обновлён") + ": субтитров подключено " + r.linked + ". Меняйте слайдеры слоя NOIR Control в Effect Controls.");
+                    return r.linked;
+                });
+            },
+            "control.remove": function () {
+                var comp = activeComp();
+                if (!N.findControl(comp)) throw new Error("В этой композиции нет пульта NOIR Control.");
+                return undo("убрать пульт", function () { var r = N.unlinkControl(comp); status("Пульт убран, субтитры отвязаны: " + r.unlinked + "."); return r.unlinked; });
+            },
             "safe.guides": function (a) { var comp = activeComp(); return undo("безопасные зоны", function () { var r = N.safeGuides(comp, a.format || S.format, !!a.remove); status(r.removed ? "Направляющие убраны." : "Направляющие безопасной зоны: " + r.name); return r; }); },
             "previews.remove": function () {
                 var count = 0;
@@ -892,6 +965,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             for (var i = 1; i <= comp.numLayers; i++) { var info = N.groupInfo(comp.layer(i)); if (info && info.sourceKey === key) return true; }
             return false;
         }
+        function hasControl() { try { var c = app.project.activeItem; return c instanceof CompItem && !!N.findControl(c); } catch (e) { return false; } }
         function state() {
             var ls = lines(), phrases = [], words = [], i;
             if (st.data) for (i = 0; i < st.data.segments.length; i++) phrases.push(String(i + 1) + " · " + (ls[i] || "").substr(0, 48));
@@ -900,7 +974,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             return { version: N.VERSION, status: st.status, progress: st.progress, recognizing: st.recognizing, scanning: st.scanning,
                 hasData: !!st.data, dataRevision: st.dataRevision, text: st.text, dirty: dirty(), phraseDirty: !!st.data && (ls[st.phrase] !== st.cleanLines[st.phrase] || !!st.timing[st.phrase]),
                 phrase: st.phrase, phrases: phrases, words: words, canUpdate: canUpdate(), completed: st.completed, issues: st.issues, pending: !!st.pending,
-                settings: S, face: st.face, historyLength: st.history.length };
+                settings: S, face: st.face, historyLength: st.history.length, control: hasControl() };
         }
 
         return {

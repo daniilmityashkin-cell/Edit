@@ -8,6 +8,13 @@
     var meta = null, presets = [], S = null, page = "text", view = {}, lastMode = "all", seenRevision = -1, lastStatus = null, ready = null;
     var prefs = (function () { try { return JSON.parse(localStorage.getItem("noir.ui.v1")) || {}; } catch (e) { return {}; } })();
     function savePrefs() { try { localStorage.setItem("noir.ui.v1", JSON.stringify(prefs)); } catch (e) {} }
+    // Panel view: compact (no explanations, tighter), normal, detailed (every parameter, tools and sounds). Old "advanced" = detailed.
+    if (!prefs.mode) prefs.mode = prefs.advanced ? "detailed" : "normal";
+    function detailed() { return prefs.mode === "detailed"; }
+    function applyMode() {
+        document.body.classList.toggle("adv-on", detailed());
+        document.body.classList.toggle("mode-compact", prefs.mode === "compact");
+    }
     function noop() {}
     function label(btn, text) { var s = btn.querySelector(".btn-label") || el("span", "btn-label", btn); if (s.textContent !== text) s.textContent = text; }
     function openUrl(url) { try { if (window.cep && window.cep.util && window.cep.util.openURLInDefaultBrowser) { window.cep.util.openURLInDefaultBrowser(url); return; } } catch (e) {} window.open(url, "_blank"); }
@@ -24,17 +31,18 @@
             if (!r) return r;
             if (r.pending) { showIssues(true); return r; }
             if (r.issues && mode === "check") { showIssues(true); return r; }
-            if (r.created !== undefined) U.toast((mode === "phrase" ? "Фраза обновлена" : "Готово") + ": " + r.created + " " + plural(r.created, "слой", "слоя", "слоёв") + (r.warnings && r.warnings.length ? "\n" + r.warnings.join("\n") : ""), "ok", r.warnings && r.warnings.length ? 7000 : 3200);
+            if (r.created !== undefined) U.toast(L(mode === "phrase" ? "Фраза обновлена" : "Готово") + ": " + r.created + " " + L(plural(r.created, "слой", "слоя", "слоёв")) + (r.warnings && r.warnings.length ? "\n" + r.warnings.join("\n") : ""), "ok", r.warnings && r.warnings.length ? 7000 : 3200);
             return r;
         });
     }
+    function L(s) { return NoirI18n.ui(s); }
     function plural(n, one, few, many) { var m10 = n % 10, m100 = n % 100; return m10 === 1 && m100 !== 11 ? one : m10 >= 2 && m10 <= 4 && (m100 < 10 || m100 >= 20) ? few : many; }
 
     // ---------- shell ----------
     function build() {
         root.textContent = ""; view = { text: {}, style: {}, edit: {}, settings: {}, readiness: [] }; seenText = null; textDirty = false;
         NoirI18n.set(S && S.settings.lang);
-        document.body.classList.toggle("adv-on", !!prefs.advanced);
+        applyMode();
         var shell = el("div", "shell", root);
         var top = el("header", "topbar", shell);
         var orb = el("button", "orb-btn", top); orb.type = "button"; orb.setAttribute("aria-label", t("menu.open")); orb.title = t("menu.open");
@@ -122,8 +130,8 @@
                 if (it.ok) return;
                 var row = el("div", "ready-row" + (it.optional ? " optional" : " bad"), box);
                 U.icon(it.optional ? "info" : "warn", row);
-                var txt = el("div", "ready-text", row); el("span", "ready-title", txt, it.title); if (it.hint) el("span", "ready-hint", txt, it.hint);
-                if (it.fix && ready.windows) U.button(it.fixLabel, "small" + (it.optional ? " ghost" : ""), row, function () { act(it.fix).then(function (f) { if (f) { U.toast(t("ready.running"), "", 6000); watchSetup(); } }); });
+                var txt = el("div", "ready-text", row); el("span", "ready-title", txt, NoirI18n.host(it.title)); if (it.hint) el("span", "ready-hint", txt, NoirI18n.host(it.hint));
+                if (it.fix && ready.windows) U.button(NoirI18n.host(it.fixLabel), "small" + (it.optional ? " ghost" : ""), row, function () { act(it.fix).then(function (f) { if (f) { U.toast(t("ready.running"), "", 6000); watchSetup(); } }); });
                 if (it.id === "engine" && it.python === false) U.button(t("ready.python"), "small ghost", row, function () { openUrl("https://www.python.org/downloads/"); });
             });
             var again = U.row(box, "ready-actions"); U.button(t("ready.recheck"), "small ghost", again, function () { checkReadiness(); }, "refresh");
@@ -144,7 +152,7 @@
         var grid = el("div", "grid2", c);
         U.field(grid, { path: "language", label: t("video.language"), kind: "select", options: meta.languages });
         U.field(grid, { path: "model", label: t("video.model"), kind: "select", options: meta.models, commit: function (v) { set("model", v).then(checkReadiness); } });
-        U.field(c, { path: "device", label: t("video.device"), kind: "segmented", options: meta.devices.map(function (d) { return { id: d.id, label: d.id === "auto" ? "Авто" : d.id === "cuda" ? "GPU" : "CPU" }; }) });
+        U.field(c, { path: "device", label: t("video.device"), kind: "segmented", options: meta.devices.map(function (d) { return { id: d.id, label: d.id === "auto" ? L("Авто") : d.id === "cuda" ? "GPU" : "CPU" }; }) });
         U.field(c, { path: "prompt", label: t("video.prompt"), kind: "text", hint: t("video.promptHint"), placeholder: "NOIR, After Effects, …" });
     }
     function buildText(p) {
@@ -336,7 +344,7 @@
         var head = U.row(box, "issues-head"); U.icon("warn", head); el("b", "", head, t("issues.title")); el("span", "spacer", head);
         U.iconButton("close", "×", head, function () { showIssues(false); });
         list.forEach(function (it) {
-            var r = U.row(box, "issue"); el("span", "", r, it.message);
+            var r = U.row(box, "issue"); el("span", "", r, NoirI18n.host(it.message));
             if (it.segment !== undefined) U.button(t("text.phrase") + " " + (it.segment + 1), "ghost small", r, function () { go("text"); act("phrase.select", { index: it.segment }); });
             else if (it.code === "font" || it.code === "font_unknown") U.button(t("set.font"), "ghost small", r, function () { go("settings", false, "set-font"); });
             else if (it.code === "safe_area") U.button(t("style.position"), "ghost small", r, function () { go("style", false, "style-quick"); });
@@ -468,7 +476,7 @@
             var pick = el("button", "style-pick", card); pick.type = "button"; pick.setAttribute("aria-pressed", String(p.id === chosen)); pick.setAttribute("aria-label", p.name);
             pick.title = p.description + (missing ? "\n" + t("style.noFontLong", { fonts: p.missing.join(", ") }) : "");
             var pv = el("span", "style-preview", pick);
-            sample(pv, p.base, "Ваш", false); sample(pv, p.base, "новый", false); sample(pv, p.accent, "текст", true);
+            sample(pv, p.base, L("Ваш"), false); sample(pv, p.base, L("новый"), false); sample(pv, p.accent, L("текст"), true);
             var nm = el("span", "style-name", pick);
             if (missing) { var warn = U.icon("warn", nm); warn.setAttribute("class", "icon nofont"); pick.setAttribute("aria-label", p.name + " — " + t("style.noFont")); }
             el("span", "", nm, p.name);
@@ -481,7 +489,7 @@
             star.setAttribute("aria-pressed", String(fav.indexOf(p.id) >= 0));
             if (p.id === replay) setTimeout(function () { playPreview(card, p, false); }, 30);
         });
-        if (!list.length) el("p", "muted", v.grid, filter === "fav" ? "Отметьте стили звёздочкой." : "Здесь появятся ваши стили.");
+        if (!list.length) el("p", "muted", v.grid, L(filter === "fav" ? "Отметьте стили звёздочкой." : "Здесь появятся ваши стили."));
     }
 
     // ---------- edit ----------
@@ -512,6 +520,11 @@
         U.button(t("edit.faceAvoid"), "", fr, function () { run({ op: "avoidFace" }); }, "face");
         U.button(t("edit.behind"), "ghost", fr, function () { run({ op: "behind" }); }, "user");
         v.face = el("span", "muted small", fr);
+        var ctl = section(p, "edit-control", t("ctl.title"));
+        el("p", "lead", ctl, t("ctl.lead"));
+        var cr = U.row(ctl, "actions wrap");
+        v.ctlAdd = U.button(t("ctl.add"), "", cr, function () { act("control.add", {}); }, "edit");
+        v.ctlRemove = U.button(t("ctl.remove"), "ghost", cr, function () { if (window.confirm(t("ctl.removeAsk"))) act("control.remove"); }, "trash");
         var time = section(p, "edit-time", t("edit.time"));
         var tg = el("div", "grid3", time);
         [["edit.earlier", { shift: -1 }], ["edit.inMinus", { dIn: -1 }], ["edit.outMinus", { dOut: -1 }], ["edit.later", { shift: 1 }], ["edit.inPlus", { dIn: 1 }], ["edit.outPlus", { dOut: 1 }]].forEach(function (x) {
@@ -561,13 +574,14 @@
         U.button(t("edit.sfxRemove"), "ghost", xr, function () { act("sfx.remove"); });
         U.button(t("edit.sfxFolder"), "ghost", xr, function () { act("sfx.folder"); }, "folder");
         v.loadSfx = function () {
-            if (v.sfxLoaded || !prefs.advanced) return; v.sfxLoaded = true;
+            if (v.sfxLoaded || !detailed()) return; v.sfxLoaded = true;
             H.call("sfx.list", {}, true).then(function (r) { v.sfxNames = (r.names || []).map(function (n) { return { id: r.files && r.files[n] ? r.files[n] : n, label: n }; }); if (S) U.refresh(S); }).catch(noop);
         };
     }
     function renderEdit() {
         var f = S.face;
-        view.edit.face.textContent = f ? "Лицо: " + Math.round((f.x + f.w / 2) * 100) + "% × " + Math.round((f.y + f.h / 2) * 100) + "%" : "";
+        label(view.edit.ctlAdd, S.control ? t("ctl.relink") : t("ctl.add")); view.edit.ctlRemove.hidden = !S.control;
+        view.edit.face.textContent = f ? L("Лицо: ") + Math.round((f.x + f.w / 2) * 100) + "% × " + Math.round((f.y + f.h / 2) * 100) + "%" : "";
     }
 
     // ---------- settings ----------
@@ -640,14 +654,15 @@
 
         var proj = U.card(p, t("set.project"));
         U.field(proj, { path: "lang", label: t("set.uiLang"), kind: "segmented", options: [{ id: "ru", label: "Русский" }, { id: "en", label: "English" }], commit: function (l) { set("lang", l); } });
-        U.field(proj, { path: "advanced", label: t("set.advanced"), kind: "toggle", hint: t("set.advancedHint"), value: function () { return !!prefs.advanced; }, commit: function (on) { prefs.advanced = !!on; savePrefs(); document.body.classList.toggle("adv-on", !!on); if (on && view.edit.loadSfx) view.edit.loadSfx(); } });
+        U.field(proj, { path: "mode", label: t("set.mode"), kind: "segmented", hint: t("set.modeHint"), options: [{ id: "compact", label: t("mode.compact") }, { id: "normal", label: t("mode.normal") }, { id: "detailed", label: t("mode.detailed") }],
+            value: function () { return prefs.mode; }, commit: function (m) { prefs.mode = m; savePrefs(); applyMode(); if (detailed() && view.edit.loadSfx) view.edit.loadSfx(); if (S) U.refresh(S); } });
         U.field(proj, { path: "replace", label: "Новое создание заменяет субтитры того же видео", kind: "toggle" });
         U.field(proj, { path: "reflow", label: "Перекладывать фразы после смены стиля", kind: "toggle", adv: true });
         var pr = U.row(proj, "actions wrap");
         U.button(t("set.previews"), "ghost adv", pr, function () { if (window.confirm(t("confirm.previews"))) act("previews.remove"); }, "trash");
         U.button(t("set.log"), "ghost", pr, function () { H.call("log").then(showLog).catch(noop); });
         v.log = el("pre", "log", proj); v.log.hidden = true;
-        el("p", "muted small about", p, "NOIR Captions " + meta.version + " · распознавание на этом компьютере (faster-whisper) · помощник — локальная модель Ollama · иконки Lucide (ISC).");
+        el("p", "muted small about", p, "NOIR Captions " + meta.version + " · " + t("set.aboutText"));
     }
     function showLog(list) {
         var box = view.settings.log; box.hidden = false;
@@ -697,13 +712,13 @@
         if (!view.pill) { lastStatus = st.status; return; }
         if (langChanged) { build(); return; }
         // Results of actions appear once as a toast (no separate status line); progress lives in the pill and the top line.
-        if (st.status !== lastStatus && !st.recognizing && lastStatus !== null) U.toast(st.status);
+        if (st.status !== lastStatus && !st.recognizing && lastStatus !== null) U.toast(NoirI18n.host(st.status));
         lastStatus = st.status;
         if (newData && page !== "text") go("text");
         if (modelChanged) checkReadiness();
         render();
     });
-    H.on("error", function (msg) { U.toast(msg, "error"); if (view.pill) render(); });
+    H.on("error", function (msg) { U.toast(NoirI18n.host(msg), "error"); if (view.pill) render(); });
 
     // ---------- start ----------
     if (!H.available) { var m = el("div", "boot", root); el("p", "", m, t("err.noCep")); return; }
@@ -713,6 +728,6 @@
         root.removeAttribute("aria-busy");
         build();
         checkReadiness();
-    }).catch(function (e) { boot.textContent = ""; el("p", "", boot, String(e && e.message || e)); U.button("Повторить", "", boot, function () { location.reload(); }); });
+    }).catch(function (e) { boot.textContent = ""; el("p", "", boot, String(e && e.message || e)); U.button(L("Повторить"), "", boot, function () { location.reload(); }); });
     window.NoirApp = { go: go, state: function () { return S; }, page: function () { return page; }, presets: function () { return presets; }, readiness: function () { return ready; } };
 })();

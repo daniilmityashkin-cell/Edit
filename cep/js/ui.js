@@ -2,7 +2,7 @@
    A bound control sends "settings.set" on change and is refreshed from the host state (never while it has focus). */
 (function () {
     "use strict";
-    var t = function (k, v) { return NoirI18n.t(k, v); };
+    var t = function (k, v) { return NoirI18n.t(k, v); }, L = function (s) { return NoirI18n.ui ? NoirI18n.ui(s) : s; };
     var NS = "http://www.w3.org/2000/svg";
     // Icons: Lucide subset in js/icons.js (24×24 grid, 2 px stroke scaled to the icon size by CSS).
     var ALIAS = { text: "captions", style: "palette", spark: "sparkles", video: "mic" };
@@ -50,7 +50,7 @@
         var wrap = el(spec.kind === "toggle" ? "label" : "div", "field field-" + spec.kind + (spec.adv ? " adv" : ""), parent), input, out;
         wrap.dataset.path = spec.path;
         var id = "f-" + spec.path.replace(/[^a-z0-9]/gi, "-");
-        if (spec.kind !== "toggle") { var lab = el("label", "field-label", wrap, spec.label); lab.htmlFor = id; }
+        if (spec.kind !== "toggle") { var lab = el("label", "field-label", wrap, L(spec.label)); lab.htmlFor = id; }
         function commit(v) { if (spec.map && spec.map.out) v = spec.map.out(v); if (spec.commit) spec.commit(v); else sendSetting(spec.path, v); }
         switch (spec.kind) {
             case "select":
@@ -58,7 +58,7 @@
                 input.addEventListener("change", function () { commit(input.value); });
                 break;
             case "segmented":
-                input = el("div", "segmented", wrap); input.setAttribute("role", "radiogroup"); input.setAttribute("aria-label", spec.label);
+                input = el("div", "segmented", wrap); input.setAttribute("role", "radiogroup"); input.setAttribute("aria-label", L(spec.label));
                 break;
             case "number": case "text":
                 input = el(spec.multiline ? "textarea" : "input", "input", wrap); input.id = id;
@@ -78,7 +78,7 @@
                 break;
             case "toggle":
                 input = el("input", "switch", wrap); input.type = "checkbox"; input.id = id;
-                el("span", "field-label", wrap, spec.label);
+                el("span", "field-label", wrap, L(spec.label));
                 input.addEventListener("change", function () { commit(input.checked); });
                 break;
             case "color":
@@ -86,7 +86,7 @@
                 input.addEventListener("change", function () { commit(fromHex(input.value)); });
                 break;
         }
-        if (spec.hint) el("p", "hint", wrap, spec.hint);
+        if (spec.hint) el("p", "hint", wrap, L(spec.hint));
         var b = { spec: spec, wrap: wrap, input: input, out: out, last: undefined };
         bindings.push(b);
         var st = getState(); if (st) refreshOne(b, st);
@@ -101,9 +101,9 @@
             if (b.sig !== sig) {
                 b.sig = sig; input.textContent = "";
                 opts.forEach(function (o) {
-                    if (s.kind === "select") { var op = el("option", "", input, o.label); op.value = o.id; }
+                    if (s.kind === "select") { var op = el("option", "", input, L(o.label)); op.value = o.id; }
                     else {
-                        var btn = el("button", "seg", input, o.label); btn.type = "button"; btn.dataset.value = o.id; btn.setAttribute("role", "radio");
+                        var btn = el("button", "seg", input, L(o.label)); btn.type = "button"; btn.dataset.value = o.id; btn.setAttribute("role", "radio");
                         btn.addEventListener("click", function () { var v = s.map && s.map.out ? s.map.out(o.id) : o.id; if (s.commit) s.commit(v); else sendSetting(s.path, v); });
                     }
                 });

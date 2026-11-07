@@ -1236,6 +1236,97 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         { id: "square", label: "Квадрат 1:1", safe: { top: 0.06, bottom: 0.06, left: 0.06, right: 0.06 } },
         { id: "wide", label: "Горизонталь 16:9", safe: { top: 0.1, bottom: 0.1, left: 0.1, right: 0.1 } }
     ];
+    // ---------- NOIR Control: a null layer with sliders that drives the captions inside AE, without the panel ----------
+    // Each caption gets a text animator "NOIR Control" whose Position and Scale follow the sliders by expressions:
+    // size scales every phrase around its own centre, X/Y move everything; karaoke highlight colour follows the colour control.
+    N.CONTROL_TAG = "noir-captions:control";
+    N.CONTROL_NAME = "NOIR Control";
+    N.CONTROLS = { size: "Размер", x: "Сдвиг X", y: "Сдвиг Y", color: "Цвет подсветки" };
+    N.findControl = function (comp) {
+        for (var i = 1; i <= comp.numLayers; i++) if (String(comp.layer(i).comment || "") === N.CONTROL_TAG) return comp.layer(i);
+        return null;
+    };
+    function effectByName(layer, name) {
+        var fx = layer.property("ADBE Effect Parade");
+        for (var i = 1; i <= fx.numProperties; i++) if (fx.property(i).name === name) return fx.property(i);
+        return null;
+    }
+    N.addControl = function (comp, highlight) {
+        var c = N.findControl(comp), made = false;
+        if (!c) {
+            c = comp.layers.addNull(comp.duration); made = true;
+            c.comment = N.CONTROL_TAG; c.label = 9;
+            try { c.startTime = 0; c.inPoint = 0; c.outPoint = comp.duration; } catch (eT) {}
+        }
+        c.name = N.CONTROL_NAME;
+        var fx = c.property("ADBE Effect Parade"), list = [[N.CONTROLS.size, 100], [N.CONTROLS.x, 0], [N.CONTROLS.y, 0]];
+        for (var i = 0; i < list.length; i++) if (!effectByName(c, list[i][0])) {
+            var e = fx.addProperty("ADBE Slider Control"); e.name = list[i][0]; e.property("ADBE Slider Control-0001").setValue(list[i][1]);
+        }
+        if (!effectByName(c, N.CONTROLS.color)) {
+            var col = fx.addProperty("ADBE Color Control"); col.name = N.CONTROLS.color;
+            var h = highlight || [1, 0.85, 0.2]; col.property("ADBE Color Control-0001").setValue([h[0], h[1], h[2], 1]);
+        }
+        return { layer: c, made: made };
+    };
+    function ctlRef(name) { return 'thisComp.layer("' + N.CONTROL_NAME + '").effect("' + name + '")(1)'; }
+    function removeAnimator(layer, name) {
+        try {
+            var an = layer.property("ADBE Text Properties").property("ADBE Text Animators");
+            for (var i = an.numProperties; i >= 1; i--) if (String(an.property(i).name) === name) an.property(i).remove();
+        } catch (e) {}
+    }
+    function karaokeFill(layer) {
+        try {
+            var an = layer.property("ADBE Text Properties").property("ADBE Text Animators");
+            for (var i = 1; i <= an.numProperties; i++) if (String(an.property(i).name) === "NOIR Karaoke") {
+                var props = an.property(i).property("ADBE Text Animator Properties");
+                for (var j = 1; j <= props.numProperties; j++) if (props.property(j).matchName === "ADBE Text Fill Color") return props.property(j);
+            }
+        } catch (e) {}
+        return null;
+    }
+    N.linkControl = function (comp, layers) {
+        if (!N.findControl(comp)) throw new Error("В композиции нет пульта NOIR Control.");
+        var blocks = phraseBlocks(comp, layers), linked = 0, seen = {};
+        for (var b = 0; b < blocks.length; b++) {
+            var pc = blockCenter(blocks[b]);
+            for (var i = 0; i < blocks[b].length; i++) {
+                var l = blocks[b][i];
+                if (!(l instanceof TextLayer) || !N.isGenerated(l) || seen[l.index]) continue;
+                seen[l.index] = true;
+                var base = N.baseOf(l), r = l.sourceRectAtTime(Math.max(0, l.inPoint), false);
+                // offset = (s−1)·(base − phrase centre − own centre): scaling around the phrase centre, the animator pivots at the text origin
+                var vx = Math.round((base[0] - pc[0] - (r.left + r.width / 2)) * 100) / 100, vy = Math.round((base[1] - pc[1] - (r.top + r.height / 2)) * 100) / 100;
+                removeAnimator(l, "NOIR Control");
+                try {
+                    var an = l.property("ADBE Text Properties").property("ADBE Text Animators").addProperty("ADBE Text Animator");
+                    an.name = "NOIR Control";
+                    try { an.property("ADBE Text Selectors").addProperty("ADBE Text Selector"); } catch (eSel) {}
+                    var props = an.property("ADBE Text Animator Properties");
+                    props.addProperty("ADBE Text Position 3D").expression = "var s=" + ctlRef(N.CONTROLS.size) + "/100;[" + ctlRef(N.CONTROLS.x) + "+(s-1)*" + vx + "," + ctlRef(N.CONTROLS.y) + "+(s-1)*" + vy + ",0]";
+                    props.addProperty("ADBE Text Scale 3D").expression = "var s=" + ctlRef(N.CONTROLS.size) + ";[s,s,100]";
+                } catch (eAn) { continue; }
+                var fill = karaokeFill(l); if (fill) fill.expression = ctlRef(N.CONTROLS.color);
+                linked++;
+            }
+        }
+        return { linked: linked };
+    };
+    // Bakes nothing: the captions return to the look without the sliders; the control layer is removed.
+    N.unlinkControl = function (comp) {
+        var n = 0;
+        for (var i = 1; i <= comp.numLayers; i++) {
+            var l = comp.layer(i);
+            if (!(l instanceof TextLayer) || !N.isGenerated(l)) continue;
+            removeAnimator(l, "NOIR Control");
+            var fill = karaokeFill(l); if (fill) fill.expression = "";
+            n++;
+        }
+        var c = N.findControl(comp); if (c) c.remove();
+        return { unlinked: n, removed: !!c };
+    };
+
     N.SAFE_TAG = "noir-captions:safe";
     // Format id for a comp: explicit id, or guessed from the aspect ratio.
     N.formatFor = function (comp, id) {

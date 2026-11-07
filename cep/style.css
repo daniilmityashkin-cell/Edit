@@ -253,6 +253,13 @@ select.input option { background: var(--surface); color: var(--text); }
 .as-msg.note { align-self: stretch; border: 1px dashed rgba(255, 255, 255, .18); color: #cbd5e1; white-space: pre-wrap; }
 .as-plan { align-self: stretch; padding: var(--s2) 10px; border: 1px solid rgba(96, 165, 250, .5); border-radius: var(--r-m); background: rgba(59, 130, 246, .12); }
 .as-plan ol { margin: 0 0 var(--s2); padding-left: 18px; } .as-plan li { margin: 2px 0; }
+.as-plan-title { display: block; margin-bottom: var(--s2); }
+.as-diff { display: flex; flex-direction: column; gap: 6px; margin-bottom: var(--s2); }
+.as-diff-row { display: flex; gap: var(--s2); align-items: baseline; }
+.as-diff-n { flex: none; min-width: 18px; color: #94a3b8; font-size: var(--fs-s); text-align: right; }
+.as-diff-pair { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.as-diff-pair del { color: #94a3b8; text-decoration: line-through; text-decoration-color: rgba(148, 163, 184, .6); overflow-wrap: anywhere; }
+.as-diff-pair ins { color: #f1f5f9; text-decoration: none; overflow-wrap: anywhere; }
 .as-plan-actions { display: flex; gap: var(--s2); } .as-plan.applied, .as-plan.cancelled { opacity: .6; } .as-plan.cancelled ol { text-decoration: line-through; }
 .as-form { display: flex; gap: var(--s2); }
 .as-form input { flex: 1; min-width: 0; min-height: 32px; padding: 6px 10px; border: 1px solid rgba(255, 255, 255, .16); border-radius: var(--r-m); background: rgba(0, 0, 0, .25); color: #fff; }
@@ -264,5 +271,16 @@ select.input option { background: var(--surface); color: var(--text); }
 .as-set-body input, .as-set-body select { min-height: 28px; padding: 4px 8px; border: 1px solid rgba(255, 255, 255, .16); border-radius: var(--r-s); background: rgba(0, 0, 0, .25); color: #fff; }
 .as-refresh { align-self: flex-start; padding: 4px 12px; border: 1px solid rgba(255, 255, 255, .16); border-radius: var(--r-pill); background: transparent; color: #e2e8f0; cursor: pointer; }
 .as-note { margin: 0; color: #94a3b8; font-size: var(--fs-s); }
+
+/* ---------- compact view: no explanations, denser cards ---------- */
+body.mode-compact .lead, body.mode-compact .hint, body.mode-compact .about, body.mode-compact .text-empty .muted.small { display: none !important; }
+body.mode-compact .card { padding: 10px var(--s2) var(--s2); margin-bottom: 6px; }
+body.mode-compact .card-title { margin-bottom: 6px; font-size: var(--fs-m); }
+body.mode-compact .field { margin-top: 6px; }
+body.mode-compact .editor { height: 24vh; min-height: 120px; }
+body.mode-compact .btn { min-height: 28px; padding: 0 10px; }
+body.mode-compact .icon-btn { width: 28px; padding: 0; }
+body.mode-compact .timeline { margin-top: var(--s2); }
+body.mode-compact .style-preview { height: 56px; font-size: 15px; }
 
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: 1ms !important; transition-duration: 1ms !important; } }
