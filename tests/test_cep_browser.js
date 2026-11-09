@@ -128,7 +128,16 @@ function layoutProblems() {
         N.getAudioSource = () => ({ file: "x.wav", link: null });
         N.startRecognition = (src, o, c) => { cb = c; c.onStatus({ state: "recognizing", message: "Распознаю", progress: 0.4 }); };
         try {
-            await page.locator(".text-empty .btn.primary.wide").click();
+            // главная кнопка — монтаж целиком; выключенная часть уходит в AE как false; «Отменить» снимает цепочку
+            const seen = []; const start0 = N.startRecognition; N.startRecognition = (src, o, c) => { seen.push(1); start0(src, o, c); };
+            await page.locator('.field[data-path="montage.zoom"] .switch').click();
+            await page.locator(".text-empty .btn.primary.wide").click(); await settle();
+            assert.ok(calls.includes("montage.start") && seen.length === 1, "монтаж запускает распознавание");
+            await page.locator(".text-empty .btn.primary.wide").click(); await settle();
+            assert.strictEqual((await hostState()).recognizing, false, "отменено");
+            assert.strictEqual(await page.evaluate(() => JSON.parse(localStorage.getItem("noir.ui.v1")).montage.zoom), false, "выбор частей запоминается");
+            await page.locator('.field[data-path="montage.zoom"] .switch').click();
+            await page.locator(".text-empty .only-subs").click();
             await page.waitForFunction(() => document.querySelector(".pill").dataset.state === "busy");
             assert.ok(await page.locator(".topline").isVisible());
             assert.ok(/40%/.test(await page.locator(".text-empty .btn.primary.wide").textContent()));

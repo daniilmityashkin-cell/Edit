@@ -384,6 +384,41 @@ const accept = (a, mode) => { let r = a.call("generate", { mode: mode || "all" }
     assert.ok(!/object|function/.test(a.call("script.run", { code: "return typeof st + typeof S + typeof root + typeof memSave;" }).result), "переменные панели недоступны");
     const ctx = a.call("script.context"); assert.ok(ctx.comp.width && ctx.layers.some(l => l.name === "Героi 1" || (l.kind === "av" && l.selected)));
   });
+  await test("монтаж в один клик: распознавание → нарезка пауз → акценты в тексте → субтитры → зум на акцентах; части отключаются; сбой части не рвёт цепочку", () => {
+    const keep = [N.getAudioSource, N.modelCached, N.startRecognition]; let cb;
+    N.getAudioSource = () => ({ file: "x.wav" }); N.modelCached = () => true; N.startRecognition = (s, o, callbacks) => { cb = callbacks; };
+    try {
+      let c = mkComp({ duration: 12 }), a = freshApp(false);
+      let v = new mock.AVLayer(c, "clip.mp4"); v.width = 1080; v.height = 1920; v.source = { hasVideo: true }; c._l.push(v); v.selected = true;
+      assert.throws(() => a.call("montage.apply", {}), /Сначала распознайте/);
+      a.call("montage.start", { scale: 112 }); assert.strictEqual(a.state().recognizing, true);
+      assert.strictEqual(subs(c).length, 0, "до конца распознавания ничего не создано");
+      cb.onDone(sample(), { link: null });
+      const st = a.state(), pieces = c._l.filter(l => l.comment === N.CUT_TAG).sort((x, y) => x.inPoint - y.inPoint);
+      assert.strictEqual(st.recognizing, false); assert.ok(/^Смонтировано: вырезано [\d.]+ с/.test(st.status), st.status);
+      assert.strictEqual(pieces.length, 2, "паузы вырезаны"); assert.ok(!c._l.includes(v));
+      assert.ok(/\*[^*]+\*/.test(st.text), "акценты записаны в текст: " + st.text);
+      assert.ok(subs(c).length > 0 && subs(c).every(l => l.inPoint < 2.6), "субтитры в новом времени");
+      assert.ok(pieces.some(l => l.transform["Scale"].numKeys >= 4), "зум на акцентах"); assert.ok(/зум 112% × \d/.test(st.status), st.status);
+      assert.strictEqual(st.canUpdate, true); assert.strictEqual(st.dirty, false, "после монтажа текст и субтитры совпадают");
+      // только субтитры с акцентами: видео не режется и не масштабируется
+      c = mkComp({ duration: 12 }); a = freshApp(false);
+      v = new mock.AVLayer(c, "clip.mp4"); v.source = { hasVideo: true }; c._l.push(v); v.selected = true;
+      a.call("montage.start", { cut: false, zoom: false }); cb.onDone(sample(), { link: null });
+      assert.ok(c._l.includes(v) && v.transform["Scale"].numKeys === 0); assert.ok(subs(c).length > 0);
+      assert.ok(!/вырезано|зум/.test(a.state().status), a.state().status);
+      // слой с Time Remap: нарезка не вышла — субтитры всё равно созданы, причина названа
+      c = mkComp({ duration: 12 }); a = freshApp(false);
+      v = new mock.AVLayer(c, "clip.mp4"); v.source = { hasVideo: true }; v.timeRemapEnabled = true; c._l.push(v); v.selected = true;
+      a.call("montage.start", { accents: false, zoom: false }); cb.onDone(sample(), { link: null });
+      assert.ok(/нарезка не вышла \(.*Time Remap/.test(a.state().status), a.state().status); assert.ok(subs(c).length > 0);
+      assert.ok(!/\*/.test(a.state().text), "акценты выключены");
+      // отмена и ошибка распознавания снимают цепочку: следующее обычное распознавание ничего не монтирует
+      c = mkComp({ duration: 12 }); a = freshApp(false);
+      a.call("montage.start", {}); a.call("cancel"); a.call("recognize"); cb.onDone(sample(), { link: null });
+      assert.strictEqual(subs(c).length, 0); assert.ok(!/Смонтировано/.test(a.state().status));
+    } finally { N.getAudioSource = keep[0]; N.modelCached = keep[1]; N.startRecognition = keep[2]; }
+  });
   await test("автозум: на акцентах — толчок на каждом акценте и назад; на фразах — через одну; на кусках нарезки — чередование; к лицу; ключи не затираются без спроса", () => {
     const c = mkComp({ duration: 12 }), a = freshApp();
     const v = new mock.AVLayer(c, "clip.mp4"); v.width = 1080; v.height = 1920; v.source = { hasVideo: true }; c._l.push(v); v.selected = true;

@@ -256,6 +256,8 @@ select.input option { background: var(--surface); color: var(--text); }
 .hero-title { margin: 0 0 var(--s1); font-size: 20px; font-weight: 600; letter-spacing: -.02em; }
 .hero .lead { margin-bottom: var(--s4); }
 .hero .actions { margin-top: var(--s3); } .hero > .grid2 { margin-top: var(--s4); }
+.mo-parts { display: flex; flex-wrap: wrap; gap: 0 var(--s3); margin-top: var(--s1); } .mo-parts .field { flex: none; } .mo-parts .field-label { color: var(--muted); font-size: var(--fs-s); }
+.hero .only-subs { margin-left: -8px; }
 .more > summary { display: inline-block; margin-top: var(--s3); color: var(--muted); font-size: var(--fs-s); cursor: pointer; list-style: none; transition: color var(--dur) var(--ease); }
 .more > summary::-webkit-details-marker { display: none; } .more > summary:hover, .more[open] > summary { color: var(--text); }
 .more > summary::after { content: " +"; } .more[open] > summary::after { content: " −"; }

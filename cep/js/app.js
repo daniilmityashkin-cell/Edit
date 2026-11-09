@@ -118,6 +118,12 @@
         if (ready && !ready.ready) { U.toast(t("ready.notYet"), "error"); checkReadiness(); return; }
         act("recognize");
     }
+    // One click: recognition, then pauses cut out, accents, captions and zoom — the parts are the three switches under the button.
+    function montageOn(k) { return !prefs.montage || prefs.montage[k] !== false; }
+    function montage() {
+        if (ready && !ready.ready) { U.toast(t("ready.notYet"), "error"); checkReadiness(); return; }
+        act("montage.start", { cut: montageOn("cut"), accents: montageOn("accents"), zoom: montageOn("zoom"), scale: Number(prefs.zoomScale || 110), smooth: !!prefs.zoomSmooth });
+    }
     function pillState() {
         if (!H.online()) return ["error", t("state.offline")];
         if (!S) return ["idle", "…"];
@@ -191,7 +197,13 @@
         var rc = U.card(v.empty, null, null, "hero");
         el("h2", "hero-title", rc, t("video.title")); el("p", "lead", rc, t("video.lead"));
         readinessBox(rc, true);
-        v.recognize = U.button(t("act.recognize"), "primary wide", U.row(rc, "actions"), function () { if (S && S.recognizing) act("cancel"); else recognize(); });
+        v.recognize = U.button(t("mo.go"), "primary wide", U.row(rc, "actions"), function () { if (S && S.recognizing) act("cancel"); else montage(); });
+        var parts = el("div", "mo-parts", rc);
+        ["cut", "accents", "zoom"].forEach(function (k) {
+            U.field(parts, { path: "montage." + k, label: t("mo." + k), kind: "toggle", value: function () { return montageOn(k); },
+                commit: function (on) { if (!prefs.montage) prefs.montage = {}; prefs.montage[k] = on; savePrefs(); } });
+        });
+        v.only = U.button(t("mo.only"), "ghost small only-subs", U.row(rc, "actions"), function () { recognize(); });
         var other = U.row(recognitionFields(rc, true), "actions wrap");
         el("span", "muted small", other, t("video.other"));
         U.button(t("act.openJson"), "ghost small", other, function () { act("json.load"); }, "file");
@@ -270,7 +282,8 @@
     function renderText() {
         var v = view.text, has = !!(S && S.hasData);
         v.empty.hidden = has; v.body.hidden = !has;
-        label(v.recognize, S.recognizing ? t("act.cancel") + (S.progress ? " · " + Math.round(S.progress * 100) + "%" : "") : t("act.recognize"));
+        label(v.recognize, S.recognizing ? t("act.cancel") + (S.progress ? " · " + Math.round(S.progress * 100) + "%" : "") : t("mo.go"));
+        v.only.disabled = !!S.recognizing;
         v.recognize.classList.toggle("busy", !!S.recognizing);
         if (!has) return;
         v.speaker.hidden = !S.speakers; if (S.speakers) { label(v.speaker, t("spk.voice", { n: (S.speaker || 0) + 1 })); v.speaker.classList.toggle("two", S.speaker === 1); }

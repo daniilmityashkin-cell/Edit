@@ -10,7 +10,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
 (function (N) {
     var SECTION = "NOIR Captions";
     var SETTINGS_KEY = "settings.v2";
-    N.VERSION = "0.44.0";
+    N.VERSION = "0.45.0";
 
     function clone(o) { return N.parseJSON(N.stringify(o)); }
 
@@ -873,6 +873,51 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             status("Автозум убран: масштаб 100%."); return true;
         }
 
+        // ---------- montage: raw talking video → finished clip in one step ----------
+        // After recognition: pauses and filler words are cut out of the video, one main word per phrase is accented (written into
+        // the text as *word*, so it can be edited), captions are created in the current style and the video pushes in on the accents.
+        // Each part can be switched off; a part that fails is reported and does not stop the rest. One undo step in AE.
+        function accentText() {
+            var words = N.applyEdits(st.data, st.text, []), L = renderStyle().layout, byKey = {}, i, j, n = 0;
+            var groups = N.groupWords(words, { maxWords: L.maxWords, maxChars: L.maxChars, pauseBreak: L.pauseBreak, punctBreak: L.punctBreak, stripPunct: L.stripPunct });
+            for (i = 0; i < words.length; i++) byKey[words[i].seg + ":" + words[i].start] = words[i];
+            var was = []; for (i = 0; i < groups.length; i++) for (j = 0; j < groups[i].words.length; j++) was.push(groups[i].words[j].accent);
+            N.autoAccent(groups);
+            var q = 0;
+            for (i = 0; i < groups.length; i++) for (j = 0; j < groups[i].words.length; j++, q++) {
+                var it = groups[i].words[j]; if (!it.accent || was[q]) continue;
+                var w = byKey[groups[i].seg + ":" + it.start]; if (w && !w.accent) { w.accent = true; n++; }
+            }
+            if (!n) return 0;
+            var ls = lines(), out = [], per = {};
+            for (i = 0; i < words.length; i++) { if (!per[words[i].seg]) per[words[i].seg] = []; per[words[i].seg].push(words[i]); }
+            for (i = 0; i < ls.length; i++) out.push(per[i] ? N.editorWords(per[i]) : ls[i]);
+            remember(); st.text = out.join("\n");
+            return n;
+        }
+        function montageFinish(a) {
+            var rep = [], accents = 0, i;
+            function why(e) { return String(e && e.message || e).split("\n")[0]; }
+            function sec1(x) { return Math.round(x * 10) / 10; }
+            app.beginUndoGroup("NOIR Captions: монтаж");
+            try {
+                if (a.cut !== false) {
+                    try { var c = cutApply({ mode: "both" }); rep.push(c && c.removed ? "вырезано " + sec1(c.removed) + " с пауз и слов-паразитов" : "лишних пауз нет"); }
+                    catch (eC) { rep.push("нарезка не вышла (" + why(eC) + ")"); }
+                }
+                if (a.accents !== false) { try { accentText(); } catch (eA) { log("error", "montage accents: " + why(eA)); } }
+                var ws = N.applyEdits(st.data, st.text, []); for (i = 0; i < ws.length; i++) if (ws[i].accent) accents++;
+                var r = generate("all", false); if (r && r.pending) r = generate("all", true);
+                rep.push("субтитры: " + (r && r.created !== undefined ? r.created + " сл." : "созданы") + (accents ? ", акцентов " + accents : ""));
+                if (a.zoom !== false) {
+                    try { var z = zoomApply({ on: accents ? "accents" : "phrases", scale: a.scale, mode: a.smooth ? "smooth" : "snap", replace: true }); rep.push("зум " + num(a.scale, 110, 101, 150) + "% × " + z.pushes); }
+                    catch (eZ) { rep.push("зум не вышел (" + why(eZ) + ")"); }
+                }
+            } finally { app.endUndoGroup(); }
+            status("Смонтировано: " + rep.join("; ") + ". Всё можно править; отмена в AE — Ctrl+Z.", 1);
+            return rep;
+        }
+
         // ---------- memory: word fixes, preferences, accepted assistant answers ----------
         // Stored only on this computer: <userData>/NOIR Captions/memory.json. Word fixes are learned when captions are created (recognized
         // text vs. the text the user corrected, lines with the same word count) and when one word is replaced; after the next recognition
@@ -1221,12 +1266,21 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
                         st.recognizing = false; setData(data, s.link);
                         var fixed = 0; try { fixed = applyFixes(); } catch (eF) { log("error", "memory: " + (eF.message || eF)); }
                         if (fixed) status(st.status + " Исправлено по памяти слов: " + fixed + " («Отменить правку» вернёт как было).");
+                        var mo = st.montage; st.montage = null;
+                        if (mo) { try { montageFinish(mo); } catch (eM) { status("Монтаж остановился: " + String(eM.message || eM).split("\n")[0] + " Распознанный текст на месте — можно продолжить вручную."); log("error", "montage: " + eM.toString()); } }
                     },
-                    onError: function (msg) { st.recognizing = false; status("Ошибка распознавания: " + msg, 0); log("error", msg); }
+                    onError: function (msg) { st.montage = null; st.recognizing = false; status("Ошибка распознавания: " + msg, 0); log("error", msg); }
                 });
-                } catch (e) { st.recognizing = false; status("Ошибка распознавания: " + (e.message || e), 0); throw e; }
+                } catch (e) { st.montage = null; st.recognizing = false; status("Ошибка распознавания: " + (e.message || e), 0); throw e; }
                 return true;
             },
+            // one click: recognition, then cut + accents + captions + zoom (each part optional: cut / accents / zoom = false)
+            "montage.start": function (a) {
+                if (st.recognizing) throw new Error("Распознавание уже идёт.");
+                st.montage = { cut: a.cut !== false, accents: a.accents !== false, zoom: a.zoom !== false, scale: a.scale, smooth: !!a.smooth };
+                try { return OPS.recognize(); } catch (e) { st.montage = null; throw e; }
+            },
+            "montage.apply": function (a) { if (!st.data) throw new Error("Сначала распознайте речь."); return montageFinish(a || {}); },
             "setup.check": function () { return readiness(); },
             "setup.engine": function () {
                 var ps = File(root + "/recognition/setup_windows.ps1");
@@ -1239,7 +1293,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
                 if (!py.exists) throw new Error("Сначала установите движок распознавания.");
                 return runConsole("model", "Скачивание модели " + id + " (один раз)", '"' + py.fsName + '" "' + script.fsName + '" ' + id);
             },
-            cancel: function () { var wasBatch = !!st.batch; st.batch = null; st.forceComp = null; N.cancelRecognition(); st.recognizing = false; status(wasBatch ? "Пакет остановлен." : "Распознавание отменено.", 0); return true; },
+            cancel: function () { var wasBatch = !!st.batch; st.montage = null; st.batch = null; st.forceComp = null; N.cancelRecognition(); st.recognizing = false; status(wasBatch ? "Пакет остановлен." : "Распознавание отменено.", 0); return true; },
             "json.load": function (a) {
                 var f = a.path ? File(a.path) : File.openDialog("Открыть результат NOIR (JSON)", "*.json");
                 if (!f) return null;
