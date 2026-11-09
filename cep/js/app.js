@@ -15,6 +15,20 @@
         document.body.classList.toggle("adv-on", detailed());
         document.body.classList.toggle("mode-compact", prefs.mode === "compact");
     }
+    // A section that folds (settings, files): only its name is shown until it is opened; the choice is remembered.
+    function fold(card, key, open) {
+        var title = card.querySelector(".card-title"); if (!title) return card;
+        if (!prefs.open) prefs.open = {};
+        var on = prefs.open[key] === undefined ? !!open : !!prefs.open[key];
+        card.classList.add("fold"); card.dataset.fold = key; title.tabIndex = 0; title.setAttribute("role", "button");
+        function show(v) { on = v; card.classList.toggle("open", on); title.setAttribute("aria-expanded", String(on)); }
+        function toggle() { show(!on); prefs.open[key] = on; savePrefs(); if (on && S) U.refresh(S); }
+        title.addEventListener("click", toggle);
+        title.addEventListener("keydown", function (e) { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); toggle(); } });
+        card._open = function () { if (!on) toggle(); };
+        show(on);
+        return card;
+    }
     function noop() {}
     function label(btn, text) { var s = btn.querySelector(".btn-label") || el("span", "btn-label", btn); if (s.textContent !== text) s.textContent = text; }
     function openUrl(url) { try { if (window.cep && window.cep.util && window.cep.util.openURLInDefaultBrowser) { window.cep.util.openURLInDefaultBrowser(url); return; } } catch (e) {} window.open(url, "_blank"); }
@@ -75,7 +89,7 @@
         page = id;
         PAGES.forEach(function (p) { view.pages[p].hidden = p !== id; var tab = view.tabs[p]; tab.classList.toggle("on", p === id); tab.setAttribute("aria-selected", String(p === id)); });
         view.title.textContent = t("nav." + id);
-        if (anchor) { var target = document.getElementById(anchor); if (target) { target.scrollIntoView({ block: "start" }); target.classList.add("flash"); setTimeout(function () { target.classList.remove("flash"); }, 900); } }
+        if (anchor) { var target = document.getElementById(anchor); if (target) { if (target._open) target._open(); target.scrollIntoView({ block: "start" }); target.classList.add("flash"); setTimeout(function () { target.classList.remove("flash"); }, 900); } }
         else if (!quiet) view.pages[id].scrollTop = 0;
         if (id === "edit" && view.edit.loadSfx) view.edit.loadSfx();
         if (S) render();
@@ -130,12 +144,13 @@
         watchUntil = Date.now() + 20 * 60 * 1000; clearTimeout(watchTimer);
         (function tick() { watchTimer = setTimeout(function () { if (!watchUntil || Date.now() > watchUntil) return; checkReadiness().then(function () { if (watchUntil) tick(); }); }, 5000); })();
     }
-    function readinessBox(parent) { var box = el("div", "ready", parent); view.readiness.push(box); return box; }
+    function readinessBox(parent, quiet) { var box = el("div", "ready", parent); box._quiet = !!quiet; view.readiness.push(box); return box; }
     function renderReadiness() {
         view.readiness.forEach(function (box) {
             box.textContent = "";
-            if (!ready) { el("p", "hint", box, "…"); return; }
+            if (!ready) { if (!box._quiet) el("p", "hint", box, "…"); return; }
             var problems = ready.items.filter(function (i) { return !i.ok; });
+            if (box._quiet && !ready.items.some(function (i) { return !i.ok && !i.optional; })) return;      // the first screen says nothing while all is well
             if (!problems.length) { var ok = el("div", "ready-row ok", box); U.icon("ok", ok); el("span", "ready-title", ok, t("ready.ok")); return; }
             ready.items.forEach(function (it) {
                 if (it.ok) return;
@@ -159,23 +174,25 @@
         textDirty = false;      // only text the user typed is sent: a freshly built, empty editor never overwrites AE
         if (ed.value !== S.text) H.call("text.set", { text: ed.value }).catch(noop);
     }
-    function recognitionFields(c) {
+    function recognitionFields(c, brief) {
         var grid = el("div", "grid2", c);
         U.field(grid, { path: "language", label: t("video.language"), kind: "select", options: meta.languages });
         U.field(grid, { path: "model", label: t("video.model"), kind: "select", options: meta.models, commit: function (v) { set("model", v).then(checkReadiness); } });
+        if (brief) { var more = el("details", "more", c); el("summary", "", more, t("video.more")); c = el("div", "more-body", more); }
         U.field(c, { path: "device", label: t("video.device"), kind: "segmented", options: meta.devices.map(function (d) { return { id: d.id, label: d.id === "auto" ? L("Авто") : d.id === "cuda" ? "GPU" : "CPU" }; }) });
         U.field(c, { path: "speakers", label: t("spk.recognize"), kind: "toggle", hint: t("spk.hint") });
         U.field(c, { path: "prompt", label: t("video.prompt"), kind: "text", hint: t("video.promptHint"), placeholder: "NOIR, After Effects, …" });
+        return c;
     }
     function buildText(p) {
         var v = view.text;
         // empty: recognition
         v.empty = el("div", "text-empty", p);
-        var rc = U.card(v.empty, t("video.title"), t("video.lead"));
-        readinessBox(rc);
-        recognitionFields(rc);
-        v.recognize = U.button(t("act.recognize"), "primary wide", U.row(rc, "actions"), function () { if (S && S.recognizing) act("cancel"); else recognize(); }, "mic");
-        var other = U.row(rc, "actions wrap");
+        var rc = U.card(v.empty, null, null, "hero");
+        el("h2", "hero-title", rc, t("video.title")); el("p", "lead", rc, t("video.lead"));
+        readinessBox(rc, true);
+        v.recognize = U.button(t("act.recognize"), "primary wide", U.row(rc, "actions"), function () { if (S && S.recognizing) act("cancel"); else recognize(); });
+        var other = U.row(recognitionFields(rc, true), "actions wrap");
         el("span", "muted small", other, t("video.other"));
         U.button(t("act.openJson"), "ghost small", other, function () { act("json.load"); }, "file");
         U.button(t("act.importSubs"), "ghost small", other, function () { act("subs.import"); }, "fileIn");
@@ -186,7 +203,7 @@
         var sr = U.row(src, "source-row"); U.icon("mic", sr);
         v.source = el("span", "source-name", sr); el("span", "spacer", sr);
         v.reRec = U.button(t("act.recNew"), "small", sr, function () { if (S && S.recognizing) act("cancel"); else recognize(); }, "mic");
-        el("p", "hint", src, t("text.recNewHint"));
+        v.reRec.title = t("text.recNewHint");
         var c = U.card(v.body, null, t("text.lead"));
         var nav = U.row(c, "phrase-nav");
         U.iconButton("prev", "←", nav, function () { if (S && S.phrase > 0) act("phrase.select", { index: S.phrase - 1 }); });
@@ -223,7 +240,7 @@
         v.update = U.button(t("act.updatePhrase"), "", gen, function () { generate("phrase"); });
         U.button(t("act.preview"), "", gen, function () { generate("preview"); }, "eye");
         U.button(t("act.check"), "ghost", gen, function () { generate("check"); });
-        var files = U.card(v.body, t("text.files"));
+        var files = fold(U.card(v.body, t("text.files")), "files");
         var fr = U.row(files, "actions wrap");
         U.button(t("act.saveJson"), "", fr, function () { act("json.save"); }, "save");
         U.button(t("act.exportSrt"), "", fr, function () { act("subs.export", { format: "srt" }); }, "download");
@@ -681,12 +698,12 @@
     // ---------- settings ----------
     function buildSettings(p) {
         var v = view.settings, side = prefs.side === "accent" ? "accent" : "base";
-        var rec = U.card(p, t("set.recognition")); rec.id = "set-recognition";
+        var rec = fold(U.card(p, t("set.recognition")), "rec"); rec.id = "set-recognition";
         readinessBox(rec);
         recognitionFields(rec);
         U.field(rec, { path: "python", label: "Python (пусто — из папки проекта)", kind: "text", adv: true });
 
-        var font = U.card(p, t("set.font")); font.id = "set-font";
+        var font = fold(U.card(p, t("set.font")), "font", true); font.id = "set-font";
         var sideSel = el("div", "segmented", font); sideSel.setAttribute("role", "radiogroup");
         [["base", "set.base"], ["accent", "set.accentSide"]].forEach(function (x) {
             var b = el("button", "seg" + (x[0] === side ? " on" : ""), sideSel, t(x[1])); b.type = "button"; b.setAttribute("role", "radio"); b.setAttribute("aria-checked", String(x[0] === side));
@@ -707,7 +724,7 @@
         U.button(t("set.applyLayers"), "", ar, function () { act("layers.apply", { side: side, parts: { font: true, size: true, color: true, stroke: true, fx: true } }); });
         U.button(t("set.applyAll"), "ghost", ar, function () { act("layers.apply", { side: side, all: true, parts: { font: true, size: true, color: true, stroke: true, fx: true } }); });
 
-        var look = U.card(p, t("set.look") + " · " + t(side === "base" ? "set.base" : "set.accentSide"));
+        var look = fold(U.card(p, t("set.look") + " · " + t(side === "base" ? "set.base" : "set.accentSide")), "look");
         var lg = el("div", "grid2", look), pre = "style." + side + ".";
         U.field(lg, { path: pre + "size", label: "Размер, px (1080)", kind: "number", min: 4, max: 2000, step: 1 });
         U.field(lg, { path: pre + "color", label: "Цвет", kind: "color" });
@@ -719,7 +736,7 @@
         U.field(look, { path: pre + "shadow", label: "Тень", kind: "toggle", value: function (st) { return !!st.settings.style[side].shadow; } });
         U.field(look, { path: pre + "blend", label: "Наложение", kind: "select", options: meta.blends, adv: true, value: function (st) { return st.settings.style[side].blend || "normal"; } });
 
-        var lay = U.card(p, t("set.layout")); lay.id = "set-layout";
+        var lay = fold(U.card(p, t("set.layout")), "layout"); lay.id = "set-layout";
         U.field(lay, { path: "style.layout.speaker2Color", label: t("spk.color"), kind: "color", show: function (st) { return !!st.speakers || !!st.settings.speakers; }, value: function (st) { return st.settings.style.layout.speaker2Color || [1, 0.8, 0.26]; } });
         var L = "style.layout.", g1 = el("div", "grid2", lay);
         U.field(g1, { path: L + "maxWords", label: "Слов во фразе, макс.", kind: "number", min: 1, max: 30, step: 1 });
@@ -739,7 +756,7 @@
         U.field(lay, { path: L + "keepShortWords", label: "Не оставлять предлоги в конце строки", kind: "toggle", adv: true });
         U.field(lay, { path: L + "accentOwnLine", label: "Акцент на отдельной строке", kind: "toggle", adv: true });
 
-        var mo = U.card(p, t("set.motion")); mo.classList.add("adv");
+        var mo = fold(U.card(p, t("set.motion")), "motion"); mo.classList.add("adv");
         var A = "style.anim.", g2 = el("div", "grid2", mo);
         U.field(g2, { path: A + "inDur", label: "Появление, с", kind: "number", min: 0, max: 5, step: 0.02 });
         U.field(g2, { path: A + "outDur", label: "Исчезание, с", kind: "number", min: 0, max: 5, step: 0.02 });
@@ -747,7 +764,7 @@
         U.field(g2, { path: A + "blur", label: "Размытие", kind: "number", min: 0, max: 500, step: 1 });
         U.field(g2, { path: A + "easeInfluence", label: "Плавность, %", kind: "number", min: 0.1, max: 100, step: 1 });
 
-        var mem = U.card(p, t("mem.title"), t("mem.lead")); mem.id = "set-memory";
+        var mem = fold(U.card(p, t("mem.title"), t("mem.lead")), "memory"); mem.id = "set-memory";
         U.field(mem, { path: "memoryLearn", label: t("mem.learn"), kind: "toggle", hint: t("mem.learnHint") });
         var memDet = el("details", "mem-details", mem); el("summary", "", memDet, t("mem.show"));
         memDet.addEventListener("toggle", function () { if (memDet.open) loadMemory(); });
@@ -755,7 +772,7 @@
         var mr = U.row(memDet, "actions wrap");
         U.button(t("mem.clear"), "ghost", mr, function () { if (window.confirm(t("mem.confirmClear"))) act("memory.clear").then(loadMemory); }, "trash");
 
-        var proj = U.card(p, t("set.project"));
+        var proj = fold(U.card(p, t("set.project")), "project"); proj.id = "set-project";
         U.field(proj, { path: "lang", label: t("set.uiLang"), kind: "segmented", options: [{ id: "ru", label: "Русский" }, { id: "en", label: "English" }], commit: function (l) { set("lang", l); } });
         U.field(proj, { path: "mode", label: t("set.mode"), kind: "segmented", hint: t("set.modeHint"), options: [{ id: "compact", label: t("mode.compact") }, { id: "normal", label: t("mode.normal") }, { id: "detailed", label: t("mode.detailed") }],
             value: function () { return prefs.mode; }, commit: function (m) { prefs.mode = m; savePrefs(); applyMode(); if (detailed() && view.edit.loadSfx) view.edit.loadSfx(); if (S) U.refresh(S); } });
@@ -824,7 +841,7 @@
         var ps = pillState(); view.pill.textContent = ps[1]; view.pill.dataset.state = ps[0];
         if (S.presetsRev !== undefined && S.presetsRev !== lastPresetsRev) { var first = lastPresetsRev === null; lastPresetsRev = S.presetsRev; if (!first) { reloadPresets(); U.toast(NoirI18n.host(S.status), "ok", 9000); } }
         var a = primaryAction(); label(view.primary, a.label); view.primary.classList.toggle("busy", !!S.recognizing);
-        view.primary.hidden = page === "text" && !S.hasData && !S.recognizing;      // the recognition card has its own button
+        view.primary.hidden = page === "text";      // one gold button per screen: the text page has its own (recognize / create)
         view.progress.hidden = !S.recognizing; view.progress.firstChild.style.width = Math.max(4, Math.round((S.progress || 0) * 100)) + "%";
         view.tabs.text.classList.toggle("dot", !!(S.dirty && S.canUpdate));
         renderText(); renderStyle(); renderEdit(); renderSettings(); renderIssues();

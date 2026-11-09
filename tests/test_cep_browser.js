@@ -78,7 +78,9 @@ function layoutProblems() {
     await page.goto("http://127.0.0.1:" + server.address().port + "/index.html");
     const shot = async (name) => { if (SHOTS) await page.screenshot({ path: path.join(SHOTS, name + ".png") }); };
     const settle = () => page.evaluate(() => NoirHost.idle()).then(() => page.waitForTimeout(60));
-    const tab = (name) => page.locator('.tab[data-page="' + name + '"]').click();
+    // settings sections are folded until opened: the tests open them all
+    const unfold = () => page.evaluate(() => document.querySelectorAll(".page:not([hidden]) .card.fold:not(.open) > .card-title").forEach(t => t.click()));
+    const tab = async (name) => { await page.locator('.tab[data-page="' + name + '"]').click(); if (name === "settings") await unfold(); };
     const hostState = () => page.evaluate(() => NoirHost.state());
 
     console.log("HTML panel");
@@ -117,7 +119,7 @@ function layoutProblems() {
         await page.evaluate((py) => NoirHost.call("settings.set", { path: "python", value: py }), process.execPath);
         N.modelCached = () => true;
         await page.locator(".text-empty").getByRole("button", { name: "Проверить снова" }).click(); await settle();
-        await page.waitForSelector(".text-empty .ready-row.ok");
+        await page.waitForFunction(() => !document.querySelector(".text-empty .ready-row"));      // всё готово — первый экран молчит
         assert.strictEqual(await page.locator(".pill").getAttribute("data-state"), "idle");
         await shot("ready");
     });
@@ -335,7 +337,7 @@ function layoutProblems() {
         await page.evaluate(() => NoirAssistant.open());
         const input = page.locator(".as-form input");
         await input.fill("поставь вверху"); await input.press("Enter");
-        await page.waitForSelector(".as-plan"); await shot("assistant");
+        await page.waitForSelector(".as-plan"); await page.waitForTimeout(250); await shot("assistant");
         const before = calls.filter(c => c === "run").length;
         await page.locator(".as-plan .btn.ghost").click(); await settle();
         assert.strictEqual(calls.filter(c => c === "run").length, before, "cancel runs nothing");
