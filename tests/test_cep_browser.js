@@ -141,6 +141,7 @@ function layoutProblems() {
             await page.waitForFunction(() => document.querySelector(".pill").dataset.state === "busy");
             assert.ok(await page.locator(".topline").isVisible());
             assert.ok(/40%/.test(await page.locator(".text-empty .btn.primary.wide").textContent()));
+            await page.waitForFunction(() => { const p = document.querySelector(".text-empty .ascii"); return p && !p.hidden && p.textContent.length > 200; });
             await shot("recognizing");
             const polls = calls.filter(c => c === "poll").length; await page.waitForTimeout(1900);
             assert.ok(calls.filter(c => c === "poll").length > polls, "polls while busy");
@@ -258,6 +259,19 @@ function layoutProblems() {
         const f = page.locator('.field[data-path="style.layout.maxWords"] input'); await f.fill("3"); await f.press("Tab"); await settle();
         assert.strictEqual((await hostState()).settings.style.layout.maxWords, 3);
         await shot("settings");
+        // «Хром»: монохромная тема — нейтральный чёрный, белая кнопка, серебряный логотип; выбор переживает перезагрузку; обратно — золото
+        await page.locator('.field[data-path="accentTheme"] .seg[data-value="chrome"]').click(); await settle();
+        assert.strictEqual(await page.evaluate(() => document.documentElement.getAttribute("data-accent")), "chrome");
+        assert.strictEqual(await page.evaluate(() => getComputedStyle(document.body).backgroundColor), "rgb(5, 5, 5)");
+        assert.ok(/#ffffff/i.test(await page.locator(".orb-btn svg").innerHTML()), "логотип серебряный");
+        await page.reload(); await page.waitForSelector(".tabs"); await settle();
+        assert.strictEqual(await page.evaluate(() => document.documentElement.getAttribute("data-accent")), "chrome", "выбор запомнен");
+        await tab("text"); await page.waitForTimeout(300); await shot("chrome-text");
+        await page.locator(".orb-btn").click(); await page.waitForSelector(".noir-wheel"); await page.waitForTimeout(350); await shot("chrome-wheel"); await page.keyboard.press("Escape");
+        await page.evaluate(() => NoirAssistant.open()); await page.waitForTimeout(300); await shot("chrome-assistant"); await page.evaluate(() => NoirAssistant.close());
+        await tab("settings"); await page.waitForTimeout(300); await shot("chrome-settings");
+        await page.locator('.field[data-path="accentTheme"] .seg[data-value="gold"]').click(); await settle();
+        assert.strictEqual(await page.evaluate(() => document.documentElement.getAttribute("data-accent")), "gold");
     });
     await step("светлая тема AE и английский интерфейс; пересборка не стирает текст", async () => {
         await page.evaluate(() => NoirTheme.apply([214, 214, 214]));

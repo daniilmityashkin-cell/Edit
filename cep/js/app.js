@@ -195,6 +195,7 @@
         // empty: recognition
         v.empty = el("div", "text-empty", p);
         var rc = U.card(v.empty, null, null, "hero");
+        el("span", "eyebrow", rc, t("video.eyebrow"));
         el("h2", "hero-title", rc, t("video.title")); el("p", "lead", rc, t("video.lead"));
         readinessBox(rc, true);
         v.recognize = U.button(t("mo.go"), "primary wide", U.row(rc, "actions"), function () { if (S && S.recognizing) act("cancel"); else montage(); });
@@ -204,6 +205,7 @@
                 commit: function (on) { if (!prefs.montage) prefs.montage = {}; prefs.montage[k] = on; savePrefs(); } });
         });
         v.only = U.button(t("mo.only"), "ghost small only-subs", U.row(rc, "actions"), function () { recognize(); });
+        v.ascii = el("pre", "ascii", rc); v.ascii.hidden = true; v.ascii.setAttribute("aria-hidden", "true");
         var other = U.row(recognitionFields(rc, true), "actions wrap");
         el("span", "muted small", other, t("video.other"));
         U.button(t("act.openJson"), "ghost small", other, function () { act("json.load"); }, "file");
@@ -265,6 +267,33 @@
         U.button(t("act.reset"), "ghost", fr2, function () { if (window.confirm(t("confirm.reset"))) act("text.reset"); }, "undo");
     }
     function prevent(e) { e.preventDefault(); }
+    // While speech is being read: a field of characters that gathers into a ring and falls apart again (the NOIR mark's ring),
+    // drawn as text in one <pre>, ~12 frames a second, only while recognition runs on the visible text page.
+    var asciiTimer = 0, asciiT = 0, ASCII = " .:-=+*#%@";
+    function asciiRun(on) {
+        var box = view.text && view.text.ascii; if (!box) return;
+        if (!on) { if (asciiTimer) { clearInterval(asciiTimer); asciiTimer = 0; } box.hidden = true; return; }
+        box.hidden = false; if (asciiTimer) return;
+        var cols = 46, rows = 15;
+        function frame() {
+            if (!document.body.contains(box)) { clearInterval(asciiTimer); asciiTimer = 0; return; }
+            asciiT += 1; var out = [], k = (Math.sin(asciiT / 18) + 1) / 2, prog = S && S.progress ? S.progress : 0;
+            for (var y = 0; y < rows; y++) {
+                var line = "";
+                for (var x = 0; x < cols; x++) {
+                    var dx = (x - cols / 2) / (cols / 2), dy = (y - rows / 2) / (rows / 2) * 1.05, r = Math.sqrt(dx * dx + dy * dy), a = Math.atan2(dy, dx);
+                    var ring = Math.exp(-Math.pow((r - 0.72) / (0.07 + 0.25 * (1 - k)), 2));
+                    var noise = (Math.sin(x * 12.9898 + y * 78.233 + asciiT * 0.7) * 43758.5453) % 1; noise = noise < 0 ? -noise : noise;
+                    var sweep = (a + Math.PI) / (2 * Math.PI) < prog ? 1 : 0.55;
+                    var v = ring * sweep * (0.55 + 0.45 * noise) + (noise > 0.985 ? 0.4 : 0);
+                    line += ASCII.charAt(Math.max(0, Math.min(ASCII.length - 1, Math.floor(v * ASCII.length))));
+                }
+                out.push(line);
+            }
+            box.textContent = out.join("\n");
+        }
+        frame(); asciiTimer = setInterval(frame, 85);
+    }
     function caretMoved() {
         clearTimeout(caretTimer);
         caretTimer = setTimeout(function () {
@@ -284,6 +313,7 @@
         v.empty.hidden = has; v.body.hidden = !has;
         label(v.recognize, S.recognizing ? t("act.cancel") + (S.progress ? " · " + Math.round(S.progress * 100) + "%" : "") : t("mo.go"));
         v.only.disabled = !!S.recognizing;
+        asciiRun(page === "text" && !!S.recognizing && !has);
         v.recognize.classList.toggle("busy", !!S.recognizing);
         if (!has) return;
         v.speaker.hidden = !S.speakers; if (S.speakers) { label(v.speaker, t("spk.voice", { n: (S.speaker || 0) + 1 })); v.speaker.classList.toggle("two", S.speaker === 1); }
@@ -789,6 +819,9 @@
         U.field(proj, { path: "lang", label: t("set.uiLang"), kind: "segmented", options: [{ id: "ru", label: "Русский" }, { id: "en", label: "English" }], commit: function (l) { set("lang", l); } });
         U.field(proj, { path: "mode", label: t("set.mode"), kind: "segmented", hint: t("set.modeHint"), options: [{ id: "compact", label: t("mode.compact") }, { id: "normal", label: t("mode.normal") }, { id: "detailed", label: t("mode.detailed") }],
             value: function () { return prefs.mode; }, commit: function (m) { prefs.mode = m; savePrefs(); applyMode(); if (detailed() && view.edit.loadSfx) view.edit.loadSfx(); if (S) U.refresh(S); } });
+        U.field(proj, { path: "accentTheme", label: t("set.accent"), kind: "segmented", options: [{ id: "gold", label: t("accent.gold") }, { id: "chrome", label: t("accent.chrome") }],
+            value: function () { return window.NoirTheme && NoirTheme.accent ? NoirTheme.accent() : "gold"; },
+            commit: function (a) { if (window.NoirTheme && NoirTheme.setAccent) NoirTheme.setAccent(a); build(); go("settings", true, "set-project"); } });
         U.field(proj, { path: "replace", label: "Новое создание заменяет субтитры того же видео", kind: "toggle" });
         U.field(proj, { path: "reflow", label: "Перекладывать фразы после смены стиля", kind: "toggle", adv: true });
         var pr = U.row(proj, "actions wrap");

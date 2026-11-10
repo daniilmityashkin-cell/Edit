@@ -191,7 +191,10 @@
         svg.setAttribute("class", "rw-svg"); svg.setAttribute("width", 2 * half); svg.setAttribute("height", 2 * half);
         svg.setAttribute("viewBox", -half + " " + -half + " " + 2 * half + " " + 2 * half); svg.style.cssText = "left:" + -half + "px;top:" + -half + "px";
         var h = "<defs><linearGradient id='" + u + "' x1='" + -g.r1 + "' y1='" + -g.r1 + "' x2='" + g.r1 + "' y2='" + g.r1 + "' gradientUnits='userSpaceOnUse'>" +
-            "<stop offset='0' stop-color='#fff2cf'/><stop offset='.3' stop-color='#e9bd62'/><stop offset='.58' stop-color='#b07a2a'/><stop offset='.8' stop-color='#e2b45a'/><stop offset='1' stop-color='#8d5f1d'/></linearGradient></defs>";
+            (document.documentElement.getAttribute("data-accent") === "chrome"
+                ? "<stop offset='0' stop-color='#ffffff'/><stop offset='.3' stop-color='#d9d9d9'/><stop offset='.58' stop-color='#7a7a7a'/><stop offset='.8' stop-color='#cfcfcf'/><stop offset='1' stop-color='#5a5a5a'/>"
+                : "<stop offset='0' stop-color='#fff2cf'/><stop offset='.3' stop-color='#e9bd62'/><stop offset='.58' stop-color='#b07a2a'/><stop offset='.8' stop-color='#e2b45a'/><stop offset='1' stop-color='#8d5f1d'/>") +
+            "</linearGradient></defs>";
         h += "<circle class='rw-track' r='" + g.r1.toFixed(2) + "' stroke-width='" + bw.toFixed(2) + "'/>";
         for (var i = 0; i < n; i++) h += "<path class='rw-seg' data-i='" + i + "' d='" + arc(g.r1, i * step - step / 2 + gapDeg / 2, i * step + step / 2 - gapDeg / 2) + "' stroke='url(#" + u + ")' stroke-width='" + bw.toFixed(2) + "'/>";
         for (i = 0; i < n; i++) {
