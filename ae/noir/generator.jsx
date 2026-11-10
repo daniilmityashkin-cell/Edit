@@ -217,7 +217,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         put(blurProp, plan(from.blur, 0, to.blur, null));
     };
 
-    // Значение списка ключей [[t, v], ...] в момент t: линейная интерполяция; v — число или массив.
+    // Значение списка ключей [[t, v], [t, v]] в момент t: линейная интерполяция; v — число или массив.
     function listAt(list, t, fallback) {
         if (!list || !list.length) return fallback;
         if (t <= list[0][0]) return list[0][1];

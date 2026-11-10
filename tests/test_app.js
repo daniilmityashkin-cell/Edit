@@ -393,7 +393,8 @@ const accept = (a, mode) => { let r = a.call("generate", { mode: mode || "all" }
       assert.throws(() => a.call("montage.apply", {}), /Сначала распознайте/);
       a.call("montage.start", { scale: 112 }); assert.strictEqual(a.state().recognizing, true);
       assert.strictEqual(subs(c).length, 0, "до конца распознавания ничего не создано");
-      cb.onDone(sample(), { link: null });
+      const g0 = global.app.undoGroups; cb.onDone(sample(), { link: null });
+      assert.strictEqual(global.app.undoGroups - g0, 1, "монтаж — одна группа отмены (в AE вложенных групп нет)"); assert.strictEqual(global.app.undoDepth, 0);
       const st = a.state(), pieces = c._l.filter(l => l.comment === N.CUT_TAG).sort((x, y) => x.inPoint - y.inPoint);
       assert.strictEqual(st.recognizing, false); assert.ok(/^Смонтировано: вырезано [\d.]+ с/.test(st.status), st.status);
       assert.strictEqual(pieces.length, 2, "паузы вырезаны"); assert.ok(!c._l.includes(v));

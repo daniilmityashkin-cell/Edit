@@ -90,7 +90,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         return out;
     };
 
-    // Fonts (Font API: AE 24.0+). Returns families matching a query, at most `limit`.
+    // Fonts (Font API: AE 24.0+). Returns families matching a query, at most limit.
     N.fontFamilies = function (query, limit) {
         var out = [], q = String(query || "").toLowerCase(), all;
         try { all = app.fonts.allFonts; } catch (e) { return { available: false, families: [] }; }
@@ -189,9 +189,13 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             if (!(comp instanceof CompItem)) throw new Error("Откройте композицию.");
             return comp;
         }
+        // AE has no nested undo groups (a nested begin/end gives «Undo group mismatch» and breaks Ctrl+Z): only the outermost call opens one.
+        var undoDepth = 0;
+        function undoBegin(name) { if (undoDepth === 0) app.beginUndoGroup("NOIR Captions: " + name); undoDepth += 1; }
+        function undoEnd() { if (undoDepth <= 0) return; undoDepth -= 1; if (undoDepth === 0) app.endUndoGroup(); }
         function undo(name, fn) {
-            app.beginUndoGroup("NOIR Captions: " + name);
-            try { return fn(); } finally { app.endUndoGroup(); }
+            undoBegin(name);
+            try { return fn(); } finally { undoEnd(); }
         }
         function sourceKey() { return st.data ? N.sourceKey(st.data, st.link) : null; }
 
@@ -362,7 +366,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             }
             if (mode === "preview" && (!groups.length || groups[0].compStart >= comp.duration || groups[groups.length - 1].compOut <= 0)) throw new Error("Выбранная фраза находится вне композиции.");
             var previewComp = null;
-            app.beginUndoGroup("NOIR Captions: создать субтитры");
+            undoBegin("создать субтитры");
             try {
                 if (mode === "preview") {
                     var original = comp;
@@ -395,7 +399,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             } catch (e) {
                 if (previewComp) try { previewComp.remove(); } catch (cleanup) {}
                 throw e;
-            } finally { app.endUndoGroup(); }
+            } finally { undoEnd(); }
         }
 
         // ---------- face ----------
@@ -899,7 +903,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             var rep = [], accents = 0, i;
             function why(e) { return String(e && e.message || e).split("\n")[0]; }
             function sec1(x) { return Math.round(x * 10) / 10; }
-            app.beginUndoGroup("NOIR Captions: монтаж");
+            undoBegin("монтаж");
             try {
                 if (a.cut !== false) {
                     try { var c = cutApply({ mode: "both" }); rep.push(c && c.removed ? "вырезано " + sec1(c.removed) + " с пауз и слов-паразитов" : "лишних пауз нет"); }
@@ -913,7 +917,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
                     try { var z = zoomApply({ on: accents ? "accents" : "phrases", scale: a.scale, mode: a.smooth ? "smooth" : "snap", replace: true }); rep.push("зум " + num(a.scale, 110, 101, 150) + "% × " + z.pushes); }
                     catch (eZ) { rep.push("зум не вышел (" + why(eZ) + ")"); }
                 }
-            } finally { app.endUndoGroup(); }
+            } finally { undoEnd(); }
             status("Смонтировано: " + rep.join("; ") + ". Всё можно править; отмена в AE — Ctrl+Z.", 1);
             return rep;
         }

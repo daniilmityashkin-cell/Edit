@@ -273,7 +273,10 @@ function install(opts = {}) {
       getSetting: (s, k) => settings[s + "/" + k],
       saveSetting: (s, k, v) => { settings[s + "/" + k] = v; },
     },
-    beginUndoGroup() {}, endUndoGroup() {},
+    // Real AE has no nested undo groups ("Undo group mismatch"): the mock throws on nesting and counts the groups.
+    undoGroups: 0, undoDepth: 0,
+    beginUndoGroup(n) { if (global.app.undoDepth++) throw new Error("Вложенная undo-группа: " + n); global.app.undoGroups++; },
+    endUndoGroup() { if (!global.app.undoDepth) throw new Error("endUndoGroup без beginUndoGroup"); global.app.undoDepth--; },
     scheduleTask(code, ms, repeat) { const id = ++taskId; tasks[id] = setInterval(() => (0, eval)(code), ms); return id; },
     cancelTask(id) { clearInterval(tasks[id]); delete tasks[id]; },
   };
