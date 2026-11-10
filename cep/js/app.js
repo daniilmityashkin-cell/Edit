@@ -16,8 +16,16 @@
         document.body.classList.toggle("mode-compact", prefs.mode === "compact");
     }
     // A section that folds (settings, files): only its name is shown until it is opened; the choice is remembered.
+    // a round metal icon before a section title (the glass-card look); key → icon
+    var TITLE_ICON = { rec: "mic", font: "type", look: "palette", layout: "format", motion: "animIn", memory: "sparkles", project: "settings", files: "file",
+        "edit-place": "place", "edit-control": "edit", "edit-zoom": "zoomIn", "edit-time": "time", "edit-anim": "animIn", "edit-layers": "layers", "edit-tools": "wand", "edit-sfx": "listen" };
+    function titleIcon(card, key) {
+        var title = card.querySelector(".card-title"), name = TITLE_ICON[key]; if (!title || !name || title.querySelector(".ic-orb")) return;
+        var orb = document.createElement("span"); orb.className = "ic-orb"; U.icon(name, orb); title.insertBefore(orb, title.firstChild);
+    }
     function fold(card, key, open) {
         var title = card.querySelector(".card-title"); if (!title) return card;
+        titleIcon(card, key);
         if (!prefs.open) prefs.open = {};
         var on = prefs.open[key] === undefined ? !!open : !!prefs.open[key];
         card.classList.add("fold"); card.dataset.fold = key; title.tabIndex = 0; title.setAttribute("role", "button");
@@ -204,6 +212,7 @@
         // empty: recognition
         v.empty = el("div", "text-empty", p);
         var rc = U.card(v.empty, null, null, "hero");
+        var hi = el("span", "ic-orb hero-orb", rc); U.icon("sparkles", hi);
         el("span", "eyebrow", rc, t("video.eyebrow"));
         el("h2", "hero-title", rc, t("video.title")); el("p", "lead", rc, t("video.lead"));
         readinessBox(rc, true);
@@ -645,7 +654,7 @@
     }
 
     // ---------- edit ----------
-    function section(p, id, title) { var c = U.card(p, title); c.id = id; return c; }
+    function section(p, id, title) { var c = U.card(p, title); c.id = id; titleIcon(c, id); return c; }
     function buildEdit(p) {
         var v = view.edit;
         var head = U.card(p, null, t("edit.lead"));

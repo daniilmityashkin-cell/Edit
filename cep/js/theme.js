@@ -11,8 +11,8 @@
     var NEUTRAL = { "--bg": "#050505", "--surface": "#0c0c0c", "--surface-2": "#141414", "--surface-3": "#1f1f1f", "--line": "#1c1c1c", "--line-strong": "#2e2e2e",
         "--text": "#f2f2f2", "--muted": "#9b9b9b", "--faint": "#5e5e5e" };
     // "aurora": blue-black glass with iridescent light (cyan → blue → violet → rose), the default look
-    var AURORA = { "--bg": "#040408", "--surface": "#0a0b10", "--surface-2": "#11131a", "--surface-3": "#1a1d27", "--line": "#171a22", "--line-strong": "#262a36",
-        "--text": "#eef0f7", "--muted": "#9097ab", "--faint": "#5a6072" };
+    var AURORA = { "--bg": "#08080a", "--surface": "#141517", "--surface-2": "#1b1c1f", "--surface-3": "#232428", "--line": "#1d1e21", "--line-strong": "#2b2c30",
+        "--text": "#ffffff", "--muted": "#a3a4ab", "--faint": "#5f6068" };
     var FAMILIES = { gold: 1, chrome: 1, aurora: 1 }, accent = "aurora", lastBg = [35, 35, 35];
     try { var saved = localStorage.getItem("noir.accent"); if (FAMILIES[saved]) accent = saved; } catch (e0) {}
     root.setAttribute("data-accent", accent);
