@@ -1,0 +1,29 @@
+idx | name | type | role | inPoint | outPoint | startTime | scaleKeys | text
+1 | NOIR · МИРБУЛАТ | TextLayer | caption | 0.067 | 0.847 | 0 | 0 | МИРБУЛАТ
+2 | NOIR · РАКЕЛЬ | TextLayer | caption | 1.147 | 1.487 | 0 | 0 | РАКЕЛЬ
+3 | NOIR · ПОДАШЬ | TextLayer | caption | 0.847 | 1.487 | 0 | 0 | ПОДАШЬ
+4 | NOIR · ПОЖАЛУЙСТА | TextLayer | caption | 1.487 | 1.813 | 0 | 0 | ПОЖАЛУЙСТА
+5 | NOIR · СПАСИБО | TextLayer | caption | 1.813 | 2.577 | 0 | 0 | СПАСИБО
+6 | NOIR · И НОЖ ВОН ТАМ | TextLayer | caption | 2.577 | 3.723 | 0 | 0 | И НОЖ ВОН ТАМ
+7 | NOIR · СПАСИБО | TextLayer | caption | 3.723 | 4.477 | 0 | 0 | СПАСИБО
+8 | NOIR · ВОН ТУ | TextLayer | caption | 5.357 | 5.657 | 0 | 0 | ВОН ТУ
+9 | NOIR · ПОЧИСТИШЬ | TextLayer | caption | 4.777 | 5.657 | 0 | 0 | ПОЧИСТИШЬ
+10 | NOIR · И | TextLayer | caption | 4.477 | 5.657 | 0 | 0 | И
+11 | NOIR · СТОРОНУ | TextLayer | caption | 5.657 | 6.077 | 0 | 0 | СТОРОНУ
+12 | NOIR · ПОЖАЛУЙСТА | TextLayer | caption | 6.077 | 6.48 | 0 | 0 | ПОЖАЛУЙСТА
+13 | NOIR · БЛИН | TextLayer | caption | 6.48 | 7.08 | 0 | 0 | БЛИН
+14 | NOIR · НАДОЕЛ | TextLayer | caption | 7.08 | 7.9 | 0 | 0 | НАДОЕЛ
+15 | NOIR · ПРИНЕСИ | TextLayer | caption | 7.9 | 8.5 | 0 | 0 | ПРИНЕСИ
+16 | NOIR · ПОДАЙ | TextLayer | caption | 8.5 | 9.153 | 0 | 0 | ПОДАЙ
+17 | NOIR · СЛЫШЬ | TextLayer | caption | 9.153 | 9.753 | 0 | 0 | СЛЫШЬ
+18 | NOIR · СТАРИНА | TextLayer | caption | 9.753 | 10.173 | 0 | 0 | СТАРИНА
+19 | NOIR · МЕНЯ | TextLayer | caption | 11.173 | 11.333 | 0 | 0 | МЕНЯ
+20 | NOIR · ТЫ ЕЩЕ РАЗ | TextLayer | caption | 10.173 | 11.333 | 0 | 0 | ТЫ ЕЩЕ РАЗ
+21 | NOIR · ПОХЕРНИ | TextLayer | caption | 11.333 | 11.813 | 0 | 0 | ПОХЕРНИ
+22 | слышь старина.mp4 | AVLayer | cut piece | 0 | 1.733 | -1.233 | 4 | 
+23 | слышь старина.mp4 | AVLayer | cut piece | 1.733 | 2.5 | -4.467 | 0 | 
+24 | слышь старина.mp4 | AVLayer | cut piece | 2.5 | 3.633 | -8.433 | 0 | 
+25 | слышь старина.mp4 | AVLayer | cut piece | 3.633 | 4.4 | -8.967 | 0 | 
+26 | слышь старина.mp4 | AVLayer | cut piece | 4.4 | 6.4 | -10.833 | 4 | 
+27 | слышь старина.mp4 | AVLayer | cut piece | 6.4 | 9.067 | -13 | 0 | 
+28 | слышь старина.mp4 | AVLayer | cut piece | 9.067 | 11.9 | -18.067 | 4 | 
