@@ -90,6 +90,10 @@ function layoutProblems() {
         assert.strictEqual(await page.getAttribute("html", "data-theme"), "dark");
         assert.deepStrictEqual(await page.$$eval(".tab", ts => ts.map(t => t.dataset.page)), ["text", "style", "edit", "settings"]);
         assert.ok(await page.locator(".text-empty").isVisible() && await page.locator(".orb-btn").isVisible());
+        assert.strictEqual(await page.evaluate(() => document.documentElement.getAttribute("data-accent")), "aurora", "по умолчанию — «Аврора»");
+        await page.waitForTimeout(800);
+        const ink = await page.evaluate(() => { const i = document.querySelector(".tab-ink").getBoundingClientRect(), t = document.querySelector(".tab.on").getBoundingClientRect(); return [i.left - t.left, t.right - i.right, i.width]; });
+        assert.ok(ink[2] > 20 && Math.abs(ink[0] - 10) < 2 && Math.abs(ink[1] - 10) < 2, "линия под активной вкладкой: " + ink);
         assert.strictEqual(await page.locator(".topbar .btn.primary").isVisible(), false, "на экране распознавания одна главная кнопка");
         assert.ok(calls.includes("NOIR_CEP.open()") && calls.includes("setup.check"));
         await shot("start");
@@ -142,6 +146,7 @@ function layoutProblems() {
             assert.ok(await page.locator(".topline").isVisible());
             assert.ok(/40%/.test(await page.locator(".text-empty .btn.primary.wide").textContent()));
             await page.waitForFunction(() => { const p = document.querySelector(".text-empty .ascii"); return p && !p.hidden && p.textContent.length > 200; });
+            assert.ok(await page.evaluate(() => document.body.classList.contains("ai-busy")), "пока ИИ работает — панель светится по краю");
             await shot("recognizing");
             const polls = calls.filter(c => c === "poll").length; await page.waitForTimeout(1900);
             assert.ok(calls.filter(c => c === "poll").length > polls, "polls while busy");
@@ -272,6 +277,13 @@ function layoutProblems() {
         await tab("settings"); await page.waitForTimeout(300); await shot("chrome-settings");
         await page.locator('.field[data-path="accentTheme"] .seg[data-value="gold"]').click(); await settle();
         assert.strictEqual(await page.evaluate(() => document.documentElement.getAttribute("data-accent")), "gold");
+        await page.locator('.field[data-path="accentTheme"] .seg[data-value="aurora"]').click(); await settle();
+        assert.strictEqual(await page.evaluate(() => document.documentElement.getAttribute("data-accent")), "aurora");
+        await page.evaluate(() => document.body.classList.add("ai-think")); await page.waitForTimeout(700); await shot("aurora-settings-glow"); await page.evaluate(() => document.body.classList.remove("ai-think"));
+        await tab("text"); await page.waitForTimeout(300); await shot("aurora-text");
+        await page.locator(".orb-btn").click(); await page.waitForSelector(".noir-wheel"); await page.waitForTimeout(350); await shot("aurora-wheel"); await page.keyboard.press("Escape");
+        await page.evaluate(() => NoirAssistant.open()); await page.waitForTimeout(300); await shot("aurora-assistant"); await page.evaluate(() => NoirAssistant.close());
+        await tab("settings");
     });
     await step("светлая тема AE и английский интерфейс; пересборка не стирает текст", async () => {
         await page.evaluate(() => NoirTheme.apply([214, 214, 214]));

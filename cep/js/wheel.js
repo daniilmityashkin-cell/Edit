@@ -191,7 +191,9 @@
         svg.setAttribute("class", "rw-svg"); svg.setAttribute("width", 2 * half); svg.setAttribute("height", 2 * half);
         svg.setAttribute("viewBox", -half + " " + -half + " " + 2 * half + " " + 2 * half); svg.style.cssText = "left:" + -half + "px;top:" + -half + "px";
         var h = "<defs><linearGradient id='" + u + "' x1='" + -g.r1 + "' y1='" + -g.r1 + "' x2='" + g.r1 + "' y2='" + g.r1 + "' gradientUnits='userSpaceOnUse'>" +
-            (document.documentElement.getAttribute("data-accent") === "chrome"
+            (document.documentElement.getAttribute("data-accent") === "aurora"
+                ? "<stop offset='0' stop-color='#9ff3ff'/><stop offset='.3' stop-color='#7d8cff'/><stop offset='.58' stop-color='#a46bff'/><stop offset='.8' stop-color='#ff9ec0'/><stop offset='1' stop-color='#ffc79a'/>"
+                : document.documentElement.getAttribute("data-accent") === "chrome"
                 ? "<stop offset='0' stop-color='#ffffff'/><stop offset='.3' stop-color='#d9d9d9'/><stop offset='.58' stop-color='#7a7a7a'/><stop offset='.8' stop-color='#cfcfcf'/><stop offset='1' stop-color='#5a5a5a'/>"
                 : "<stop offset='0' stop-color='#fff2cf'/><stop offset='.3' stop-color='#e9bd62'/><stop offset='.58' stop-color='#b07a2a'/><stop offset='.8' stop-color='#e2b45a'/><stop offset='1' stop-color='#8d5f1d'/>") +
             "</linearGradient></defs>";

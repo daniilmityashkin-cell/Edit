@@ -9,10 +9,10 @@
 
     function logo(cls) {
         var u = "nx" + (++uid), C = 2 * Math.PI * 24.5, seg = C / 8, gap = 3.4, rot = -90 + (gap / C) * 180;
-        var chrome = document.documentElement.getAttribute("data-accent") === "chrome";
+        var fam = document.documentElement.getAttribute("data-accent"), chrome = fam === "chrome", aurora = fam === "aurora";
         // metal of the rim, the ring and the blade: polished gold, or polished steel in the Chrome theme
-        var M = chrome ? ["#ffffff", "#d6d6d6", "#8e8e8e", "#3c3c3c", "#cfcfcf", "#ffffff"] : ["#fff3cc", "#ecc46a", "#a8772a", "#6e4b14", "#e1b45c", "#fff1c6"];
-        var Dk = chrome ? ["#2a2a2c", "#0b0b0c", "#020202"] : ["#2e2921", "#0e0d0b", "#040403"];
+        var M = aurora ? ["#9ff3ff", "#7d8cff", "#3b3496", "#1a1640", "#c27dff", "#ffc2b0"] : chrome ? ["#ffffff", "#d6d6d6", "#8e8e8e", "#3c3c3c", "#cfcfcf", "#ffffff"] : ["#fff3cc", "#ecc46a", "#a8772a", "#6e4b14", "#e1b45c", "#fff1c6"];
+        var Dk = aurora ? ["#20233a", "#090a12", "#020205"] : chrome ? ["#2a2a2c", "#0b0b0c", "#020202"] : ["#2e2921", "#0e0d0b", "#040403"];
         var s = document.createElementNS(NS, "svg");
         s.setAttribute("viewBox", "0 0 64 64"); s.setAttribute("class", "nx-logo" + (cls ? " " + cls : "")); s.setAttribute("aria-hidden", "true");
         s.innerHTML =

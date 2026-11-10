@@ -18,6 +18,9 @@
         try { var s = JSON.parse(localStorage.getItem(STORE) || "{}"); for (var k in s) if (d.hasOwnProperty(k)) d[k] = s[k]; } catch (e) {}
         return d;
     }
+    // While the AI works the whole panel edge glows (body.ai-think; app.js draws the glow)
+    var busyN = 0;
+    function aiGlow(on) { busyN = Math.max(0, busyN + (on ? 1 : -1)); document.body.classList.toggle("ai-think", busyN > 0); }
     function saveSettings(s) { try { localStorage.setItem(STORE, JSON.stringify(s)); } catch (e) {} }
     var settings = loadSettings(), models = [], online = false;
 
@@ -639,9 +642,9 @@
             return confirmRow(c).then(function (ok) { if (ok) return execAll(cmds).then(function (notes) { say(notes.length ? notes.join("\n") : t("as.done"), "note"); }); });
         }
         function textPlan(cmd) {
-            say(t("as.preparing"), "ai"); var waiting = log.lastChild;
+            say(t("as.preparing"), "ai"); var waiting = log.lastChild; aiGlow(true);
             return prepareText(cmd).then(function (prep) {
-                if (waiting.parentNode) waiting.parentNode.removeChild(waiting);
+                if (waiting.parentNode) { waiting.parentNode.removeChild(waiting); aiGlow(false); }
                 if (!prep.changes.length) { say(t("as.nothing"), "note"); return; }
                 var c = card(prep.title + " · " + t("as.changes", { n: prep.changes.length }));
                 var list = el("div", "as-diff", c);
@@ -657,7 +660,7 @@
                     if (!ok) return;
                     return prep.apply().then(function () { return update ? api.generate("all") : null; }).then(function () { say(t("as.doneUndo"), "note"); });
                 });
-            }, function (e) { if (waiting.parentNode) waiting.parentNode.removeChild(waiting); say("⚠ " + (e && e.message || e), "ai"); });
+            }, function (e) { if (waiting.parentNode) { waiting.parentNode.removeChild(waiting); aiGlow(false); } say("⚠ " + (e && e.message || e), "ai"); });
         }
         // Cutting: the plan is measured by AE first (before → after seconds); the video changes only after «Применить».
         function cutPlanCard(cmd) {
@@ -678,11 +681,11 @@
         function scriptCard(cmd, request) {
             if (!scriptsOn()) { say(t("as.scriptOff"), "ai"); return Promise.resolve(); }
             if (!online && !cmd.code) { say(t("as.needAi"), "ai"); return Promise.resolve(); }
-            say(t("as.scriptWriting"), "ai"); var waiting = log.lastChild;
+            say(t("as.scriptWriting"), "ai"); var waiting = log.lastChild; aiGlow(true);
             return writeScript(cmd, request).then(function (r) {
-                if (waiting.parentNode) waiting.parentNode.removeChild(waiting);
+                if (waiting.parentNode) { waiting.parentNode.removeChild(waiting); aiGlow(false); }
                 return showScript(cmd, request, r, 0);
-            }, function (e) { if (waiting.parentNode) waiting.parentNode.removeChild(waiting); say("⚠ " + (window.NoirI18n ? NoirI18n.host(e && e.message || String(e)) : (e && e.message || e)), "ai"); });
+            }, function (e) { if (waiting.parentNode) { waiting.parentNode.removeChild(waiting); aiGlow(false); } say("⚠ " + (window.NoirI18n ? NoirI18n.host(e && e.message || String(e)) : (e && e.message || e)), "ai"); });
         }
         // shows the code; «Применить» runs it; if AE reports an error, the model repairs its code (up to 2 times) and the new code is shown again
         function showScript(cmd, request, r, round) {
@@ -783,16 +786,16 @@
             var job;
             if (fromMem) job = Promise.resolve(fromMem);
             else if (wantAi) {
-                say(t("as.thinking"), "ai"); var thinking = log.lastChild;
+                say(t("as.thinking"), "ai"); var thinking = log.lastChild; aiGlow(true);
                 var examples = [];
                 job = api.call("memory.get").then(function (m) { examples = m && m.examples || []; }, function () {}).then(function () { return api.call("context"); })
                     .then(function (ctx) { return askModel(text, ctx || {}, examples); }).then(function (reply) {
-                    if (thinking.parentNode) thinking.parentNode.removeChild(thinking);
+                    if (thinking.parentNode) { thinking.parentNode.removeChild(thinking); aiGlow(false); }
                     if (!reply) throw new Error(t("as.badFormat"));
                     reply.fromAi = true;
                     return reply;
                 }).catch(function (e) {
-                    if (thinking.parentNode) thinking.parentNode.removeChild(thinking);
+                    if (thinking.parentNode) { thinking.parentNode.removeChild(thinking); aiGlow(false); }
                     say(t("as.aiFailed", { err: e && e.message || e }), "ai");
                     if (local.known) return { say: local.say, commands: local.commands };
                     return null;

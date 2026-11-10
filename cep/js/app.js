@@ -54,7 +54,7 @@
 
     // ---------- shell ----------
     function build() {
-        root.textContent = ""; view = { text: {}, style: {}, edit: {}, settings: {}, readiness: [] }; seenText = null; textDirty = false;
+        root.textContent = ""; var glow = el("div", "ai-glow", root); el("div", "ai-haze", root); glow.setAttribute("aria-hidden", "true"); view = { text: {}, style: {}, edit: {}, settings: {}, readiness: [] }; seenText = null; textDirty = false;
         NoirI18n.set(S && S.settings.lang);
         applyMode();
         var shell = el("div", "shell", root);
@@ -67,6 +67,7 @@
         view.primary = U.button("", "primary", top, function () { primary(); });
         view.progress = el("div", "topline", shell); el("i", "", view.progress);
         var nav = el("nav", "tabs", shell); nav.setAttribute("role", "tablist"); nav.setAttribute("aria-label", "NOIR");
+        view.ink = el("i", "tab-ink", nav);
         view.tabs = {};
         PAGES.forEach(function (id) {
             var b = U.button(t("nav." + id), "tab", nav, function () { go(id); }, NAV_ICON[id]);
@@ -80,6 +81,7 @@
         if (window.NoirWheel) NoirWheel.init({ run: run, act: act, call: H.call, generate: generate, page: go, state: function () { return S; }, presets: function () { return presets; }, meta: function () { return meta; }, status: pillState, notify: U.toast });
         if (window.NoirAssistant) NoirAssistant.init({ call: H.call, idle: H.idle, state: function () { return S; }, page: go, generate: generate, notify: U.toast });
         go(page, true);
+        try { if (document.fonts && document.fonts.ready) document.fonts.ready.then(moveInk); } catch (eF) {} setTimeout(moveInk, 300);
         if (S) render();
         renderReadiness();
     }
@@ -92,8 +94,15 @@
         if (anchor) { var target = document.getElementById(anchor); if (target) { if (target._open) target._open(); target.scrollIntoView({ block: "start" }); target.classList.add("flash"); setTimeout(function () { target.classList.remove("flash"); }, 900); } }
         else if (!quiet) view.pages[id].scrollTop = 0;
         if (id === "edit" && view.edit.loadSfx) view.edit.loadSfx();
+        moveInk();
         if (S) render();
     }
+    // the line under the active tab slides from tab to tab
+    function moveInk() {
+        var tab = view.tabs && view.tabs[page], ink = view.ink; if (!tab || !ink) return;
+        ink.style.width = Math.max(0, tab.offsetWidth - 20) + "px"; ink.style.transform = "translateX(" + (tab.offsetLeft + 10) + "px)";
+    }
+    window.addEventListener("resize", function () { moveInk(); });
     function primaryAction() {
         if (!S) return null;
         if (S.recognizing) return { label: t("act.cancel"), run: function () { act("cancel"); } };
@@ -819,8 +828,8 @@
         U.field(proj, { path: "lang", label: t("set.uiLang"), kind: "segmented", options: [{ id: "ru", label: "Русский" }, { id: "en", label: "English" }], commit: function (l) { set("lang", l); } });
         U.field(proj, { path: "mode", label: t("set.mode"), kind: "segmented", hint: t("set.modeHint"), options: [{ id: "compact", label: t("mode.compact") }, { id: "normal", label: t("mode.normal") }, { id: "detailed", label: t("mode.detailed") }],
             value: function () { return prefs.mode; }, commit: function (m) { prefs.mode = m; savePrefs(); applyMode(); if (detailed() && view.edit.loadSfx) view.edit.loadSfx(); if (S) U.refresh(S); } });
-        U.field(proj, { path: "accentTheme", label: t("set.accent"), kind: "segmented", options: [{ id: "gold", label: t("accent.gold") }, { id: "chrome", label: t("accent.chrome") }],
-            value: function () { return window.NoirTheme && NoirTheme.accent ? NoirTheme.accent() : "gold"; },
+        U.field(proj, { path: "accentTheme", label: t("set.accent"), kind: "segmented", options: [{ id: "aurora", label: t("accent.aurora") }, { id: "chrome", label: t("accent.chrome") }, { id: "gold", label: t("accent.gold") }],
+            value: function () { return window.NoirTheme && NoirTheme.accent ? NoirTheme.accent() : "aurora"; },
             commit: function (a) { if (window.NoirTheme && NoirTheme.setAccent) NoirTheme.setAccent(a); build(); go("settings", true, "set-project"); } });
         U.field(proj, { path: "replace", label: "Новое создание заменяет субтитры того же видео", kind: "toggle" });
         U.field(proj, { path: "reflow", label: "Перекладывать фразы после смены стиля", kind: "toggle", adv: true });
@@ -890,6 +899,8 @@
         view.primary.hidden = page === "text";      // one gold button per screen: the text page has its own (recognize / create)
         view.progress.hidden = !S.recognizing; view.progress.firstChild.style.width = Math.max(4, Math.round((S.progress || 0) * 100)) + "%";
         view.tabs.text.classList.toggle("dot", !!(S.dirty && S.canUpdate));
+        document.body.classList.toggle("ai-busy", !!(S.recognizing || S.scanning));
+        moveInk();
         renderText(); renderStyle(); renderEdit(); renderSettings(); renderIssues();
         U.refresh(S);
     }
