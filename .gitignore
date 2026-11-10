@@ -10,6 +10,3 @@ fonts/user/*
 
 # written by scripts/install_cep_dev.ps1 (through the link into cep/)
 cep/project-root.txt
-tests/ae_real/report.json
-tests/ae_real/words.json
-tests/ae_real/result.png
