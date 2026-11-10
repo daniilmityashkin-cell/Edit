@@ -1,0 +1,25 @@
+{
+ "center": {
+  "layer": "NOIR ∑ —”¡“»“–€ —¿Ã»",
+  "t": 2.233,
+  "size": [
+   1080,
+   1920
+  ],
+  "bbox": [
+   86,
+   1175,
+   951,
+   1222
+  ],
+  "left_margin": 86,
+  "right_margin": 129,
+  "offset_from_center_px": -21.5,
+  "text_center_y": 1198.5
+ },
+ "center_first": {
+  "layer": "NOIR ∑ œ–»¬≈“",
+  "t": 0.45,
+  "note": "no text pixels (caption already faded out)"
+ }
+}
