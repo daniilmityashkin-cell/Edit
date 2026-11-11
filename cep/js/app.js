@@ -115,6 +115,7 @@
         if (!S) return null;
         if (S.recognizing) return { label: t("act.cancel"), run: function () { act("cancel"); } };
         if (!S.hasData) return { label: t("act.recognize"), run: function () { go("text"); recognize(); } };
+        if (S.canUpdate && S.structural) return { label: t("act.updateAll"), run: function () { generate("all"); } };
         if (S.canUpdate && S.phraseDirty) return { label: t("act.updatePhrase"), run: function () { generate("phrase"); } };
         if (S.canUpdate) return { label: t("act.updateAll"), run: function () { generate("all"); } };
         return { label: t("act.create"), run: function () { generate("all"); } };
@@ -251,7 +252,14 @@
         v.source = el("span", "source-name", sr); el("span", "spacer", sr);
         v.reRec = U.button(t("act.recNew"), "small", sr, function () { if (S && S.recognizing) act("cancel"); else recognize(); }, "mic");
         v.reRec.title = t("text.recNewHint");
-        var c = U.card(v.body, null, t("text.lead"));
+        var c = U.card(v.body, null, t("text.lead")); v.card = c;
+        // view switch: the list of blocks (default) or the plain text with word tools
+        var vsw = el("div", "segmented view-switch", c); vsw.setAttribute("role", "radiogroup");
+        [["blocks", "tv.blocks"], ["text", "tv.text"]].forEach(function (x) {
+            var b = el("button", "seg", vsw, t(x[1])); b.type = "button"; b.dataset.value = x[0]; b.setAttribute("role", "radio");
+            b.onclick = function () { prefs.textView = x[0]; savePrefs(); applyView(); };
+        });
+        buildBlocks(c);
         var nav = U.row(c, "phrase-nav");
         U.iconButton("prev", "←", nav, function () { if (S && S.phrase > 0) act("phrase.select", { index: S.phrase - 1 }); });
         v.phrase = el("select", "input grow", nav); v.phrase.setAttribute("aria-label", t("text.phrase"));
@@ -298,6 +306,86 @@
         U.button(t("act.importSubs"), "ghost", fr2, function () { act("subs.import"); }, "fileIn");
         U.button(t("batch.btn"), "ghost", fr2, batch, "layers");
         U.button(t("act.reset"), "ghost", fr2, function () { if (window.confirm(t("confirm.reset"))) act("text.reset"); }, "undo");
+    }
+    function applyView() {
+        var v = view.text; if (!v.card) return; var tv = prefs.textView === "text" ? "text" : "blocks";
+        v.card.classList.toggle("tv-blocks", tv === "blocks"); v.card.classList.toggle("tv-text", tv === "text");
+        Array.prototype.forEach.call(v.card.querySelector(".view-switch").children, function (b) { var on = b.dataset.value === tv; b.classList.toggle("on", on); b.setAttribute("aria-checked", String(on)); });
+        if (S) renderBlocks();
+    }
+    // ---------- blocks: the list of phrases, each editable in place ----------
+    function fmtTime(x) { var m = Math.floor(x / 60), s = x - m * 60; return m + ":" + (s < 10 ? "0" : "") + s.toFixed(1); }
+    function plain(s) { return String(s).replace(/[*~|↵]/g, "").replace(/\s+/g, " ").trim(); }
+    function buildBlocks(c) {
+        var v = view.text, box = el("div", "blk-ui", c);
+        v.now = el("div", "blk-now", box); v.nowT = el("span", "blk-now-t", v.now); v.nowX = el("div", "blk-now-x", v.now);
+        var fr = el("div", "blk-find", box);
+        v.fq = el("input", "input", fr); v.fq.type = "search"; v.fq.placeholder = t("blk.find"); v.fq.setAttribute("aria-label", t("blk.find"));
+        v.fr = el("input", "input", fr); v.fr.type = "text"; v.fr.placeholder = t("blk.replace"); v.fr.setAttribute("aria-label", t("blk.replace"));
+        v.fgo = U.button(t("blk.replaceAll"), "small", fr, function () { findRun(true); });
+        v.fn = el("span", "muted small blk-found", box);
+        var ft = 0; v.fq.addEventListener("input", function () { clearTimeout(ft); ft = setTimeout(function () { findRun(false); }, 250); });
+        v.list = el("div", "blk-list", box); v.rows = []; v.hits = [];
+        v.rebuild = el("p", "hint blk-rebuild", box, t("blk.rebuild")); v.rebuild.hidden = true;
+        el("p", "hint", box, t("blk.hint"));
+    }
+    function findRun(replace) {
+        var v = view.text, q = v.fq.value;
+        if (!q) { v.hits = []; renderBlocks(true); return; }
+        var args = { query: q }; if (replace) args.replace = v.fr.value;
+        flushBlocks();
+        H.call("text.find", args).then(function (r) { v.hits = replace ? [] : (r && r.lines) || []; v.foundN = r ? r.count : 0; renderBlocks(true); }).catch(function () {});
+    }
+    var blkTimers = {};
+    function flushBlocks() {
+        for (var k in blkTimers) if (blkTimers.hasOwnProperty(k)) { clearTimeout(blkTimers[k].t); var r = blkTimers[k]; delete blkTimers[k]; act("block.edit", { index: Number(k), text: r.text }); }
+    }
+    function blockSplitIndex(input) {
+        var val = input.value, pos = input.selectionStart === null ? val.length : input.selectionStart, re = /\S+/g, m, idx = 0;
+        while ((m = re.exec(val)) !== null) {
+            if (m[0] === "|" || m[0] === "↵") continue;
+            var mid = (m.index + m.index + m[0].length) / 2;
+            if (pos >= m.index + m[0].length || (pos > m.index && pos > mid)) idx++; else break;
+        }
+        return idx;
+    }
+    function makeRow(i) {
+        var v = view.text, row = el("div", "blk"), n = el("span", "blk-n", row, String(i + 1)), tm = el("span", "blk-tm", row);
+        var inp = el("input", "blk-in", row); inp.type = "text"; inp.spellcheck = false; inp.setAttribute("aria-label", t("blk.row", { n: i + 1 }));
+        var d = el("span", "blk-d", row), acts = el("span", "blk-acts", row);
+        inp.addEventListener("focus", function () { if (S && S.phrase !== i) act("phrase.select", { index: i, seek: true }); });
+        inp.addEventListener("input", function () { if (blkTimers[i]) clearTimeout(blkTimers[i].t); var rec = { text: inp.value }; rec.t = setTimeout(function () { delete blkTimers[i]; act("block.edit", { index: i, text: rec.text }); }, 350); blkTimers[i] = rec; });
+        inp.addEventListener("blur", flushBlocks);
+        inp.addEventListener("keydown", function (e) {
+            if (e.key === "Enter" && e.shiftKey || e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); flushBlocks(); var w = blockSplitIndex(inp); act("block.split", { index: i, word: w }).then(function (r) { if (r === null) U.toast(t("blk.splitHint"), "error", 4000); }); }
+            else if (e.key === "Enter") { e.preventDefault(); var nx = view.text.rows[i + 1]; if (nx) nx.inp.focus(); }
+        });
+        row.addEventListener("mousedown", function (e) { if (e.target === row || e.target === n || e.target === tm || e.target === d) { if (S && S.phrase !== i) act("phrase.select", { index: i, seek: true }); } });
+        var bs = U.iconButton("split", t("blk.split"), acts, function () { flushBlocks(); inp.focus(); var w = blockSplitIndex(inp); act("block.split", { index: i, word: w }); }, "small");
+        var bm = U.iconButton("plus", t("blk.merge"), acts, function () { flushBlocks(); act("block.merge", { index: i }); }, "small");
+        var bd = U.iconButton("close", t("blk.del"), acts, function () { flushBlocks(); act("block.delete", { index: i }); }, "small");
+        return { row: row, inp: inp, tm: tm, d: d, bm: bm };
+    }
+    function renderBlocks(force) {
+        var v = view.text; if (!v.list || !S || !S.hasData) return;
+        var tv = prefs.textView === "text" ? "text" : "blocks"; if (tv !== "blocks") return;
+        var bl = S.blocks || [], lines = String(S.text).split("\n"), sig = S.dataRevision + "|" + S.text + "|" + S.phrase + "|" + (v.hits || []).join(",") + "|" + bl.length;
+        if (!force && v.blkSig === sig) return; v.blkSig = sig;
+        if (v.rows.length !== bl.length) {
+            v.list.textContent = ""; v.rows = [];
+            for (var i = 0; i < bl.length; i++) { var r = makeRow(i); v.list.appendChild(r.row); v.rows.push(r); }
+        }
+        for (var k = 0; k < bl.length; k++) {
+            var r2 = v.rows[k], line = lines[k] === undefined ? "" : lines[k];
+            if (document.activeElement !== r2.inp && r2.inp.value !== line) r2.inp.value = line;
+            r2.tm.textContent = fmtTime(bl[k][0]); r2.d.textContent = (bl[k][1] - bl[k][0]).toFixed(2);
+            r2.row.classList.toggle("sel", k === S.phrase); r2.row.classList.toggle("hit", (v.hits || []).indexOf(k) >= 0);
+            r2.bm.disabled = k === bl.length - 1;
+        }
+        var cur = lines[S.phrase] || "", b = bl[S.phrase];
+        v.nowT.textContent = b ? fmtTime(b[0]) + " – " + fmtTime(b[1]) : ""; v.nowX.textContent = plain(cur) || "—";
+        v.fn.textContent = v.fq.value ? (v.hits && v.hits.length ? t("blk.hits", { n: v.foundN || v.hits.length, m: v.hits.length }) : t("blk.none")) : "";
+        v.rebuild.hidden = !S.structural;
     }
     function prevent(e) { e.preventDefault(); }
     // While speech is being read: a field of characters that gathers into a ring and falls apart again (the NOIR mark's ring),
@@ -362,6 +450,7 @@
         if (v.lastPhrase !== S.phrase && document.activeElement !== v.editor) selectLine(S.phrase);
         v.lastPhrase = S.phrase;
         renderTimeline();
+        v.update.hidden = !!S.structural; applyView();
         v.source.textContent = t("text.source", { name: S.source || "—" });
         label(v.reRec, S.recognizing ? t("act.cancel") + (S.progress ? " · " + Math.round(S.progress * 100) + "%" : "") : t("act.recNew"));
         v.undo.disabled = !S.historyLength;

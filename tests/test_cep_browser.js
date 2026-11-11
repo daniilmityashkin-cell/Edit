@@ -160,6 +160,43 @@ function layoutProblems() {
             const n = calls.length; await page.waitForTimeout(1300); assert.strictEqual(calls.length, n, "polling stops");
         } finally { Object.assign(N, { getAudioSource: keep.a, startRecognition: keep.s }); }
     });
+    await step("блоки: список фраз — правка в строке, разделить по курсору, объединить, удалить, поиск и замена; крупный текущий блок", async () => {
+        assert.strictEqual(await page.locator(".view-switch .seg.on").getAttribute("data-value"), "blocks", "по умолчанию — «Блоки»");
+        assert.strictEqual(await page.locator(".editor").isVisible(), false);
+        assert.strictEqual(await page.locator(".blk").count(), 2);
+        const inp = page.locator(".blk .blk-in");
+        assert.ok(/Привет/.test(await inp.nth(0).inputValue()) && /\d:\d\d\.\d/.test(await page.locator(".blk .blk-tm").nth(0).textContent()), "время и текст блока");
+        await inp.nth(1).click(); await page.waitForTimeout(100); await settle();
+        assert.strictEqual((await hostState()).phrase, 1, "клик в строку выбирает блок");
+        assert.ok(/Субтитры/.test(await page.locator(".blk-now-x").textContent()), "крупный текущий блок");
+        // правка в строке уходит в AE
+        await inp.nth(1).fill("Субтитры сами!"); await page.waitForTimeout(600); await settle();
+        assert.strictEqual((await hostState()).text.split("\n")[1], "Субтитры сами!");
+        // разделить по курсору: «Привет, это NOIR.» → поставить курсор после «Привет,»
+        await inp.nth(0).evaluate(e => { e.focus(); const i = e.value.indexOf("Привет,") + 7; e.setSelectionRange(i, i); });
+        await page.locator(".blk").nth(0).hover(); await page.locator(".blk").nth(0).locator('button[aria-label="Разделить по курсору"]').click(); await settle();
+        assert.strictEqual(await page.locator(".blk").count(), 3, "блоков стало три");
+        assert.ok(await page.locator(".blk-rebuild").isVisible(), "подсказка про «Обновить все»");
+        assert.strictEqual(await page.locator(".sticky-actions .btn:has-text('Обновить фразу')").isVisible(), false, "«Обновить фразу» после перестройки блоков скрыта");
+        // объединить обратно
+        await page.locator(".blk").nth(0).locator('button[aria-label="Объединить со следующим"]').click({ force: true }); await settle();
+        assert.strictEqual(await page.locator(".blk").count(), 2);
+        // поиск и замена
+        await page.locator(".blk-find input").nth(0).fill("сами"); await page.waitForTimeout(500); await settle();
+        assert.ok(/Совпадений: 1/.test(await page.locator(".blk-found").textContent()), await page.locator(".blk-found").textContent());
+        assert.strictEqual(await page.locator(".blk.hit").count(), 1);
+        await page.locator(".blk-find input").nth(1).fill("вместе"); await page.locator(".blk-find .btn").click(); await settle();
+        assert.ok(/вместе/.test((await hostState()).text), "замена прошла");
+        // удалить блок и вернуть правкой «Отменить»
+        await page.locator(".blk").nth(1).locator('button[aria-label="Удалить блок"]').click({ force: true }); await settle();
+        assert.strictEqual(await page.locator(".blk").count(), 1);
+        await shot("blocks");
+        await page.evaluate(() => NoirHost.call("text.undo")); await settle();
+        assert.strictEqual(await page.locator(".blk").count(), 2);
+        // переключатель «Текст» открывает привычный редактор
+        await page.locator('.view-switch .seg[data-value="text"]').click();
+        assert.strictEqual(await page.locator(".editor").isVisible(), true); assert.strictEqual(await page.locator(".blk-ui").isVisible(), false);
+    });
     await step("текст: правка уходит в AE с задержкой; выделенное слово — акцент; фраза по курсору", async () => {
         const ed = page.locator(".editor");
         await page.evaluate(() => { const e = document.querySelector(".editor"); const i = e.value.indexOf("сами"); e.focus(); e.setSelectionRange(i, i + 4); });

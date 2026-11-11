@@ -437,6 +437,34 @@ const accept = (a, mode) => { let r = a.call("generate", { mode: mode || "all" }
     r = a.call("zoom.apply", { on: "cuts", scale: 108 }); assert.strictEqual(r.layers, 2);
     near(pcs[0].transform["Scale"].value[0], 100); near(pcs[1].transform["Scale"].value[0], 108);
   });
+  await test("блоки: правка строки, разделить, объединить, удалить — тайминги слов целы, обновить фразу после перестройки нельзя, отмена возвращает; поиск и замена по словам", () => {
+    const c = mkComp(), a = freshApp();
+    const t0 = a.state().text, b0 = a.state().blocks; assert.deepStrictEqual(b0.map(b => b[2]), [3, 2]); near(b0[0][0], 1.0); near(b0[1][1], 3.9);
+    assert.strictEqual(a.call("block.edit", { index: 1, text: "Субтитры сами." }), true); assert.strictEqual(a.call("block.edit", { index: 1, text: "Субтитры сами." }), false);
+    assert.throws(() => a.call("block.edit", { index: 9, text: "x" }), /Нет такого блока/);
+    accept(a); a.call("block.edit", { index: 1, text: "Субтитры *сами*" });
+    a.call("block.split", { index: 0, word: 1 });
+    let st = a.state(); assert.deepStrictEqual(st.blocks.map(b => b[2]), [1, 2, 2]); assert.deepStrictEqual(st.text.split("\n"), ["Привет,", "это NOIR.", "Субтитры *сами*"]);
+    near(st.blocks[1][0], 1.35); near(st.blocks[1][1], 2.0); assert.strictEqual(st.structural, true);
+    assert.throws(() => a.call("generate", { mode: "phrase" }), /обновите все/);
+    assert.throws(() => a.call("block.split", { index: 0, word: 1 }), /между словами/);
+    a.call("block.merge", { index: 0 }); st = a.state(); assert.deepStrictEqual(st.blocks.map(b => b[2]), [3, 2]); assert.strictEqual(st.text.split("\n")[0], "Привет, это NOIR.");
+    assert.throws(() => a.call("block.merge", { index: 1 }), /не с чем/);
+    a.call("block.delete", { index: 0 }); st = a.state(); assert.deepStrictEqual(st.blocks.map(b => b[2]), [2]); assert.throws(() => a.call("block.delete", { index: 0 }), /Последний/);
+    a.call("text.undo"); assert.deepStrictEqual(a.state().blocks.map(b => b[2]), [3, 2]);
+    a.call("text.undo"); a.call("text.undo"); a.call("text.undo"); assert.deepStrictEqual(a.state().blocks.map(b => b[2]), [3, 2]);
+    // after the structure changed, «all» rebuilds the layers and the flag drops
+    a.call("block.split", { index: 0, word: 2 }); assert.strictEqual(a.state().structural, true);
+    const r = accept(a); assert.ok(r.created > 0); assert.strictEqual(a.state().structural, false); assert.ok(subs(c).length > 0);
+    a.call("block.merge", { index: 0 });
+    // find / replace
+    assert.deepStrictEqual(a.call("text.find", { query: "сами" }), { count: 1, lines: [1] });
+    assert.deepStrictEqual(a.call("text.find", { query: "СУБТ" }), { count: 1, lines: [1] }); assert.strictEqual(a.call("text.find", { query: "СУБТ", cs: true }).count, 0);
+    assert.throws(() => a.call("text.find", { query: "два слова" }), /без пробелов/);
+    assert.throws(() => a.call("text.find", { query: "NOIR", replace: "a b" }), /одно слово/);
+    const rr = a.call("text.find", { query: "NOIR", replace: "НУАР" }); assert.strictEqual(rr.count, 1); assert.ok(/НУАР/.test(a.state().text)); near(a.state().blocks[0][1], 2.0);
+    assert.strictEqual(a.call("text.find", { query: "NOIR", replace: "x", dry: true }).count, 0, "после замены NOIR уже нет");
+  });
   await test("источник звука: ничего не выделено — берётся самый длинный слой со звуком; выделено два — ошибка; файл с диска — слова с начала композиции; панель видит, что будет распознано", () => {
     const a = freshApp(false), c = mkComp({ duration: 20 });
     const add = (name, len) => { const f = path.join(TMP, name); fs.writeFileSync(f, ""); const L = new mock.AVLayer(c, name); L.hasAudio = true; L.source = new mock.FootageItem(new File(f)); L.inPoint = 0; L.outPoint = len; L.startTime = 0; L.stretch = 100; c._l.push(L); return L; };

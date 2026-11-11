@@ -10,7 +10,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
 (function (N) {
     var SECTION = "NOIR Captions";
     var SETTINGS_KEY = "settings.v2";
-    N.VERSION = "0.49.0";
+    N.VERSION = "0.50.0";
 
     function clone(o) { return N.parseJSON(N.stringify(o)); }
 
@@ -180,6 +180,23 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             } catch (e) {}
         }
         function lines() { return String(st.text).replace(/\r\n?/g, "\n").split("\n"); }
+        // ---------- blocks (phrases) as a list: edit a line, split before a word, merge with the next, delete ----------
+        // One block = one phrase (a line of the text = a segment of the data). Splitting / merging / deleting changes the number of
+        // phrases, so the per-phrase layer update no longer fits: st.structural asks for «Обновить все» until captions are rebuilt.
+        function blockWords(si) {
+            var seg = st.data.segments[si], ws = N.parseLine(lines()[si] || "");
+            if (!seg) throw new Error("Нет такого блока.");
+            if (ws.length !== seg.words.length) throw new Error("В блоке " + (si + 1) + " изменилось число слов — верните слова или правьте в режиме «Текст».");
+            return ws;
+        }
+        function blockChange(fn) {
+            if (!st.data) throw new Error("Нет текста.");
+            st.history.push({ text: st.text, data: clone(st.data), timingAll: clone(st.timing) }); if (st.history.length > 30) st.history.shift();
+            fn(); st.structural = true; st.issues = []; st.pending = null; st.rawLines = lines().slice();
+        }
+        function shiftTiming(from, delta) {
+            var t = {}, k; for (k in st.timing) if (st.timing.hasOwnProperty(k)) { var n = Number(k); t[n >= from ? n + delta : n] = true; } st.timing = t;
+        }
         function timingDirty() { for (var k in st.timing) if (st.timing.hasOwnProperty(k)) return true; return false; }
         function dirty() { return !!st.data && (lines().join("\n") !== st.cleanLines.join("\n") || timingDirty()); }
         function presetById(id) { for (var i = 0; i < presets.length; i++) if (presets[i].id === id) return presets[i]; return null; }
@@ -222,7 +239,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
 
         // ---------- text ----------
         function setData(data, link) {
-            st.dataRevision++; st.history = []; st.timing = {}; st.cutMap = null; st.data = data; st.link = link; st.phrase = 0; st.issues = []; st.pending = null;
+            st.structural = false; st.dataRevision++; st.history = []; st.timing = {}; st.cutMap = null; st.data = data; st.link = link; st.phrase = 0; st.issues = []; st.pending = null;
             st.text = N.toEditorText(data); st.cleanLines = st.text.split("\n"); st.rawLines = st.text.split("\n");
             var n = 0;
             for (var i = 0; i < data.segments.length; i++) n += data.segments[i].words.length;
@@ -341,6 +358,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             var comp = activeComp(), warnings = [], words = N.applyEdits(st.data, st.text, warnings), outputStyle = renderStyle();
             var key = sourceKey();
             if (mode === "all" || mode === "phrase") { try { learnFromText(); } catch (eL) { log("error", "memory: " + (eL.message || eL)); } }
+            if (mode === "phrase" && st.structural) throw new Error("Блоки разделены, объединены или удалены — обновите все субтитры.");
             if (mode === "phrase") {
                 var any = false;
                 for (var pi = 1; pi <= comp.numLayers && !any; pi++) { var ex = N.groupInfo(comp.layer(pi)); if (ex && ex.sourceKey === key) any = true; }
@@ -391,7 +409,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
                 }
                 if (mode === "preview") { comp.openInViewer(); status("Превью создано отдельной композицией. Пробел — воспроизведение, Ctrl+Z — убрать."); return { preview: true }; }
                 var ls = lines();
-                if (mode === "phrase") { st.cleanLines[st.phrase] = ls[st.phrase]; delete st.timing[st.phrase]; } else { st.cleanLines = ls; st.timing = {}; }
+                if (mode === "phrase") { st.cleanLines[st.phrase] = ls[st.phrase]; delete st.timing[st.phrase]; } else { st.cleanLines = ls; st.timing = {}; st.structural = false; }
                 st.completed++;
                 warnings = warnings.concat(res.warnings);
                 status("Создано слоёв: " + res.created + (res.removed ? ", заменено старых: " + res.removed : "") + (warnings.length ? "\n" + warnings.join("\n") : ""));
@@ -1348,6 +1366,69 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
                 setData(data, null); status("Импортировано фраз: " + data.segments.length + ". Время файла = время композиции; тайминг слов разложен по длине слов."); return data.segments.length;
             },
             "text.set": function (a) { if (!st.data) throw new Error("Нет текста."); var t = String(a.text); if (t !== st.text) { st.text = t; st.issues = []; st.pending = null; } return true; },
+            // Block list: every op keeps the timing of the words it does not touch.
+            "block.edit": function (a) {
+                var si = Number(a.index), t = String(a.text === undefined ? "" : a.text).replace(/[\r\n]+/g, " ");
+                if (!st.data || !st.data.segments[si]) throw new Error("Нет такого блока.");
+                var ls = lines(); if (ls[si] === t) return false;
+                remember(); ls[si] = t; st.text = ls.join("\n"); st.phrase = si; st.issues = []; st.pending = null; return true;
+            },
+            "block.split": function (a) {
+                var si = Number(a.index), at = Number(a.word); if (!st.data) throw new Error("Нет текста.");
+                var ws = blockWords(si);
+                if (!(at >= 1 && at < ws.length)) throw new Error("Поставьте курсор между словами блока.");
+                blockChange(function () {
+                    var seg = st.data.segments[si], rest = { words: seg.words.splice(at) }; if (seg.speaker !== undefined) rest.speaker = seg.speaker;
+                    st.data.segments.splice(si + 1, 0, rest);
+                    var ls = lines(); ls.splice(si, 1, N.editorWords(ws.slice(0, at)), N.editorWords(ws.slice(at))); st.text = ls.join("\n");
+                    var had = !!st.timing[si]; shiftTiming(si + 1, 1); if (had) st.timing[si + 1] = true; st.phrase = si;
+                });
+                status("Блок разделён: теперь блоков " + st.data.segments.length + ". Нажмите «Обновить все».", 1); return st.data.segments.length;
+            },
+            "block.merge": function (a) {
+                var si = Number(a.index); if (!st.data) throw new Error("Нет текста.");
+                if (!st.data.segments[si + 1]) throw new Error("Нет следующего блока: объединять не с чем.");
+                var w1 = blockWords(si), w2 = blockWords(si + 1);
+                blockChange(function () {
+                    var a0 = st.data.segments[si], b0 = st.data.segments[si + 1]; a0.words = a0.words.concat(b0.words);
+                    st.data.segments.splice(si + 1, 1);
+                    var ls = lines(); ls.splice(si, 2, N.editorWords(w1.concat(w2))); st.text = ls.join("\n");
+                    var t = {}, k; for (k in st.timing) if (st.timing.hasOwnProperty(k)) { var n = Number(k); t[n > si + 1 ? n - 1 : n === si + 1 ? si : n] = true; } st.timing = t; st.phrase = si;
+                });
+                status("Блоки объединены: теперь блоков " + st.data.segments.length + ". Нажмите «Обновить все».", 1); return st.data.segments.length;
+            },
+            "block.delete": function (a) {
+                var si = Number(a.index); if (!st.data || !st.data.segments[si]) throw new Error("Нет такого блока.");
+                if (st.data.segments.length < 2) throw new Error("Последний блок удалить нельзя.");
+                blockChange(function () {
+                    st.data.segments.splice(si, 1); var ls = lines(); ls.splice(si, 1); st.text = ls.join("\n");
+                    var t = {}, k; for (k in st.timing) if (st.timing.hasOwnProperty(k)) { var n = Number(k); if (n !== si) t[n > si ? n - 1 : n] = true; } st.timing = t; st.phrase = Math.min(si, st.data.segments.length - 1);
+                });
+                status("Блок удалён: осталось блоков " + st.data.segments.length + ". Нажмите «Обновить все».", 1); return st.data.segments.length;
+            },
+            // Find (and replace) inside words of all blocks. A query is one word or a part of one; dry / no replace = only count.
+            "text.find": function (a) {
+                if (!st.data) throw new Error("Нет текста.");
+                var q = String(a.query || ""); if (!q) return { count: 0, lines: [] };
+                if (/\s/.test(q)) throw new Error("Ищите одно слово или его часть — без пробелов.");
+                var re = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), a.cs ? "g" : "gi"), ls = lines(), hit = [], count = 0, doIt = a.replace !== undefined && !a.dry, rep = String(a.replace === undefined ? "" : a.replace), out = ls.slice(), i, k, learned = [];
+                if (doIt && /[\s*~|↵]/.test(rep)) throw new Error("Замена — одно слово без пробелов и разметки.");
+                for (i = 0; i < ls.length; i++) {
+                    var ws = N.parseLine(ls[i]), changed = false;
+                    for (k = 0; k < ws.length; k++) {
+                        var m = ws[k].text.match(re); if (!m) continue;
+                        count += m.length; if (hit.indexOf(i) < 0) hit.push(i);
+                        if (doIt) { var old = ws[k].text; ws[k].text = old.replace(re, rep); if (ws[k].text !== old) { changed = true; learned.push([old, ws[k].text]); } }
+                    }
+                    if (doIt && changed) out[i] = N.editorWords(ws);
+                }
+                if (doIt && count) {
+                    remember(); st.text = out.join("\n"); st.issues = []; st.pending = null;
+                    if (S.memoryLearn) { try { var mm = memLoad(), any = false; for (k = 0; k < learned.length; k++) if (learnFix(mm, learned[k][0], learned[k][1])) any = true; if (any) memSave(mm); } catch (eM) {} }
+                    status("Заменено: " + count + " в блоках: " + hit.length + ". Нажмите «Обновить все».");
+                }
+                return { count: count, lines: hit };
+            },
             "text.reset": function () { if (st.data) { remember(); st.text = N.toEditorText(st.data); } return true; },
             "text.undo": function () {
                 if (!st.history.length) throw new Error("Нет правок кнопками для отмены. В поле текста используйте Ctrl+Z.");
@@ -1736,6 +1817,11 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             return f ? f.replace(/^.*[\\\/]/, "") : "";
         }
         function hasControl() { try { var c = app.project.activeItem; return c instanceof CompItem && !!N.findControl(c); } catch (e) { return false; } }
+        function blockList() {
+            var out = [], i, ss = st.data ? st.data.segments : [];
+            for (i = 0; i < ss.length; i++) { var w = ss[i].words; out.push(w.length ? [Math.round(w[0].start * 100) / 100, Math.round(w[w.length - 1].end * 100) / 100, w.length] : [0, 0, 0]); }
+            return out;
+        }
         function state() {
             var ls = lines(), phrases = [], words = [], i, spk = false;
             if (st.data) for (i = 0; i < st.data.segments.length; i++) if (st.data.segments[i].speaker !== undefined) spk = true;
@@ -1743,7 +1829,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             try { var pw = phraseWords(); for (i = 0; i < pw.length; i++) words.push({ text: pw[i].text, accent: !!pw[i].accent, low: pw[i].conf !== undefined && pw[i].conf < 0.65,
                 start: Math.round(pw[i].start * 1000) / 1000, end: Math.round(pw[i].end * 1000) / 1000 }); } catch (e) {}
             return { version: N.VERSION, status: st.status, progress: st.progress, recognizing: st.recognizing, scanning: st.scanning, presetsRev: st.presetsRev || 0, batch: st.batch ? { total: st.batch.total, left: st.batch.queue.length, current: st.batch.current } : null,
-                hasData: !!st.data, dataRevision: st.dataRevision, text: st.text, dirty: dirty(), phraseDirty: !!st.data && (ls[st.phrase] !== st.cleanLines[st.phrase] || !!st.timing[st.phrase]),
+                hasData: !!st.data, structural: !!st.structural, blocks: blockList(), dataRevision: st.dataRevision, text: st.text, dirty: dirty(), phraseDirty: !!st.data && (ls[st.phrase] !== st.cleanLines[st.phrase] || !!st.timing[st.phrase]),
                 phrase: st.phrase, phrases: phrases, words: words, speakers: spk, speaker: spk && st.data.segments[st.phrase] ? (st.data.segments[st.phrase].speaker || 0) : null, canUpdate: canUpdate(), completed: st.completed, issues: st.issues, pending: !!st.pending,
                 settings: S, face: st.face, audio: (function () { try { return N.sourceInfo(); } catch (eS) { return { kind: "none", comp: "" }; } })(), historyLength: st.history.length, control: hasControl(), source: sourceName() };
         }
