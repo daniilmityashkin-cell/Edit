@@ -91,6 +91,8 @@ function layoutProblems() {
         assert.deepStrictEqual(await page.$$eval(".tab", ts => ts.map(t => t.dataset.page)), ["text", "style", "edit", "settings"]);
         assert.ok(await page.locator(".text-empty").isVisible() && await page.locator(".orb-btn").isVisible());
         assert.strictEqual(await page.evaluate(() => document.documentElement.getAttribute("data-accent")), "aurora", "по умолчанию — «Аврора»");
+        assert.ok(/Нет слоя со звуком/.test(await page.locator(".text-empty .src-text").textContent()), "видно, что звука нет");
+        assert.ok(await page.locator('.text-empty .field[data-path="quick.words"] input[type=range]').isVisible(), "ползунок «Слов в субтитре» на первом экране");
         await page.waitForTimeout(800);
         const ink = await page.evaluate(() => { const i = document.querySelector(".tab-ink").getBoundingClientRect(), t = document.querySelector(".tab.on").getBoundingClientRect(); return [i.left - t.left, t.right - i.right, i.width]; });
         assert.ok(ink[2] > 20 && Math.abs(ink[0] - 10) < 2 && Math.abs(ink[1] - 10) < 2, "линия под активной вкладкой: " + ink);
@@ -102,7 +104,8 @@ function layoutProblems() {
         await settle(); const n = calls.length;
         for (const p of ["style", "edit", "settings", "text"]) await tab(p);
         await page.waitForTimeout(1200);
-        assert.strictEqual(calls.length, n, calls.slice(n).join(","));
+        const extra = calls.slice(n).filter(c => c !== "source.peek");      // peek: one cheap look when the pointer re-enters the panel
+        assert.strictEqual(extra.length, 0, extra.join(","));
     });
     await step("готовность: видно, чего не хватает (без наложений); «Установить» открывает окно установки; без готовности распознавание не запускается; «Проверить снова»", async () => {
         const rows = await page.$$eval(".text-empty .ready-row", rs => rs.map(r => r.className + " " + r.textContent));

@@ -10,7 +10,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
 (function (N) {
     var SECTION = "NOIR Captions";
     var SETTINGS_KEY = "settings.v2";
-    N.VERSION = "0.48.0";
+    N.VERSION = "0.49.0";
 
     function clone(o) { return N.parseJSON(N.stringify(o)); }
 
@@ -1258,8 +1258,14 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
                 N.writeText(File(dir.fsName + "/" + p.id + ".json"), N.stringify(p));
                 presets = N.loadPresets(root); status("Стиль добавлен: " + p.name); return p.id;
             },
-            recognize: function () {
-                var src = N.getAudioSource();
+            recognize: function (a) {
+                a = a || {};
+                var src;
+                if (a.file || a.path) {
+                    var pick = a.path ? File(a.path) : File.openDialog("Аудио или видео для распознавания");
+                    if (!pick) { st.montage = null; return null; }
+                    src = N.fileSource(pick);
+                } else src = N.getAudioSource();
                 if (!N.modelCached(S.model)) throw new Error("Модель " + S.model + " ещё не скачана. Нажмите «Скачать модель» на вкладке «Текст» (один раз; аудио никуда не отправляется).");
                 if (st.recognizing) throw new Error("Распознавание уже идёт.");
                 st.recognizing = true; st.progress = 0; status("Запуск распознавания…", 0);
@@ -1282,7 +1288,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             "montage.start": function (a) {
                 if (st.recognizing) throw new Error("Распознавание уже идёт.");
                 st.montage = { cut: a.cut !== false, accents: a.accents !== false, zoom: a.zoom !== false, scale: a.scale, smooth: !!a.smooth };
-                try { return OPS.recognize(); } catch (e) { st.montage = null; throw e; }
+                try { var r = OPS.recognize({ file: a.file, path: a.path }); if (r === null) st.montage = null; return r; } catch (e) { st.montage = null; throw e; }
             },
             "montage.apply": function (a) { if (!st.data) throw new Error("Сначала распознайте речь."); return montageFinish(a || {}); },
             "setup.check": function () { return readiness(); },
@@ -1709,6 +1715,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
                 return out;
             },
             status: function () { return st.status; },
+            "source.peek": function () { return N.sourceInfo(); },          // the panel asks when the pointer comes back: the selection may have changed
             log: function () { return st.log.slice(-50); },
             poll: function () { return true; },
             state: function () { return true; }
@@ -1738,7 +1745,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             return { version: N.VERSION, status: st.status, progress: st.progress, recognizing: st.recognizing, scanning: st.scanning, presetsRev: st.presetsRev || 0, batch: st.batch ? { total: st.batch.total, left: st.batch.queue.length, current: st.batch.current } : null,
                 hasData: !!st.data, dataRevision: st.dataRevision, text: st.text, dirty: dirty(), phraseDirty: !!st.data && (ls[st.phrase] !== st.cleanLines[st.phrase] || !!st.timing[st.phrase]),
                 phrase: st.phrase, phrases: phrases, words: words, speakers: spk, speaker: spk && st.data.segments[st.phrase] ? (st.data.segments[st.phrase].speaker || 0) : null, canUpdate: canUpdate(), completed: st.completed, issues: st.issues, pending: !!st.pending,
-                settings: S, face: st.face, historyLength: st.history.length, control: hasControl(), source: sourceName() };
+                settings: S, face: st.face, audio: (function () { try { return N.sourceInfo(); } catch (eS) { return { kind: "none", comp: "" }; } })(), historyLength: st.history.length, control: hasControl(), source: sourceName() };
         }
 
         return {

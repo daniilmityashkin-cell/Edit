@@ -437,6 +437,26 @@ const accept = (a, mode) => { let r = a.call("generate", { mode: mode || "all" }
     r = a.call("zoom.apply", { on: "cuts", scale: 108 }); assert.strictEqual(r.layers, 2);
     near(pcs[0].transform["Scale"].value[0], 100); near(pcs[1].transform["Scale"].value[0], 108);
   });
+  await test("источник звука: ничего не выделено — берётся самый длинный слой со звуком; выделено два — ошибка; файл с диска — слова с начала композиции; панель видит, что будет распознано", () => {
+    const a = freshApp(false), c = mkComp({ duration: 20 });
+    const add = (name, len) => { const f = path.join(TMP, name); fs.writeFileSync(f, ""); const L = new mock.AVLayer(c, name); L.hasAudio = true; L.source = new mock.FootageItem(new File(f)); L.inPoint = 0; L.outPoint = len; L.startTime = 0; L.stretch = 100; c._l.push(L); return L; };
+    assert.strictEqual(a.state().audio.kind, "none");
+    const short = add("whoosh.wav", 2), clip = add("слышь старина.mp4", 15);
+    assert.deepStrictEqual([a.state().audio.kind, a.state().audio.layer], ["auto", "слышь старина.mp4"]);
+    const keep = [N.modelCached, N.startRecognition]; let got = null;
+    N.modelCached = () => true; N.startRecognition = (src, o, cb) => { got = src; };
+    try {
+      a.call("recognize"); assert.strictEqual(got.file.name, "слышь старина.mp4", "без выделения — найденный слой"); a.call("cancel");
+      short.selected = true; assert.strictEqual(a.state().audio.kind, "selected"); a.call("recognize"); assert.strictEqual(got.file.name, "whoosh.wav"); a.call("cancel");
+      clip.selected = true; assert.strictEqual(a.state().audio.kind, "many"); assert.throws(() => a.call("recognize"), /один слой/);
+      short.selected = clip.selected = false;
+      const wav = path.join(TMP, "voice.wav"); fs.writeFileSync(wav, "");
+      a.call("recognize", { path: wav }); assert.strictEqual(got.file.name, "voice.wav"); assert.strictEqual(got.link, null); assert.strictEqual(got.srcStart, 0); a.call("cancel");
+      assert.strictEqual(a.call("montage.start", { path: path.join(TMP, "нет такого.wav") }) === undefined, false, "не дошли сюда");
+    } catch (e) { if (!/не найден/.test(e.message)) throw e; }
+    finally { N.modelCached = keep[0]; N.startRecognition = keep[1]; }
+    assert.strictEqual(a.state().recognizing, false, "после ошибки файла монтаж не висит");
+  });
   await test("пакет: выделенные в Project композиции распознаются по очереди, в каждой — субтитры; ошибка одной не останавливает остальные; отмена", () => {
     const a = freshApp(false), mk = (name, withAudio) => { const c = new mock.CompItem({ id: Math.floor(Math.random() * 1e9), name, duration: 12 }); if (withAudio) { const f = path.join(TMP, name + ".mp4"); fs.writeFileSync(f, ""); const L = new mock.AVLayer(c, name + ".mp4"); L.hasAudio = true; L.source = new mock.FootageItem(new File(f)); c._l.push(L); } return c; };
     const c1 = mk("Reel 1", true), c2 = mk("Пустая", false), c3 = mk("Reel 3", true);

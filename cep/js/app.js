@@ -131,10 +131,22 @@
             if (window.confirm(msg)) act("batch.start");
         }).catch(function (e) { U.toast(NoirI18n.host(e && e.message || String(e)), "error"); });
     }
-    function recognize() {
+    function recognize(fromFile) {
         if (ready && !ready.ready) { U.toast(t("ready.notYet"), "error"); checkReadiness(); return; }
-        act("recognize");
+        act("recognize", fromFile ? { file: true } : {});
     }
+    // What will be recognized: shown on the first screen; refreshed when the pointer comes back to the panel (the selection in AE may have changed)
+    function sourceLine(a) {
+        if (!a || a.kind === "none") return [t("src.none"), "none"];
+        if (a.kind === "many") return [t("src.many"), "warn"];
+        if (a.kind === "noaudio") return [t("src.noaudio", { name: a.layer }), "warn"];
+        return [t(a.kind === "auto" ? "src.auto" : "src.selected", { name: a.layer, comp: a.comp }), "ok"];
+    }
+    var lastPing = 0;
+    document.addEventListener("mouseenter", function () {
+        if (!S || S.recognizing || Date.now() - lastPing < 1500) return; lastPing = Date.now();
+        H.call("source.peek").catch(noop);
+    });
     // One click: recognition, then pauses cut out, accents, captions and zoom — the parts are the three switches under the button.
     function montageOn(k) { return !prefs.montage || prefs.montage[k] !== false; }
     function montage() {
@@ -216,6 +228,9 @@
         el("span", "eyebrow", rc, t("video.eyebrow"));
         el("h2", "hero-title", rc, t("video.title")); el("p", "lead", rc, t("video.lead"));
         readinessBox(rc, true);
+        var srow = el("div", "src-row", rc); U.icon("mic", srow); v.src = el("span", "src-text", srow);
+        U.button(t("src.file"), "ghost small", srow, function () { recognize(true); }, "file");
+        U.field(rc, { path: "quick.words", label: t("src.words"), kind: "range", min: 1, max: 8, step: 1, value: function (st) { return st.settings.style.layout.maxWords; }, commit: function (n) { set("style.layout.maxWords", n); } });
         v.recognize = U.button(t("mo.go"), "primary wide", U.row(rc, "actions"), function () { if (S && S.recognizing) act("cancel"); else montage(); });
         var parts = el("div", "mo-parts", rc);
         ["cut", "accents", "zoom"].forEach(function (k) {
@@ -331,6 +346,7 @@
         v.empty.hidden = has; v.body.hidden = !has;
         label(v.recognize, S.recognizing ? t("act.cancel") + (S.progress ? " · " + Math.round(S.progress * 100) + "%" : "") : t("mo.go"));
         v.only.disabled = !!S.recognizing;
+        var sl = sourceLine(S.audio); if (v.src.textContent !== sl[0]) v.src.textContent = sl[0]; v.src.parentNode.dataset.state = sl[1];
         asciiRun(page === "text" && !!S.recognizing && !has);
         v.recognize.classList.toggle("busy", !!S.recognizing);
         if (!has) return;

@@ -154,8 +154,27 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
         var comp = app.project.activeItem;
         if (!(comp instanceof CompItem)) throw new Error("Откройте композицию и выделите слой со звуком.");
         var sel = comp.selectedLayers;
-        if (sel.length !== 1) throw new Error("Выделите ровно один слой со звуком (аудио или видео).");
-        return N.audioSourceOf(comp, sel[0]);
+        if (sel.length > 1) throw new Error("Выделите один слой со звуком (аудио или видео), а не несколько.");
+        if (sel.length === 1) return N.audioSourceOf(comp, sel[0]);
+        var auto = N.autoAudioLayer(comp);          // nothing selected: the longest layer with sound from a file
+        if (!auto) throw new Error("В композиции нет слоя со звуком из файла. Выделите слой или нажмите «Выбрать файл».");
+        return N.audioSourceOf(comp, auto);
+    };
+    // Which sound recognition will take right now (for the panel): the selected layer, else the one found automatically.
+    N.sourceInfo = function () {
+        var comp = app.project.activeItem;
+        if (!(comp instanceof CompItem)) return { kind: "none", comp: "" };
+        var sel = comp.selectedLayers;
+        if (sel.length === 1) return { kind: sel[0].hasAudio ? "selected" : "noaudio", comp: comp.name, layer: sel[0].name };
+        if (sel.length > 1) return { kind: "many", comp: comp.name };
+        var auto = N.autoAudioLayer(comp);
+        return auto ? { kind: "auto", comp: comp.name, layer: auto.name } : { kind: "none", comp: comp.name };
+    };
+    // A sound file from disk (not in the comp): its words are placed from the start of the comp.
+    N.fileSource = function (file) {
+        if (!file || !file.exists) throw new Error("Файл не найден" + (file ? ": " + file.fsName : "."));
+        var comp = app.project.activeItem;
+        return { comp: comp instanceof CompItem ? comp : null, layer: null, file: file, srcStart: 0, srcEnd: 0, link: null };
     };
     // Для пакетной обработки: слой со звуком из файла, который виден дольше всех (при равенстве — нижний).
     N.autoAudioLayer = function (comp) {
