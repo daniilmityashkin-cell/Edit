@@ -12,3 +12,10 @@ fonts/user/*
 cep/project-root.txt
 tests/ae_real/frames_tmp/
 cep/.debug
+
+# local tools and IDE (never commit)
+node_modules/
+.idea/
+task.txt
+/edit/
+tests/ae_real/real_frame_*.png
