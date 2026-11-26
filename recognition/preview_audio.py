@@ -2,6 +2,7 @@
 import json
 import os
 from pathlib import Path
+import subprocess
 import sys
 import wave
 
@@ -58,9 +59,12 @@ def main():
     result = {"state": "error"}
     try:
         extract(job["input"], job["output"], job["start"], job["end"])
-        if os.name != "nt":
-            raise RuntimeError("Playback from the AE panel requires Windows")
-        os.startfile(job["output"])
+        if os.name == "nt":
+            os.startfile(job["output"])
+        elif sys.platform == "darwin":
+            subprocess.Popen(["open", job["output"]])
+        else:
+            subprocess.Popen(["xdg-open", job["output"]])
         result = {"state": "done"}
     except Exception as exc:
         result["message"] = str(exc)

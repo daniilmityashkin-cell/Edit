@@ -354,7 +354,7 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             if (newLine) {
                 var carry = null;
                 if (cur && cur.length > 1 && layout.keepShortWords && !it.lineBefore &&
-                    !layout.accentOwnLine && /^(в|во|на|к|ко|с|со|у|о|об|и|а|но|не|по|из|за|от|до|to|of|a|an|in|on)$/i.test(cur[cur.length - 1].text)) carry = cur.pop();
+                    !layout.accentOwnLine && /^(в|во|на|к|ко|с|со|у|о|об|и|а|но|не|по|из|за|от|до|при|для|без|под|над|про|или|что|как|бы|же|ли|ни|to|of|a|an|in|on|at|by|or|if)$/i.test(cur[cur.length - 1].text)) carry = cur.pop();
                 cur = []; lines.push(cur); chars = it.text.length;
                 if (carry) { cur.push(carry); chars += carry.text.length + 1; }
             }
