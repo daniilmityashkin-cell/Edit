@@ -1022,8 +1022,8 @@ var NOIR = (function (g) { g.NOIR = g.NOIR || {}; return g.NOIR; })(
             readUI();
             var name = prompt("Название стиля:", "Мой стиль", "NOIR Captions");
             if (!name) return;
-            var id = "user-" + name.toLowerCase().replace(/[^a-z0-9а-яё]+/g, "-").replace(/^-+|-+$/g, "") ||
-                "user-" + new Date().getTime();
+            var slug = name.toLowerCase().replace(/[^a-z0-9а-яё]+/g, "-").replace(/^-+|-+$/g, "");
+            var id = slug ? ("user-" + slug) : ("user-" + new Date().getTime());
             var p = { schema: "noir-style/1", id: id, name: name, description: "Свой стиль",
                 layout: S.style.layout, base: S.style.base, accent: S.style.accent, anim: S.style.anim };
             var dir = N.userPresetFolder();
